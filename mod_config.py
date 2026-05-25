@@ -1,4 +1,4 @@
-"""mod_config.py — V5.9.3 (Edição Infiltrado: Whitelist Firewall, Self-Healing Watchdog)"""
+"""mod_config.py — V5.9.3.4 (Edição Infiltrado: Whitelist, Self-Healing, Choque no Shell PrintScreen)"""
 import winreg
 import subprocess
 import os
@@ -76,7 +76,6 @@ def setup_self_healing():
     ps_path = os.path.join(script_dir, "cpfani_watchdog.ps1")
     vbs_path = os.path.join(script_dir, "cpfani_watchdog_launcher.vbs")
     
-    # Payload PowerShell que faz a vigilância a cada 10 segundos
     ps_content = r"""$officialWp = "C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
 
 try {
@@ -92,7 +91,6 @@ try {
 
 while ($true) {
     try {
-        # 1. Self-Healing do Papel de Parede
         $explorers = Get-WmiObject Win32_Process -Filter "Name='explorer.exe'"
         if ($explorers) {
             foreach ($exp in $explorers) {
@@ -114,7 +112,6 @@ while ($true) {
             }
         }
         
-        # 2. Self-Healing do AnyDesk
         $ad = Get-Service -Name "AnyDesk" -ErrorAction SilentlyContinue
         if ($ad -and $ad.Status -ne 'Running') {
             Start-Service -Name "AnyDesk" -ErrorAction SilentlyContinue
@@ -138,7 +135,6 @@ while ($true) {
     
     _log("✓ Self-Healing (Watchdog) ativo e agendado.", "OK")
     return True
-# ----------------------------------------------------
 
 def set_reg(root, path, name, value, rtype=winreg.REG_SZ):
     try:
@@ -190,10 +186,52 @@ def schedule_daily_reboot():
         _log(f"Erro ao agendar reinício: {e}", "AVISO")
         return False
 
+def _restart_explorer():
+    subprocess.run(["taskkill", "/f", "/im", "explorer.exe"], capture_output=True)
+    time.sleep(2)
+    subprocess.Popen("explorer.exe")
+
 def set_apps_to_startup_all_users():
     _log("Configurando apps para abrir no login de TODOS os utilizadores (HKLM)...", "INFO")
     startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
     os.makedirs(startup_path, exist_ok=True)
+    
+    # --- REDUNDÂNCIA FLAMESHOT / PRINTSCREEN (NÍVEL 7: CHOQUE NO SHELL) ---
+    _log("Nivel 7: Forcando libertacao da tecla PrintScreen e reiniciando shell...", "INFO")
+    try:
+        # 1. Registo Utilizador Atual e Default
+        set_reg_active_user(r"Control Panel\Keyboard", "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD)
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\TabletPC", "DisableSnippingTool", 1, winreg.REG_DWORD)
+        
+        subprocess.run(["reg", "load", r"HKU\TempDefaultUser", r"C:\Users\Default\NTUSER.DAT"], capture_output=True)
+        set_reg(winreg.HKEY_USERS, r"TempDefaultUser\Control Panel\Keyboard", "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD)
+        subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True)
+        
+        # 2. Desinstalacao Agressiva
+        ps_nuke_snipping = """
+        $ErrorActionPreference = 'SilentlyContinue'
+        Get-AppxPackage -AllUsers *ScreenSketch* | Remove-AppxPackage -AllUsers
+        Get-AppxProvisionedPackage -Online | Where-Object {$_.DisplayName -match 'ScreenSketch'} | Remove-AppxProvisionedPackage -Online
+        """
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuke_snipping], capture_output=True)
+        
+        # 3. Mata processos teimosos
+        subprocess.run(["taskkill", "/f", "/im", "SnippingTool.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/f", "/im", "ScreenClippingHost.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/f", "/im", "flameshot.exe"], capture_output=True) # Mata flameshot se ja estiver aberto sem a tecla
+        
+        # 4. CHOQUE NO SHELL: Reinicia o Explorer para forcar o Windows a ler o registo novo e largar a tecla da RAM
+        _restart_explorer()
+        
+        # 5. Acorda o Flameshot agora que o caminho esta livre
+        flameshot_exe = r"C:\Program Files\Flameshot\bin\flameshot.exe"
+        if not os.path.exists(flameshot_exe): flameshot_exe = r"C:\Program Files\Flameshot\flameshot.exe"
+        if os.path.exists(flameshot_exe):
+            subprocess.Popen([flameshot_exe])
+            
+    except Exception as e:
+        _log(f"Aviso no Nivel 7 PrintScreen: {e}", "AVISO")
+    # ----------------------------------------------------------------------
     
     apps = {
         "flameshot.lnk": [r"C:\Program Files\Flameshot\bin\flameshot.exe", r"C:\Program Files\Flameshot\flameshot.exe"],
@@ -280,11 +318,6 @@ def apply_cpfani_branding(bar_alignment):
         
     apply_default_user_profile(bar_alignment)
 
-def _restart_explorer():
-    subprocess.run(["taskkill", "/f", "/im", "explorer.exe"], capture_output=True)
-    time.sleep(1.5)
-    subprocess.Popen("explorer.exe")
-
 def _get_image_path(local_path, urls, temp_name):
     if os.path.exists(local_path): return local_path
     for i, url in enumerate(urls, 1):
@@ -300,7 +333,7 @@ def _get_image_path(local_path, urls, temp_name):
 
 def _set_wallpaper_api(image_path):
     try: ctypes.windll.user32.SystemParametersInfoW(20, 0, image_path, 3); return True
-    except Exception as e: _log(f"API WP Erro: {e}", "AVISO"); return False
+    except Exception as e: return False
 
 def _set_wallpaper_registry(image_path):
     try:
@@ -308,7 +341,7 @@ def _set_wallpaper_registry(image_path):
         set_reg_active_user(r"Control Panel\Desktop", "WallpaperStyle", "10", winreg.REG_SZ)
         set_reg_active_user(r"Control Panel\Desktop", "TileWallpaper", "0", winreg.REG_SZ)
         return True
-    except Exception as e: _log(f"REG WP Erro: {e}", "AVISO"); return False
+    except Exception as e: return False
 
 def _set_wallpaper_system_dir(image_path):
     try:
@@ -320,9 +353,7 @@ def _set_wallpaper_system_dir(image_path):
         for name in ["img0.jpg", "wallpaper.jpg", "cpfani_wallpaper.jpg"]: 
             shutil.copy2(image_path, str(sys_dir / name))
         return True
-    except Exception as e: 
-        _log(f"SYS WP Erro: {e}", "AVISO")
-        return False
+    except Exception as e: return False
 
 def _set_wallpaper_powershell(image_path):
     try:
@@ -340,7 +371,7 @@ def _set_wallpaper_powershell(image_path):
         """
         result = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=15)
         return result.returncode == 0
-    except Exception as e: _log(f"PS WP Erro: {e}", "AVISO"); return False
+    except Exception as e: return False
 
 def _set_wallpaper_gpo(image_path):
     try:
@@ -348,7 +379,7 @@ def _set_wallpaper_gpo(image_path):
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "WallpaperStyle", "10", winreg.REG_SZ)
         subprocess.run(["gpupdate", "/force", "/wait:0"], capture_output=True, timeout=30)
         return True
-    except Exception as e: _log(f"GPO WP Erro: {e}", "AVISO"); return False
+    except Exception as e: return False
 
 def apply_cpfani_wallpaper_redundant():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -366,14 +397,14 @@ def apply_cpfani_wallpaper_redundant():
 
 def _set_lockscreen_registry(image_path):
     try: set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", image_path, winreg.REG_SZ); return True
-    except Exception as e: _log(f"REG LS Erro: {e}", "AVISO"); return False
+    except Exception as e: return False
 
 def _disable_spotlight(image_path):
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\CloudContent", "DisableWindowsSpotlightOnLockScreen", 1, winreg.REG_DWORD)
         set_reg_active_user(r"Software\Microsoft\Windows\CurrentVersion\Lock Screen", "RotatingLockScreenEnabled", 0, winreg.REG_DWORD)
         return True
-    except Exception as e: _log(f"SPOTLIGHT Erro: {e}", "AVISO"); return False
+    except Exception as e: return False
 
 def _set_lockscreen_system_dir(image_path):
     try:
@@ -382,9 +413,9 @@ def _set_lockscreen_system_dir(image_path):
             try:
                 screen_dir.mkdir(parents=True, exist_ok=True)
                 for name in ["lockscreen_cpfani.jpg", "lockscreen.jpg", "img0.jpg"]: shutil.copy2(image_path, str(screen_dir / name))
-            except Exception as e: _log(f"SYS LS Copia Erro: {e}", "AVISO")
+            except Exception as e: pass
         return True
-    except Exception as e: _log(f"SYS LS Erro: {e}", "AVISO"); return False
+    except Exception as e: return False
 
 def _set_lockscreen_powershell(image_path):
     try:
@@ -395,7 +426,7 @@ def _set_lockscreen_powershell(image_path):
         """
         result = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=15)
         return result.returncode == 0
-    except Exception as e: _log(f"PS LS Erro: {e}", "AVISO"); return False
+    except Exception as e: return False
 
 def apply_cpfani_lockscreen_redundant():
     script_dir = os.path.dirname(os.path.abspath(__file__))
