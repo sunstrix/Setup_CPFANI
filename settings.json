@@ -1,0 +1,50 @@
+{
+  "metadata": {
+    "version": "5.9.3",
+    "project": "Setup Automatizado CP Fani",
+    "company": "CP Fani",
+    "author": "Alex Paulo",
+    "updated": "2026-05"
+  },
+  "apps": {
+    "choco": [
+      "googlechrome",
+      "anydesk",
+      "7zip",
+      "flameshot",
+      "teamviewer",
+      "vlc",
+      "winrar",
+      "vcredist-all",
+      "ditto"
+    ],
+    "onlyoffice": "onlyoffice-desktopeditors"
+  },
+  "bloatware_remove": [
+    "Microsoft.BingNews", "Microsoft.BingWeather", "Microsoft.GamingApp",
+    "Microsoft.GetHelp", "Microsoft.Getstarted", "Microsoft.Microsoft3DViewer",
+    "Microsoft.MicrosoftOfficeHub", "Microsoft.MicrosoftSolitaireCollection", 
+    "Microsoft.MixedReality.Portal", "Microsoft.People", "Microsoft.SkypeApp",
+    "Microsoft.WindowsMaps", "Microsoft.Xbox.TCUI", "Microsoft.XboxApp", 
+    "Microsoft.XboxGameOverlay", "Microsoft.XboxGamingOverlay", 
+    "Microsoft.XboxIdentityProvider", "Microsoft.XboxSpeechToTextOverlay", 
+    "Microsoft.ZuneVideo", "Microsoft.ZuneMusic", "Microsoft.YourPhone", 
+    "king.com.CandyCrushSaga", "king.com.CandyCrushSodaSaga",
+    "SpotifyAB.SpotifyMusic", "Clipchamp.Clipchamp", "McAfee", "TikTok"
+  ],
+  "drivers": {
+    "dell": "dellcommandupdate",
+    "lenovo": "lenovo-system-update",
+    "hp": "hp-support-assistant"
+  },
+  "features": {
+    "self_healing": true
+  },
+  "paths": {
+    "logo": "C:\\Scripts\\Setup_CPFANI\\resources\\logo_cpfani.png",
+    "wallpaper": "C:\\Scripts\\Setup_CPFANI\\resources\\wallpaper_cpfani.jpg",
+    "odt_setup": "C:\\Scripts\\Setup_CPFANI\\resources\\setup.exe",
+    "odt_config": "C:\\Scripts\\Setup_CPFANI\\resources\\configuration.xml",
+    "snapshot_output": "C:\\Scripts\\CPFANI_Hardware_Snapshot_{PC_NAME}.txt"
+  }
+}
