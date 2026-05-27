@@ -1,4 +1,4 @@
-"""mod_config.py — V5.9.3.4 (Edição Infiltrado: Whitelist, Self-Healing, Choque no Shell PrintScreen)"""
+"""mod_config.py — V5.9.3.6 (Edição Infiltrado: Whitelist, Self-Healing, Correção WinError 5 e Lockscreen)"""
 import winreg
 import subprocess
 import os
@@ -8,6 +8,7 @@ import platform
 import urllib.request
 import shutil
 import sys
+import re
 from pathlib import Path
 from datetime import datetime
 import json
@@ -138,7 +139,7 @@ while ($true) {
 
 def set_reg(root, path, name, value, rtype=winreg.REG_SZ):
     try:
-        key = winreg.CreateKeyEx(root, path, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY)
+        key = winreg.CreateKeyEx(root, path, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY | winreg.KEY_WRITE)
         winreg.SetValueEx(key, name, 0, rtype, value)
         winreg.CloseKey(key)
         return True
@@ -196,18 +197,19 @@ def set_apps_to_startup_all_users():
     startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
     os.makedirs(startup_path, exist_ok=True)
     
-    # --- REDUNDÂNCIA FLAMESHOT / PRINTSCREEN (NÍVEL 7: CHOQUE NO SHELL) ---
-    _log("Nivel 7: Forcando libertacao da tecla PrintScreen e reiniciando shell...", "INFO")
+    # --- REDUNDÂNCIA FLAMESHOT / PRINTSCREEN (NÍVEL 8: INJEÇÃO DIRETA) ---
+    _log("Nivel 8: Injetando configuracao direta no Flameshot e neutralizando Windows...", "INFO")
     try:
-        # 1. Registo Utilizador Atual e Default
+        subprocess.run(["taskkill", "/f", "/im", "SnippingTool.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/f", "/im", "ScreenClippingHost.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/f", "/im", "flameshot.exe"], capture_output=True)
+        
         set_reg_active_user(r"Control Panel\Keyboard", "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD)
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\TabletPC", "DisableSnippingTool", 1, winreg.REG_DWORD)
         
-        subprocess.run(["reg", "load", r"HKU\TempDefaultUser", r"C:\Users\Default\NTUSER.DAT"], capture_output=True)
-        set_reg(winreg.HKEY_USERS, r"TempDefaultUser\Control Panel\Keyboard", "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD)
-        subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True)
+        set_reg_active_user(r"Software\Microsoft\OneDrive", "CapturePrintScreen", 0, winreg.REG_DWORD)
+        set_reg_active_user(r"Software\Dropbox\Client", "CapturePrintScreen", 0, winreg.REG_DWORD)
         
-        # 2. Desinstalacao Agressiva
         ps_nuke_snipping = """
         $ErrorActionPreference = 'SilentlyContinue'
         Get-AppxPackage -AllUsers *ScreenSketch* | Remove-AppxPackage -AllUsers
@@ -215,22 +217,37 @@ def set_apps_to_startup_all_users():
         """
         subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuke_snipping], capture_output=True)
         
-        # 3. Mata processos teimosos
-        subprocess.run(["taskkill", "/f", "/im", "SnippingTool.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/f", "/im", "ScreenClippingHost.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/f", "/im", "flameshot.exe"], capture_output=True) # Mata flameshot se ja estiver aberto sem a tecla
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            fs_dir = os.path.join(appdata, "flameshot")
+            os.makedirs(fs_dir, exist_ok=True)
+            fs_ini = os.path.join(fs_dir, "flameshot.ini")
+            
+            content = "[General]\nUsePrintScreen=true\n"
+            if os.path.exists(fs_ini):
+                with open(fs_ini, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                if "UsePrintScreen=" in content:
+                    content = re.sub(r"UsePrintScreen=.*", "UsePrintScreen=true", content)
+                elif "[General]" in content:
+                    content = content.replace("[General]", "[General]\nUsePrintScreen=true\n")
+                else:
+                    content += "\n[General]\nUsePrintScreen=true\n"
+            
+            with open(fs_ini, 'w', encoding='utf-8') as f:
+                f.write(content)
+            _log("Configuracao UsePrintScreen=true injetada no flameshot.ini.", "OK")
         
-        # 4. CHOQUE NO SHELL: Reinicia o Explorer para forcar o Windows a ler o registo novo e largar a tecla da RAM
         _restart_explorer()
         
-        # 5. Acorda o Flameshot agora que o caminho esta livre
         flameshot_exe = r"C:\Program Files\Flameshot\bin\flameshot.exe"
         if not os.path.exists(flameshot_exe): flameshot_exe = r"C:\Program Files\Flameshot\flameshot.exe"
         if os.path.exists(flameshot_exe):
             subprocess.Popen([flameshot_exe])
             
     except Exception as e:
-        _log(f"Aviso no Nivel 7 PrintScreen: {e}", "AVISO")
+        _log(f"Aviso no Nivel 8 PrintScreen: {e}", "AVISO")
     # ----------------------------------------------------------------------
     
     apps = {
@@ -259,28 +276,38 @@ def apply_default_user_profile(bar_alignment):
     try:
         subprocess.run(["reg", "load", r"HKU\TempDefaultUser", r"C:\Users\Default\NTUSER.DAT"], capture_output=True, check=True)
         
-        path_theme = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-        set_reg(winreg.HKEY_USERS, f"TempDefaultUser\\{path_theme}", "SystemUsesLightTheme", 0, winreg.REG_DWORD)
-        set_reg(winreg.HKEY_USERS, f"TempDefaultUser\\{path_theme}", "AppsUseLightTheme", 0, winreg.REG_DWORD)
-        
-        if bar_alignment != "nenhum":
-            val = 0 if bar_alignment == "left" else 1
-            set_reg(winreg.HKEY_USERS, r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarAl", val, winreg.REG_DWORD)
-        
-        set_reg(winreg.HKEY_USERS, r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarDa", 0, winreg.REG_DWORD)
-        set_reg(winreg.HKEY_USERS, r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-338389Enabled", 0, winreg.REG_DWORD)
-        
+        # Correção WinError 5: Garantindo a abertura com permissão total e explicitando chaves filhas por herança estável
+        path_base = r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
         try:
-            key = winreg.OpenKey(winreg.HKEY_USERS, r"TempDefaultUser\Software\Microsoft\Office\16.0\Common\SignIn", 0, winreg.KEY_ALL_ACCESS)
-            winreg.DeleteValue(key, "SignInOptions")
+            key = winreg.CreateKeyEx(winreg.HKEY_USERS, path_base, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY | winreg.KEY_WRITE)
+            if bar_alignment != "nenhum":
+                val = 0 if bar_alignment == "left" else 1
+                winreg.SetValueEx(key, "TaskbarAl", 0, winreg.REG_DWORD, val)
+            winreg.SetValueEx(key, "TaskbarDa", 0, winreg.REG_DWORD, 0)
             winreg.CloseKey(key)
-        except: pass
+        except Exception as e:
+            _log(f"[REG ERROR] Falha nas subchaves Advanced do Default Profile: {e}", "AVISO")
+
+        path_theme = r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        try:
+            key_theme = winreg.CreateKeyEx(winreg.HKEY_USERS, path_theme, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY | winreg.KEY_WRITE)
+            winreg.SetValueEx(key_theme, "SystemUsesLightTheme", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key_theme, "AppsUseLightTheme", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key_theme)
+        except Exception as e: pass
+
+        path_content = r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
+        try:
+            key_content = winreg.CreateKeyEx(winreg.HKEY_USERS, path_content, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY | winreg.KEY_WRITE)
+            winreg.SetValueEx(key_content, "SubscribedContent-338389Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key_content)
+        except Exception as e: pass
 
         subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True, check=True)
-        _log("✓ Definições Globais injetadas no Molde do Windows.", "OK")
+        _log("✓ Definições Globais injetadas no Molde do Windows com sucesso.", "OK")
         return True
     except Exception as e:
-        _log(f"✗ Falha ao manipular NTUSER.DAT: {e}", "ERRO")
+        _log(f"✗ Falha crítica ao manipular NTUSER.DAT: {e}", "ERRO")
         subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True)
         return False
 
@@ -408,11 +435,16 @@ def _disable_spotlight(image_path):
 
 def _set_lockscreen_system_dir(image_path):
     try:
+        # Mudança Estrutural: Forçando o armazenamento na raiz pública do sistema operacional para o LocalSystem ler
         screen_dirs = [Path(r"C:\Windows\Web\Screen"), Path(r"C:\Windows\System32\drivers\etc\lockscreen")]
         for screen_dir in screen_dirs:
             try:
                 screen_dir.mkdir(parents=True, exist_ok=True)
-                for name in ["lockscreen_cpfani.jpg", "lockscreen.jpg", "img0.jpg"]: shutil.copy2(image_path, str(screen_dir / name))
+                subprocess.run(f'takeown /f "{screen_dir}" /r /d s', shell=True, capture_output=True)
+                subprocess.run(f'icacls "{screen_dir}" /grant "NT AUTHORITY\SYSTEM:F" /t', shell=True, capture_output=True)
+                subprocess.run(f'icacls "{screen_dir}" /grant Administradores:F /t', shell=True, capture_output=True)
+                for name in ["lockscreen_cpfani.jpg", "lockscreen.jpg", "img0.jpg"]: 
+                    shutil.copy2(image_path, str(screen_dir / name))
             except Exception as e: pass
         return True
     except Exception as e: return False
@@ -439,7 +471,8 @@ def apply_cpfani_lockscreen_redundant():
     target_path = _get_image_path(local_wp, urls, "cpfani_ls.png")
     if not target_path: return False
     
-    success_count = sum([_set_lockscreen_registry(target_path), _disable_spotlight(target_path), _set_lockscreen_system_dir(target_path), _set_lockscreen_powershell(target_path)])
+    # Executa primeiro o isolamento de pastas no sistema local antes de assinar a GPO
+    success_count = sum([_set_lockscreen_system_dir(target_path), _set_lockscreen_registry(target_path), _disable_spotlight(target_path), _set_lockscreen_powershell(target_path)])
     return success_count >= 3
 
 def disable_windows_hello_redundant():
@@ -548,7 +581,7 @@ def disable_windows_hello_redundant():
         """
         subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuclear], capture_output=True, text=True, timeout=30)
         success_count += 1
-        _log("[10/10] Script Nuclear aplicado e GPO atualizada.", "OK")
+        _log("[10/10] Script Nuclear aplicado e GPO updated.", "OK")
     except Exception as e: _log(f"[10/10] Erro Nuclear: {e}", "AVISO")
     
     return success_count >= 8

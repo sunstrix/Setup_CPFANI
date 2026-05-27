@@ -1,4 +1,4 @@
-"""gui.py — V5.9.3 (Edição Infiltrado: Logo Customizada, Self-Healing)"""
+"""gui.py — V5.9.3.1 (Edição Infiltrado: Logo Customizada, Self-Healing)"""
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
@@ -9,6 +9,9 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 try:
     from PIL import Image
@@ -71,7 +74,7 @@ class CPFani_GUI(ctk.CTk):
         header_frame = ctk.CTkFrame(self.main_scroll, fg_color="transparent")
         header_frame.pack(pady=10, fill="x")
         
-        # INJEÇÃO DA LOGO
+        # INJEÇÃO DA LOGO CORPORATIVA
         if HAS_PIL:
             logo_path = os.path.join(os.path.dirname(__file__), "resources", "logo_cpfani.png")
             if os.path.exists(logo_path):
