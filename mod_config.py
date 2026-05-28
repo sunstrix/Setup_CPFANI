@@ -1,4 +1,4 @@
-"""mod_config.py — V5.9.3.6 (Edição Infiltrado: Whitelist, Self-Healing, Correção WinError 5 e Lockscreen)"""
+"""mod_config.py — V5.9.4.6 (Edição CP Fani: Scanner Universal e Supressão Silenciosa de Interface Nativa)"""
 import winreg
 import subprocess
 import os
@@ -20,9 +20,61 @@ def _log(msg, level="INFO"):
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] [{level}] {msg}", flush=True)
 
-# ====================================================================
-# LÓGICA DO INFILTRADO: DETEÇÃO DE CROSS-ELEVATION (UAC CROSSING)
-# ====================================================================
+def _apply_to_all_real_users():
+    _log("Varrendo todos os perfis de usuários para injetar diretivas locais...", "INFO")
+    try:
+        profiles_key = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, profiles_key) as root_key:
+            i = 0
+            while True:
+                try:
+                    sid = winreg.EnumKey(root_key, i)
+                    i += 1
+                    if not sid.startswith("S-1-5-21-"):
+                        continue
+                    
+                    try:
+                        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, f"{profiles_key}\\{sid}") as p_key:
+                            profile_path, _ = winreg.QueryValueEx(p_key, "ProfileImagePath")
+                            profile_path = os.path.expandvars(profile_path)
+                            
+                            if not profile_path or "System32" in profile_path:
+                                continue
+                            
+                            # Força o valor de desativação em todas as colmeias carregadas
+                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\OneDrive", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Dropbox\\Client", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+                            
+                            fs_dir = os.path.join(profile_path, "AppData", "Roaming", "flameshot")
+                            os.makedirs(fs_dir, exist_ok=True)
+                            fs_ini = os.path.join(fs_dir, "flameshot.ini")
+                            
+                            shortcut_block = "[Shortcuts]\ntakeScreenshot=Print\n"
+                            content = f"[General]\n\n{shortcut_block}"
+                            if os.path.exists(fs_ini):
+                                with open(fs_ini, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                content = re.sub(r"UsePrintScreen=.*?\n", "", content, flags=re.IGNORECASE)
+                                content = content.replace("UsePrintScreen=true", "")
+                                if "[Shortcuts]" in content:
+                                    if "takeScreenshot=" in content:
+                                        content = re.sub(r"takeScreenshot=.*", "takeScreenshot=Print", content)
+                                    else:
+                                        content = content.replace("[Shortcuts]", "[Shortcuts]\ntakeScreenshot=Print")
+                                else:
+                                    content += f"\n{shortcut_block}"
+                            
+                            with open(fs_ini, 'w', encoding='utf-8') as f:
+                                f.write(content)
+                    except Exception as e:
+                        _log(f"Aviso ao processar SID {sid}: {e}", "AVISO")
+                except OSError:
+                    break
+    except Exception as e:
+        _log(f"Falha na varredura global de hives: {e}", "AVISO")
+
 def _get_active_user_sid():
     ps_script = """
     $explorer = Get-WmiObject Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1
@@ -38,34 +90,6 @@ def _get_active_user_sid():
         sid = subprocess.check_output(["powershell", "-NoProfile", "-Command", ps_script], text=True, timeout=10).strip()
         return sid if sid.startswith("S-1-5-") else None
     except: return None
-
-def set_reg_active_user(path, name, value, rtype=winreg.REG_SZ):
-    sid = _get_active_user_sid()
-    if sid:
-        full_path = f"{sid}\\{path}"
-        try:
-            key = winreg.CreateKeyEx(winreg.HKEY_USERS, full_path, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY)
-            winreg.SetValueEx(key, name, 0, rtype, value)
-            winreg.CloseKey(key)
-            return True
-        except: pass
-    return set_reg(winreg.HKEY_CURRENT_USER, path, name, value, rtype)
-
-def delete_reg_active_user(path, name):
-    sid = _get_active_user_sid()
-    if sid:
-        full_path = f"{sid}\\{path}"
-        try:
-            key = winreg.OpenKey(winreg.HKEY_USERS, full_path, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY)
-            winreg.DeleteValue(key, name)
-            winreg.CloseKey(key)
-        except: pass
-    try:
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY)
-        winreg.DeleteValue(key, name)
-        winreg.CloseKey(key)
-    except: pass
-# ====================================================================
 
 # --- LÓGICA DO SELF-HEALING (CÃO DE GUARDA) ---
 def setup_self_healing():
@@ -131,7 +155,6 @@ while ($true) {
         
     cmd = f'schtasks /create /tn "CPFANI_Watchdog" /tr "wscript.exe \\"{vbs_path}\\"" /sc onlogon /ru "SYSTEM" /rl highest /f'
     subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    
     subprocess.Popen(f'wscript.exe "{vbs_path}"', shell=True)
     
     _log("✓ Self-Healing (Watchdog) ativo e agendado.", "OK")
@@ -187,59 +210,34 @@ def schedule_daily_reboot():
         _log(f"Erro ao agendar reinício: {e}", "AVISO")
         return False
 
-def _restart_explorer():
-    subprocess.run(["taskkill", "/f", "/im", "explorer.exe"], capture_output=True)
-    time.sleep(2)
-    subprocess.Popen("explorer.exe")
-
 def set_apps_to_startup_all_users():
     _log("Configurando apps para abrir no login de TODOS os utilizadores (HKLM)...", "INFO")
     startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
     os.makedirs(startup_path, exist_ok=True)
     
-    # --- REDUNDÂNCIA FLAMESHOT / PRINTSCREEN (NÍVEL 8: INJEÇÃO DIRETA) ---
-    _log("Nivel 8: Injetando configuracao direta no Flameshot e neutralizando Windows...", "INFO")
+    _log("Nivel 11: Injetando interceptadores de supressao silenciosa via Kernel...", "INFO")
     try:
         subprocess.run(["taskkill", "/f", "/im", "SnippingTool.exe"], capture_output=True)
         subprocess.run(["taskkill", "/f", "/im", "ScreenClippingHost.exe"], capture_output=True)
         subprocess.run(["taskkill", "/f", "/im", "flameshot.exe"], capture_output=True)
         
-        set_reg_active_user(r"Control Panel\Keyboard", "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD)
+        # INTERCEPTAÇÃO SILENCIOSA DEFINITIVA: Força o aborto imediato do processo nativo na camada de imagem do Kernel
+        ifeo = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
+        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\SnippingTool.exe", "Debugger", "cmd.exe /c exit")
+        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\ScreenClippingHost.exe", "Debugger", "cmd.exe /c exit")
+        
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\TabletPC", "DisableSnippingTool", 1, winreg.REG_DWORD)
         
-        set_reg_active_user(r"Software\Microsoft\OneDrive", "CapturePrintScreen", 0, winreg.REG_DWORD)
-        set_reg_active_user(r"Software\Dropbox\Client", "CapturePrintScreen", 0, winreg.REG_DWORD)
-        
+        _apply_to_all_real_users()
+
         ps_nuke_snipping = """
         $ErrorActionPreference = 'SilentlyContinue'
         Get-AppxPackage -AllUsers *ScreenSketch* | Remove-AppxPackage -AllUsers
+        Get-AppxPackage -AllUsers *SnippingTool* | Remove-AppxPackage -AllUsers
         Get-AppxProvisionedPackage -Online | Where-Object {$_.DisplayName -match 'ScreenSketch'} | Remove-AppxProvisionedPackage -Online
+        Get-AppxProvisionedPackage -Online | Where-Object {$_.DisplayName -match 'SnippingTool'} | Remove-AppxProvisionedPackage -Online
         """
         subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuke_snipping], capture_output=True)
-        
-        appdata = os.environ.get('APPDATA')
-        if appdata:
-            fs_dir = os.path.join(appdata, "flameshot")
-            os.makedirs(fs_dir, exist_ok=True)
-            fs_ini = os.path.join(fs_dir, "flameshot.ini")
-            
-            content = "[General]\nUsePrintScreen=true\n"
-            if os.path.exists(fs_ini):
-                with open(fs_ini, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                if "UsePrintScreen=" in content:
-                    content = re.sub(r"UsePrintScreen=.*", "UsePrintScreen=true", content)
-                elif "[General]" in content:
-                    content = content.replace("[General]", "[General]\nUsePrintScreen=true\n")
-                else:
-                    content += "\n[General]\nUsePrintScreen=true\n"
-            
-            with open(fs_ini, 'w', encoding='utf-8') as f:
-                f.write(content)
-            _log("Configuracao UsePrintScreen=true injetada no flameshot.ini.", "OK")
-        
-        _restart_explorer()
         
         flameshot_exe = r"C:\Program Files\Flameshot\bin\flameshot.exe"
         if not os.path.exists(flameshot_exe): flameshot_exe = r"C:\Program Files\Flameshot\flameshot.exe"
@@ -247,8 +245,7 @@ def set_apps_to_startup_all_users():
             subprocess.Popen([flameshot_exe])
             
     except Exception as e:
-        _log(f"Aviso no Nivel 8 PrintScreen: {e}", "AVISO")
-    # ----------------------------------------------------------------------
+        _log(f"Aviso no Mapeamento Geral Nível 11: {e}", "AVISO")
     
     apps = {
         "flameshot.lnk": [r"C:\Program Files\Flameshot\bin\flameshot.exe", r"C:\Program Files\Flameshot\flameshot.exe"],
@@ -276,32 +273,16 @@ def apply_default_user_profile(bar_alignment):
     try:
         subprocess.run(["reg", "load", r"HKU\TempDefaultUser", r"C:\Users\Default\NTUSER.DAT"], capture_output=True, check=True)
         
-        # Correção WinError 5: Garantindo a abertura com permissão total e explicitando chaves filhas por herança estável
-        path_base = r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-        try:
-            key = winreg.CreateKeyEx(winreg.HKEY_USERS, path_base, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY | winreg.KEY_WRITE)
-            if bar_alignment != "nenhum":
-                val = 0 if bar_alignment == "left" else 1
-                winreg.SetValueEx(key, "TaskbarAl", 0, winreg.REG_DWORD, val)
-            winreg.SetValueEx(key, "TaskbarDa", 0, winreg.REG_DWORD, 0)
-            winreg.CloseKey(key)
-        except Exception as e:
-            _log(f"[REG ERROR] Falha nas subchaves Advanced do Default Profile: {e}", "AVISO")
-
-        path_theme = r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-        try:
-            key_theme = winreg.CreateKeyEx(winreg.HKEY_USERS, path_theme, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY | winreg.KEY_WRITE)
-            winreg.SetValueEx(key_theme, "SystemUsesLightTheme", 0, winreg.REG_DWORD, 0)
-            winreg.SetValueEx(key_theme, "AppsUseLightTheme", 0, winreg.REG_DWORD, 0)
-            winreg.CloseKey(key_theme)
-        except Exception as e: pass
-
-        path_content = r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
-        try:
-            key_content = winreg.CreateKeyEx(winreg.HKEY_USERS, path_content, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY | winreg.KEY_WRITE)
-            winreg.SetValueEx(key_content, "SubscribedContent-338389Enabled", 0, winreg.REG_DWORD, 0)
-            winreg.CloseKey(key_content)
-        except Exception as e: pass
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+        
+        if bar_alignment != "nenhum":
+            val = "0" if bar_alignment == "left" else "1"
+            subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", val, "/f"], capture_output=True)
+        
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "/v", "TaskbarDa", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "/v", "SubscribedContent-338389Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Control Panel\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
 
         subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True, check=True)
         _log("✓ Definições Globais injetadas no Molde do Windows com sucesso.", "OK")
@@ -333,15 +314,25 @@ def apply_cpfani_branding(bar_alignment):
     sync_time_ntp()
     path_theme = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
     
-    set_reg_active_user(path_theme, "SystemUsesLightTheme", 0, winreg.REG_DWORD)
-    set_reg_active_user(path_theme, "AppsUseLightTheme", 0, winreg.REG_DWORD)
-    
+    try:
+        sid = _get_active_user_sid()
+        if sid:
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+    except:
+        pass
+        
     apply_cpfani_wallpaper_redundant()
     apply_cpfani_lockscreen_redundant()
 
     if bar_alignment != "nenhum":
         val = 0 if bar_alignment == "left" else 1
-        set_reg_active_user(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarAl", val, winreg.REG_DWORD)
+        try:
+            sid = _get_active_user_sid()
+            if sid:
+                subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", str(val), "/f"], capture_output=True)
+        except:
+            pass
         
     apply_default_user_profile(bar_alignment)
 
@@ -364,9 +355,11 @@ def _set_wallpaper_api(image_path):
 
 def _set_wallpaper_registry(image_path):
     try:
-        set_reg_active_user(r"Control Panel\Desktop", "Wallpaper", image_path, winreg.REG_SZ)
-        set_reg_active_user(r"Control Panel\Desktop", "WallpaperStyle", "10", winreg.REG_SZ)
-        set_reg_active_user(r"Control Panel\Desktop", "TileWallpaper", "0", winreg.REG_SZ)
+        sid = _get_active_user_sid()
+        if sid:
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "Wallpaper", "/t", "REG_SZ", "/d", image_path, "/f"], capture_output=True)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "WallpaperStyle", "/t", "REG_SZ", "/d", "10", "/f"], capture_output=True)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "TileWallpaper", "/t", "REG_SZ", "/d", "0", "/f"], capture_output=True)
         return True
     except Exception as e: return False
 
@@ -429,19 +422,20 @@ def _set_lockscreen_registry(image_path):
 def _disable_spotlight(image_path):
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\CloudContent", "DisableWindowsSpotlightOnLockScreen", 1, winreg.REG_DWORD)
-        set_reg_active_user(r"Software\Microsoft\Windows\CurrentVersion\Lock Screen", "RotatingLockScreenEnabled", 0, winreg.REG_DWORD)
+        sid = _get_active_user_sid()
+        if sid:
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Lock Screen", "/v", "RotatingLockScreenEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
         return True
     except Exception as e: return False
 
 def _set_lockscreen_system_dir(image_path):
     try:
-        # Mudança Estrutural: Forçando o armazenamento na raiz pública do sistema operacional para o LocalSystem ler
         screen_dirs = [Path(r"C:\Windows\Web\Screen"), Path(r"C:\Windows\System32\drivers\etc\lockscreen")]
         for screen_dir in screen_dirs:
             try:
                 screen_dir.mkdir(parents=True, exist_ok=True)
                 subprocess.run(f'takeown /f "{screen_dir}" /r /d s', shell=True, capture_output=True)
-                subprocess.run(f'icacls "{screen_dir}" /grant "NT AUTHORITY\SYSTEM:F" /t', shell=True, capture_output=True)
+                subprocess.run(f'icacls "{screen_dir}" /grant "NT AUTHORITY\\SYSTEM:F" /t', shell=True, capture_output=True)
                 subprocess.run(f'icacls "{screen_dir}" /grant Administradores:F /t', shell=True, capture_output=True)
                 for name in ["lockscreen_cpfani.jpg", "lockscreen.jpg", "img0.jpg"]: 
                     shutil.copy2(image_path, str(screen_dir / name))
@@ -471,7 +465,6 @@ def apply_cpfani_lockscreen_redundant():
     target_path = _get_image_path(local_wp, urls, "cpfani_ls.png")
     if not target_path: return False
     
-    # Executa primeiro o isolamento de pastas no sistema local antes de assinar a GPO
     success_count = sum([_set_lockscreen_system_dir(target_path), _set_lockscreen_registry(target_path), _disable_spotlight(target_path), _set_lockscreen_powershell(target_path)])
     return success_count >= 3
 
@@ -482,8 +475,10 @@ def disable_windows_hello_redundant():
     success_count = 0
     
     try:
-        set_reg_active_user(r"Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement", "ScoobeSystemSettingEnabled", 0, winreg.REG_DWORD)
-        set_reg_active_user(r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-310093Enabled", 0, winreg.REG_DWORD)
+        sid = _get_active_user_sid()
+        if sid:
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement", "/v", "ScoobeSystemSettingEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "/v", "SubscribedContent-310093Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\CloudContent", "DisableWindowsConsumerFeatures", 1, winreg.REG_DWORD)
         success_count += 1
         _log("[1/10] SCOOBE bloqueado.", "OK")
@@ -613,10 +608,13 @@ def remove_widgets_taskbar():
 def apply_security_lgpd():
     _log("Aplicando politicas de Seguranca e LGPD...", "INFO")
     set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 0, winreg.REG_DWORD)
-    set_reg_active_user(r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-338389Enabled", 0, winreg.REG_DWORD)
+    sid = _get_active_user_sid()
+    if sid:
+        subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "/v", "SubscribedContent-338389Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
     
     set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\WorkplaceJoin", "autoWorkplaceJoin", 0, winreg.REG_DWORD)
-    delete_reg_active_user(r"Software\Microsoft\Office\16.0\Common\SignIn", "SignInOptions")
+    if sid:
+        subprocess.run(["reg", "delete", f"HKU\\{sid}\\Software\\Microsoft\\Office\\16.0\\Common\\SignIn", "/v", "SignInOptions", "/f"], capture_output=True)
 
     disable_windows_hello_redundant()
     remove_widgets_taskbar()
@@ -721,7 +719,7 @@ def generate_full_snapshot():
     ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     with open(log_path, "w", encoding="utf-8") as f:
         f.write("=" * 60 + "\n")
-        f.write("   SNAPSHOT CP FANI V5.9.3 (Edição Infiltrado + Self-Healing)\n")
+        f.write("   SNAPSHOT CP FANI V5.9.4 (Edição Infiltrado + Self-Healing)\n")
         f.write(f"   Gerado em: {ts}\n")
         f.write("=" * 60 + "\n\n")
         f.write("[HARDWARE]\n")

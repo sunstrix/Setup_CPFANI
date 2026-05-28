@@ -1,4 +1,4 @@
-"""gui.py — V5.9.3.1 (Edição Infiltrado: Logo Customizada, Self-Healing)"""
+"""gui.py — V5.9.4.6 (Edição CP Fani: Seleção Global, Prompt de Reinício e Smart-Installer Flameshot)"""
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
@@ -7,6 +7,8 @@ import os
 import sys
 import shutil
 import subprocess
+import urllib.request
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -61,8 +63,8 @@ SETTINGS = load_settings()
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Setup Automatizado CP Fani — V5.9.3 (Infiltrado + Self-Healing)")
-        self.geometry("740x760")
+        self.title("Setup Automatizado CP Fani — V5.9.4 (Infiltrado + Self-Healing)")
+        self.geometry("740x780")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
         self._build_ui()
@@ -74,7 +76,6 @@ class CPFani_GUI(ctk.CTk):
         header_frame = ctk.CTkFrame(self.main_scroll, fg_color="transparent")
         header_frame.pack(pady=10, fill="x")
         
-        # INJEÇÃO DA LOGO CORPORATIVA
         if HAS_PIL:
             logo_path = os.path.join(os.path.dirname(__file__), "resources", "logo_cpfani.png")
             if os.path.exists(logo_path):
@@ -87,7 +88,7 @@ class CPFani_GUI(ctk.CTk):
                     pass
         
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
-        ctk.CTkLabel(header_frame, text="v5.9.3  |  Gestão de Endpoints (Adaptação Dinâmica)", font=("Segoe UI", 11), text_color="#666666").pack()
+        ctk.CTkLabel(header_frame, text="v5.9.4  |  Gestão de Endpoints (Adaptação Dinâmica)", font=("Segoe UI", 11), text_color="#666666").pack()
 
         # 1. INTERFACE
         ui_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
@@ -125,20 +126,33 @@ class CPFani_GUI(ctk.CTk):
         # 4. SOFTWARES E OFFICE
         sw_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         sw_frame.pack(padx=20, pady=5, fill="x")
-        ctk.CTkLabel(sw_frame, text="4. Softwares e Office", font=("", 12, "bold")).grid(row=0, column=0, sticky="w", padx=10, pady=(5,0))
         
+        sw_header = ctk.CTkFrame(sw_frame, fg_color="transparent")
+        sw_header.pack(fill="x", padx=10, pady=5)
+        ctk.CTkLabel(sw_header, text="4. Softwares e Office", font=("", 12, "bold")).pack(side="left")
+        
+        # Botões de Seleção Global (Todos / Nenhum)
+        btn_none = ctk.CTkButton(sw_header, text="Limpar Todos", font=("", 10), width=80, height=22, fg_color="#2b2b2b", hover_color="#3a3a3a", command=self.select_none_apps)
+        btn_none.pack(side="right", padx=2)
+        btn_all = ctk.CTkButton(sw_header, text="Selecionar Todos", font=("", 10), width=95, height=22, fg_color="#2b2b2b", hover_color="#3a3a3a", command=self.select_all_apps)
+        btn_all.pack(side="right", padx=2)
+        
+        grid_frame = ctk.CTkFrame(sw_frame, fg_color="transparent")
+        grid_frame.pack(fill="x", padx=10, pady=5)
+
         self.apps_to_install = SETTINGS.get("apps", {}).get("choco", [])
         self.app_vars = {}
         for i, app in enumerate(self.apps_to_install):
             v = ctk.BooleanVar(value=True)
             self.app_vars[app] = v
-            ctk.CTkCheckBox(sw_frame, text=app.capitalize(), variable=v).grid(row=(i//3)+1, column=i%3, padx=10, pady=4, sticky="w")
+            ctk.CTkCheckBox(grid_frame, text=app.capitalize(), variable=v).grid(row=i//3, column=i%3, padx=10, pady=4, sticky="w")
             
-        office_row = (len(self.apps_to_install)//3) + 2
+        office_frame = ctk.CTkFrame(sw_frame, fg_color="transparent")
+        office_frame.pack(fill="x", padx=10, pady=(10, 5))
         self.office_var = ctk.StringVar(value="nenhum")
-        ctk.CTkRadioButton(sw_frame, text="Nenhum", variable=self.office_var, value="nenhum").grid(row=office_row+1, column=0, padx=10, pady=(10,5), sticky="w")
-        ctk.CTkRadioButton(sw_frame, text="Office 2021", variable=self.office_var, value="office2021").grid(row=office_row+1, column=1, padx=10, pady=(10,5), sticky="w")
-        ctk.CTkRadioButton(sw_frame, text="OnlyOffice", variable=self.office_var, value="onlyoffice").grid(row=office_row+1, column=2, padx=10, pady=(10,5), sticky="w")
+        ctk.CTkRadioButton(office_frame, text="Nenhum Office", variable=self.office_var, value="nenhum").grid(row=0, column=0, padx=10, sticky="w")
+        ctk.CTkRadioButton(office_frame, text="Office 2021", variable=self.office_var, value="office2021").grid(row=0, column=1, padx=10, sticky="w")
+        ctk.CTkRadioButton(office_frame, text="OnlyOffice", variable=self.office_var, value="onlyoffice").grid(row=0, column=2, padx=10, sticky="w")
 
         # 5. GESTÃO DE DRIVERS
         driver_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
@@ -173,6 +187,16 @@ class CPFani_GUI(ctk.CTk):
         self.btn_run = ctk.CTkButton(self.main_scroll, text="▶ EXECUTAR DEPLOY", font=("", 14, "bold"), height=40, command=self.start_deploy)
         self.btn_run.pack(pady=10, padx=20, fill="x")
 
+    def select_all_apps(self):
+        for var in self.app_vars.values():
+            var.set(True)
+        self.log("Todos os softwares foram marcados.")
+
+    def select_none_apps(self):
+        for var in self.app_vars.values():
+            var.set(False)
+        self.log("Todos os softwares foram desmarcados.")
+
     def log(self, msg, level="INFO"):
         ts = datetime.now().strftime("%H:%M:%S")
         print(f"[{ts}] [{level}] {msg}", flush=True)
@@ -202,11 +226,49 @@ class CPFani_GUI(ctk.CTk):
         self.log_area.configure(state="disabled")
         threading.Thread(target=self._work, daemon=True).start()
 
+    def install_smart_flameshot(self):
+        self.log("Analisando repositórios do Flameshot (Chocolatey vs GitHub v13.3.0)...")
+        choco_version = "0.0.0"
+        try:
+            res = subprocess.run(["choco", "info", "flameshot", "--limit-output"], capture_output=True, text=True, timeout=10)
+            if res.returncode == 0 and res.stdout:
+                parts = res.stdout.strip().split('|')
+                if len(parts) >= 2:
+                    choco_version = parts[1]
+        except:
+            pass
+        
+        self.log(f"Disponível no Chocolatey: {choco_version}  |  Disponível no GitHub: 13.3.0")
+        
+        def _version_to_list(v_str):
+            return [int(x) for x in re.findall(r'\d+', v_str)]
+            
+        v_choco = _version_to_list(choco_version) if choco_version != "0.0.0" else [0, 0, 0]
+        v_github = [13, 3, 0]
+        
+        if v_github >= v_choco:
+            self.log("A versão v13.3.0 do GitHub é a mais atual ou idêntica. Iniciando download via MSI...")
+            msi_url = "https://github.com/flameshot-org/flameshot/releases/download/v13.3.0/Flameshot-13.3.0-win64.msi"
+            temp_msi = r"C:\Users\Public\Downloads\Flameshot-13.3.0-win64.msi"
+            try:
+                os.makedirs(os.path.dirname(temp_msi), exist_ok=True)
+                urllib.request.urlretrieve(msi_url, temp_msi)
+                self.log("Executando instalação silenciosa do MSI corporativo...")
+                install_res = subprocess.run(["msiexec", "/i", temp_msi, "/qn", "/norestart"], capture_output=True)
+                if install_res.returncode in [0, 3010]:
+                    self.log("✓ Flameshot v13.3.0 instalado via GitHub MSI com sucesso.", "OK")
+                    return True
+            except Exception as e:
+                self.log(f"Aviso na instalação do MSI: {e}. Executando fallback para o Chocolatey...", "AVISO")
+        else:
+            self.log("O pacote do Chocolatey é mais recente. Direcionando para o gerenciador...")
+            
+        return mod_instalar._choco_install("flameshot")
+
     def _work(self):
         erros = []
         try:
             self.log("► Iniciando Deploy (Modo Infiltrado)...")
-            
             selected_apps = [app for app, v in self.app_vars.items() if v.get()]
             
             total_tasks = 4 
@@ -246,9 +308,14 @@ class CPFani_GUI(ctk.CTk):
                 completed += 1
 
             for app in selected_apps:
-                self.update_status(f"► A instalar software...", (completed / total_tasks) * 100, f"Instalando {app.capitalize()} via Chocolatey...")
-                self.log(f"A instalar {app}...")
-                if not mod_instalar._choco_install(app):
+                self.update_status(f"► A instalar software...", (completed / total_tasks) * 100, f"Processando {app.capitalize()}...")
+                if app == "flameshot":
+                    success = self.install_smart_flameshot()
+                else:
+                    self.log(f"A instalar {app} via Chocolatey...")
+                    success = mod_instalar._choco_install(app)
+                
+                if not success:
                     erros.append(app)
                 completed += 1
             
@@ -290,16 +357,15 @@ class CPFani_GUI(ctk.CTk):
         
         if erros:
             self.update_status(f"⚠ Concluído com {len(erros)} alerta(s)", 100)
-            show_windows_toast(
-                "Aviso no Provisionamento", 
-                f"Problemas com: {', '.join(erros)}. Verifique os logs em C:\\Scripts\\Logs"
-            )
+            show_windows_toast("Aviso no Provisionamento", f"Problemas com: {', '.join(erros)}.")
         else:
             self.update_status("✓ Setup finalizado com sucesso!", 100)
-            show_windows_toast(
-                "CP Fani - Sucesso", 
-                "Provisionamento concluído! O Modo Infiltrado e o Cão de Guarda estão ativos."
-            )
+            show_windows_toast("CP Fani - Sucesso", "Provisionamento concluído com sucesso!")
+            
+        # Pergunta se o usuário deseja reiniciar a máquina agora
+        if messagebox.askyesno("Reiniciar Computador", "O provisionamento do computador foi concluído com sucesso.\n\nDeseja reiniciar o computador agora para aplicar todas as diretivas de teclado de forma definitiva?"):
+            self.log("Forçando reinício imediato do sistema operacional...", "INFO")
+            subprocess.Popen(["shutdown", "/r", "/t", "5", "/f"], creationflags=subprocess.CREATE_NO_WINDOW)
 
 if __name__ == "__main__":
     Path(r"C:\Scripts\Logs").mkdir(parents=True, exist_ok=True)
