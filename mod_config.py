@@ -1,4 +1,4 @@
-"""mod_config.py — V5.9.4.6 (Edição CP Fani: Scanner Universal e Supressão Silenciosa de Interface Nativa)"""
+"""mod_config.py — V5.9.4.8 (Edição CP Fani: Varredura Universal, Neutralização de Cache do OneDrive e Explorer)"""
 import winreg
 import subprocess
 import os
@@ -41,11 +41,11 @@ def _apply_to_all_real_users():
                             if not profile_path or "System32" in profile_path:
                                 continue
                             
-                            # Força o valor de desativação em todas as colmeias carregadas
-                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
-                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
-                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\OneDrive", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
-                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Dropbox\\Client", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+                            # Injeção cirúrgica com processos de background devidamente finalizados
+                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
+                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
+                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\OneDrive", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
+                            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Dropbox\\Client", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
                             
                             fs_dir = os.path.join(profile_path, "AppData", "Roaming", "flameshot")
                             os.makedirs(fs_dir, exist_ok=True)
@@ -87,7 +87,7 @@ def _get_active_user_sid():
     }
     """
     try:
-        sid = subprocess.check_output(["powershell", "-NoProfile", "-Command", ps_script], text=True, timeout=10).strip()
+        sid = subprocess.check_output(["powershell", "-NoProfile", "-Command", ps_script], text=True, timeout=10, creationflags=0x08000000).strip()
         return sid if sid.startswith("S-1-5-") else None
     except: return None
 
@@ -154,8 +154,8 @@ while ($true) {
         f.write(vbs_content)
         
     cmd = f'schtasks /create /tn "CPFANI_Watchdog" /tr "wscript.exe \\"{vbs_path}\\"" /sc onlogon /ru "SYSTEM" /rl highest /f'
-    subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    subprocess.Popen(f'wscript.exe "{vbs_path}"', shell=True)
+    subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=0x08000000)
+    subprocess.Popen(f'wscript.exe "{vbs_path}"', shell=True, creationflags=0x08000000)
     
     _log("✓ Self-Healing (Watchdog) ativo e agendado.", "OK")
     return True
@@ -189,7 +189,7 @@ def sync_time_ntp():
             'w32tm /resync /force'
         ]
         for cmd in cmds:
-            subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=0x08000000)
         _log("✓ Horário sincronizado com ntp.br.", "OK")
         return True
     except Exception as e:
@@ -201,7 +201,7 @@ def schedule_daily_reboot():
     try:
         task_cmd = 'shutdown.exe /r /f /t 60 /c "Reinicio diario automatico CP Fani"'
         cmd = f'schtasks /create /tn "CPFANI_ReinicioDiario" /tr "{task_cmd}" /sc daily /st 21:00 /ru "SYSTEM" /rl highest /f'
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=0x08000000)
         if res.returncode == 0:
             _log("✓ Reinício diário agendado com sucesso (21:00).", "OK")
             return True
@@ -215,19 +215,20 @@ def set_apps_to_startup_all_users():
     startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
     os.makedirs(startup_path, exist_ok=True)
     
-    _log("Nivel 11: Injetando interceptadores de supressao silenciosa via Kernel...", "INFO")
+    _log("Nivel 11: Purgando cache em memoria do OneDrive e do Shell...", "INFO")
     try:
-        subprocess.run(["taskkill", "/f", "/im", "SnippingTool.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/f", "/im", "ScreenClippingHost.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/f", "/im", "flameshot.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/f", "/im", "SnippingTool.exe"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["taskkill", "/f", "/im", "ScreenClippingHost.exe"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["taskkill", "/f", "/im", "flameshot.exe"], capture_output=True, creationflags=0x08000000)
         
-        # INTERCEPTAÇÃO SILENCIOSA DEFINITIVA: Força o aborto imediato do processo nativo na camada de imagem do Kernel
-        ifeo = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
-        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\SnippingTool.exe", "Debugger", "cmd.exe /c exit")
-        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\ScreenClippingHost.exe", "Debugger", "cmd.exe /c exit")
+        # QUEBRA DE CACHE DE DIRETIVAS DE MEMÓRIA: Derruba OneDrive e Explorer ANTES de escrever nas Hives corporativas
+        subprocess.run(["taskkill", "/f", "/im", "OneDrive.exe"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["taskkill", "/f", "/im", "explorer.exe"], capture_output=True, creationflags=0x08000000)
+        time.sleep(1.5)
         
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\TabletPC", "DisableSnippingTool", 1, winreg.REG_DWORD)
         
+        # Realiza a varredura e gravação pura com os processos de background desativados
         _apply_to_all_real_users()
 
         ps_nuke_snipping = """
@@ -237,13 +238,8 @@ def set_apps_to_startup_all_users():
         Get-AppxProvisionedPackage -Online | Where-Object {$_.DisplayName -match 'ScreenSketch'} | Remove-AppxProvisionedPackage -Online
         Get-AppxProvisionedPackage -Online | Where-Object {$_.DisplayName -match 'SnippingTool'} | Remove-AppxProvisionedPackage -Online
         """
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuke_snipping], capture_output=True)
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuke_snipping], capture_output=True, creationflags=0x08000000)
         
-        flameshot_exe = r"C:\Program Files\Flameshot\bin\flameshot.exe"
-        if not os.path.exists(flameshot_exe): flameshot_exe = r"C:\Program Files\Flameshot\flameshot.exe"
-        if os.path.exists(flameshot_exe):
-            subprocess.Popen([flameshot_exe])
-            
     except Exception as e:
         _log(f"Aviso no Mapeamento Geral Nível 11: {e}", "AVISO")
     
@@ -263,7 +259,7 @@ def set_apps_to_startup_all_users():
         if exe_found:
             target = os.path.join(startup_path, link)
             cmd = f'powershell "$s=(New-Object -COM WScript.Shell).CreateShortcut(\'{target}\');$s.TargetPath=\'{exe_found}\';$s.Save()"'
-            subprocess.run(cmd, shell=True, capture_output=True)
+            subprocess.run(cmd, shell=True, capture_output=True, creationflags=0x08000000)
             _log(f"✓ {link} configurado no Startup Global.", "OK")
 
 def apply_default_user_profile(bar_alignment):
@@ -271,25 +267,25 @@ def apply_default_user_profile(bar_alignment):
     _log("INJETANDO DEFINICOES GLOBAIS NO DEFAULT USER PROFILE (NTUSER.DAT)...", "INFO")
     _log("=" * 60, "INFO")
     try:
-        subprocess.run(["reg", "load", r"HKU\TempDefaultUser", r"C:\Users\Default\NTUSER.DAT"], capture_output=True, check=True)
+        subprocess.run(["reg", "load", r"HKU\TempDefaultUser", r"C:\Users\Default\NTUSER.DAT"], capture_output=True, check=True, creationflags=0x08000000)
         
-        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
-        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
         
         if bar_alignment != "nenhum":
             val = "0" if bar_alignment == "left" else "1"
-            subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", val, "/f"], capture_output=True)
+            subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", val, "/f"], capture_output=True, creationflags=0x08000000)
         
-        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "/v", "TaskbarDa", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
-        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "/v", "SubscribedContent-338389Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
-        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Control Panel\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "/v", "TaskbarDa", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "/v", "SubscribedContent-338389Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["reg", "add", r"HKU\TempDefaultUser\Control Panel\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
 
-        subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True, check=True)
+        subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True, check=True, creationflags=0x08000000)
         _log("✓ Definições Globais injetadas no Molde do Windows com sucesso.", "OK")
         return True
     except Exception as e:
         _log(f"✗ Falha crítica ao manipular NTUSER.DAT: {e}", "ERRO")
-        subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True)
+        subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True, creationflags=0x08000000)
         return False
 
 def remove_agressive_bloatware(bloatware_list):
@@ -301,7 +297,7 @@ def remove_agressive_bloatware(bloatware_list):
         try:
             cmd_user = f"Get-AppxPackage -AllUsers *{app}* | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue"
             cmd_prov = f"Get-AppxProvisionedPackage -Online | Where-Object {{$_.DisplayName -match '{app}'}} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue"
-            res = subprocess.run(["powershell", "-NoProfile", "-Command", f"{cmd_user}; {cmd_prov}"], capture_output=True, text=True, timeout=15)
+            res = subprocess.run(["powershell", "-NoProfile", "-Command", f"{cmd_user}; {cmd_prov}"], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
             if res.returncode == 0:
                 success_count += 1
         except Exception as e:
@@ -317,8 +313,8 @@ def apply_cpfani_branding(bar_alignment):
     try:
         sid = _get_active_user_sid()
         if sid:
-            subprocess.run(["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
-            subprocess.run(["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
     except:
         pass
         
@@ -330,7 +326,7 @@ def apply_cpfani_branding(bar_alignment):
         try:
             sid = _get_active_user_sid()
             if sid:
-                subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", str(val), "/f"], capture_output=True)
+                subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", str(val), "/f"], capture_output=True, creationflags=0x08000000)
         except:
             pass
         
@@ -357,9 +353,9 @@ def _set_wallpaper_registry(image_path):
     try:
         sid = _get_active_user_sid()
         if sid:
-            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "Wallpaper", "/t", "REG_SZ", "/d", image_path, "/f"], capture_output=True)
-            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "WallpaperStyle", "/t", "REG_SZ", "/d", "10", "/f"], capture_output=True)
-            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "TileWallpaper", "/t", "REG_SZ", "/d", "0", "/f"], capture_output=True)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "Wallpaper", "/t", "REG_SZ", "/d", image_path, "/f"], capture_output=True, creationflags=0x08000000)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "WallpaperStyle", "/t", "REG_SZ", "/d", "10", "/f"], capture_output=True, creationflags=0x08000000)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "TileWallpaper", "/t", "REG_SZ", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
         return True
     except Exception as e: return False
 
@@ -367,8 +363,8 @@ def _set_wallpaper_system_dir(image_path):
     try:
         sys_dir = Path(r"C:\Windows\Web\Wallpaper\Windows")
         sys_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(f'takeown /f "{sys_dir}" /r /d s', shell=True, capture_output=True)
-        subprocess.run(f'icacls "{sys_dir}" /grant Administradores:F /t', shell=True, capture_output=True)
+        subprocess.run(f'takeown /f "{sys_dir}" /r /d s', shell=True, capture_output=True, creationflags=0x08000000)
+        subprocess.run(f'icacls "{sys_dir}" /grant Administradores:F /t', shell=True, capture_output=True, creationflags=0x08000000)
         
         for name in ["img0.jpg", "wallpaper.jpg", "cpfani_wallpaper.jpg"]: 
             shutil.copy2(image_path, str(sys_dir / name))
@@ -389,7 +385,7 @@ def _set_wallpaper_powershell(image_path):
         "@
         [Wallpaper]::SetWallpaper('{image_path}')
         """
-        result = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=15)
+        result = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
         return result.returncode == 0
     except Exception as e: return False
 
@@ -397,7 +393,7 @@ def _set_wallpaper_gpo(image_path):
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "Wallpaper", image_path, winreg.REG_SZ)
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "WallpaperStyle", "10", winreg.REG_SZ)
-        subprocess.run(["gpupdate", "/force", "/wait:0"], capture_output=True, timeout=30)
+        subprocess.run(["gpupdate", "/force", "/wait:0"], capture_output=True, timeout=30, creationflags=0x08000000)
         return True
     except Exception as e: return False
 
@@ -424,7 +420,7 @@ def _disable_spotlight(image_path):
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\CloudContent", "DisableWindowsSpotlightOnLockScreen", 1, winreg.REG_DWORD)
         sid = _get_active_user_sid()
         if sid:
-            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Lock Screen", "/v", "RotatingLockScreenEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Lock Screen", "/v", "RotatingLockScreenEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
         return True
     except Exception as e: return False
 
@@ -434,9 +430,9 @@ def _set_lockscreen_system_dir(image_path):
         for screen_dir in screen_dirs:
             try:
                 screen_dir.mkdir(parents=True, exist_ok=True)
-                subprocess.run(f'takeown /f "{screen_dir}" /r /d s', shell=True, capture_output=True)
-                subprocess.run(f'icacls "{screen_dir}" /grant "NT AUTHORITY\\SYSTEM:F" /t', shell=True, capture_output=True)
-                subprocess.run(f'icacls "{screen_dir}" /grant Administradores:F /t', shell=True, capture_output=True)
+                subprocess.run(f'takeown /f "{screen_dir}" /r /d s', shell=True, capture_output=True, creationflags=0x08000000)
+                subprocess.run(f'icacls "{screen_dir}" /grant "NT AUTHORITY\\SYSTEM:F" /t', shell=True, capture_output=True, creationflags=0x08000000)
+                subprocess.run(f'icacls "{screen_dir}" /grant Administradores:F /t', shell=True, capture_output=True, creationflags=0x08000000)
                 for name in ["lockscreen_cpfani.jpg", "lockscreen.jpg", "img0.jpg"]: 
                     shutil.copy2(image_path, str(screen_dir / name))
             except Exception as e: pass
@@ -450,7 +446,7 @@ def _set_lockscreen_powershell(image_path):
         if(!(Test-Path $RegPath)) {{ New-Item -Path $RegPath -Force | Out-Null }}
         New-ItemProperty -Path $RegPath -Name "LockScreenImage" -Value '{image_path}' -PropertyType String -Force | Out-Null
         """
-        result = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=15)
+        result = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
         return result.returncode == 0
     except Exception as e: return False
 
@@ -477,8 +473,8 @@ def disable_windows_hello_redundant():
     try:
         sid = _get_active_user_sid()
         if sid:
-            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement", "/v", "ScoobeSystemSettingEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
-            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "/v", "SubscribedContent-310093Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement", "/v", "ScoobeSystemSettingEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
+            subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "/v", "SubscribedContent-310093Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\CloudContent", "DisableWindowsConsumerFeatures", 1, winreg.REG_DWORD)
         success_count += 1
         _log("[1/10] SCOOBE bloqueado.", "OK")
@@ -500,7 +496,7 @@ def disable_windows_hello_redundant():
             'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\{cb82b75d-653b-4f3b-b2d6-2bda6e68a60a}'
         )) { Remove-Item $provider -Force -ErrorAction SilentlyContinue }
         """
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=15)
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
         success_count += 1
         _log("[3/10] Credential Providers removidos.", "OK")
     except Exception as e: _log(f"[3/10] Erro Providers: {e}", "AVISO")
@@ -515,8 +511,8 @@ def disable_windows_hello_redundant():
     
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\WbioSrvc", "Start", 4, winreg.REG_DWORD)
-        subprocess.run(["net", "stop", "WbioSrvc"], capture_output=True, timeout=10)
-        subprocess.run(["sc", "config", "WbioSrvc", "start=disabled"], capture_output=True, timeout=10)
+        subprocess.run(["net", "stop", "WbioSrvc"], capture_output=True, timeout=10, creationflags=0x08000000)
+        subprocess.run(["sc", "config", "WbioSrvc", "start=disabled"], capture_output=True, timeout=10, creationflags=0x08000000)
         success_count += 1
         _log("[5/10] Servico WbioSrvc parado.", "OK")
     except Exception as e: _log(f"[5/10] Erro WbioSrvc: {e}", "AVISO")
@@ -528,7 +524,7 @@ def disable_windows_hello_redundant():
         Remove-Item 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\HolographicShell\\FirstRun' -Force -Recurse
         Remove-Item 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Holographic' -Force -Recurse
         """
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, timeout=10)
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, timeout=10, creationflags=0x08000000)
         success_count += 1
         _log("[6/10] HKCU limpo (O Infiltrado atua via Registry direto para outros profiles).", "OK")
     except Exception as e: _log(f"[6/10] Erro HKCU: {e}", "AVISO")
@@ -542,7 +538,7 @@ def disable_windows_hello_redundant():
     
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Biometrics\Facial\NIST", "Template Protection", 1, winreg.REG_DWORD)
-        subprocess.run(["powershell", "-NoProfile", "-Command", "Disable-WindowsOptionalFeature -Online -FeatureName 'Windows-Hello-Face' -NoRestart"], capture_output=True, timeout=30)
+        subprocess.run(["powershell", "-NoProfile", "-Command", "Disable-WindowsOptionalFeature -Online -FeatureName 'Windows-Hello-Face' -NoRestart"], capture_output=True, timeout=30, creationflags=0x08000000)
         success_count += 1
         _log("[8/10] Face ID removido.", "OK")
     except Exception as e: _log(f"[8/10] Erro Face ID: {e}", "AVISO")
@@ -574,7 +570,7 @@ def disable_windows_hello_redundant():
         New-ItemProperty -Path $PassportPath -Name 'DisablePostLogonProvisioning' -Value 1 -PropertyType DWORD -Force | Out-Null
         gpupdate /force /wait:0 2>&1 | Out-Null
         """
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuclear], capture_output=True, text=True, timeout=30)
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuclear], capture_output=True, text=True, timeout=30, creationflags=0x08000000)
         success_count += 1
         _log("[10/10] Script Nuclear aplicado e GPO updated.", "OK")
     except Exception as e: _log(f"[10/10] Erro Nuclear: {e}", "AVISO")
@@ -585,8 +581,8 @@ def remove_widgets_taskbar():
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\WidgetService", "Start", 4, winreg.REG_DWORD)
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Windows Feeds", "EnableNewsAndInterests", 0, winreg.REG_DWORD)
-        subprocess.run(["net", "stop", "WidgetService"], capture_output=True, timeout=10)
-        subprocess.run(["sc", "config", "WidgetService", "start=disabled"], capture_output=True, timeout=10)
+        subprocess.run(["net", "stop", "WidgetService"], capture_output=True, timeout=10, creationflags=0x08000000)
+        subprocess.run(["sc", "config", "WidgetService", "start=disabled"], capture_output=True, timeout=10, creationflags=0x08000000)
     except Exception as e: pass
         
     try:
@@ -600,7 +596,7 @@ def remove_widgets_taskbar():
             New-ItemProperty -Path $RegPath -Name "TaskbarDa" -Value 0 -PropertyType DWORD -Force | Out-Null
         }
         """
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, timeout=10)
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, timeout=10, creationflags=0x08000000)
     except Exception as e: pass
         
     _log("Widgets e Taskbar limpos (Injeção Dinâmica).", "OK")
@@ -610,11 +606,11 @@ def apply_security_lgpd():
     set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 0, winreg.REG_DWORD)
     sid = _get_active_user_sid()
     if sid:
-        subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "/v", "SubscribedContent-338389Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True)
+        subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "/v", "SubscribedContent-338389Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
     
     set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\WorkplaceJoin", "autoWorkplaceJoin", 0, winreg.REG_DWORD)
     if sid:
-        subprocess.run(["reg", "delete", f"HKU\\{sid}\\Software\\Microsoft\\Office\\16.0\\Common\\SignIn", "/v", "SignInOptions", "/f"], capture_output=True)
+        subprocess.run(["reg", "delete", f"HKU\\{sid}\\Software\\Microsoft\\Office\\16.0\\Common\\SignIn", "/v", "SignInOptions", "/f"], capture_output=True, creationflags=0x08000000)
 
     disable_windows_hello_redundant()
     remove_widgets_taskbar()
@@ -624,10 +620,10 @@ def apply_firewall_rules():
     
     antigas = ["CPFANI-Block-SMB-In", "CPFANI-Block-RPC-In", "CPFANI-Block-SMB-Out"]
     for regra in antigas:
-        subprocess.run(f'netsh advfirewall firewall delete rule name="{regra}"', shell=True, capture_output=True)
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{regra}"', shell=True, capture_output=True, creationflags=0x08000000)
         
-    subprocess.run('netsh advfirewall firewall set rule group="Compartilhamento de Arquivo e Impressora" new enable=Yes profile=private,domain', shell=True, capture_output=True)
-    subprocess.run('netsh advfirewall firewall set rule group="Compartilhamento de Arquivo e Impressora" new enable=No profile=public', shell=True, capture_output=True)
+    subprocess.run('netsh advfirewall firewall set rule group="Compartilhamento de Arquivo e Impressora" new enable=Yes profile=private,domain', shell=True, capture_output=True, creationflags=0x08000000)
+    subprocess.run('netsh advfirewall firewall set rule group="Compartilhamento de Arquivo e Impressora" new enable=No profile=public', shell=True, capture_output=True, creationflags=0x08000000)
 
     regras_whitelist = [
         'netsh advfirewall firewall add rule name="CPFANI-Allow-SMB-Local-In" dir=in action=allow protocol=TCP localport=445 remoteip=LocalSubnet,20.191.1.0/24 profile=any',
@@ -635,57 +631,28 @@ def apply_firewall_rules():
         'netsh advfirewall firewall add rule name="CPFANI-Allow-SMB-Local-Out" dir=out action=allow protocol=TCP remoteport=445 remoteip=LocalSubnet,20.191.1.0/24 profile=any'
     ]
     for cmd in regras_whitelist:
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=0x08000000)
         if res.returncode != 0:
             _log(f"Falha regra Firewall Whitelist: {res.stderr}", "AVISO")
             
     _log("Firewall configurado com Whitelist para Impressoras/Rede Local.", "OK")
 
-def _safe_copy_to_scripts(filename):
-    source = os.path.join(os.path.dirname(__file__), filename)
-    target = os.path.join("C:\\Scripts", filename)
-    if os.path.exists(source):
-        os.makedirs("C:\\Scripts", exist_ok=True)
-        shutil.copy2(source, target)
-    return target
-
-def schedule_manutencao_rede():
-    target_path = _safe_copy_to_scripts("manutencao_rede.bat")
-    cmd = f'schtasks /create /tn "CPFANI_ManutencaoRede" /tr "\"{target_path}\"" /sc onlogon /rl highest /f'
-    res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if res.returncode == 0:
-        _log("Manutencao de Rede agendada.", "OK")
-        return True
-    _log(f"Erro agendar Manutencao de Rede: {res.stderr}", "AVISO")
-    return False
-
-def schedule_instalar_tudo():
-    target_path = _safe_copy_to_scripts("instalar_tudo.ps1")
-    cmd_run = f'powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "{target_path}"'
-    cmd = f'schtasks /create /tn "CPFANI_InstalarTudo" /tr "{cmd_run}" /sc onlogon /rl highest /f'
-    res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if res.returncode == 0:
-        _log("Atualizador de Softwares agendado.", "OK")
-        return True
-    _log(f"Erro agendar Instalador: {res.stderr}", "AVISO")
-    return False
-
 def _get_hardware_info():
     info = {}
     try:
         info["Nome_Computador"] = os.environ.get("COMPUTERNAME", platform.node())
-        model = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_ComputerSystem).Model"', shell=True, text=True).strip()
+        model = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_ComputerSystem).Model"', shell=True, text=True, creationflags=0x08000000).strip()
         info["Modelo_Sistema"] = model if model else "N/A"
-        cpu = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_Processor).Name"', shell=True, text=True).strip()
+        cpu = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_Processor).Name"', shell=True, text=True, creationflags=0x08000000).strip()
         info["Processador"] = cpu if cpu else "N/A"
-        ram_raw = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"', shell=True, text=True).strip()
+        ram_raw = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"', shell=True, text=True, creationflags=0x08000000).strip()
         try:
             if ram_raw.isdigit(): info["Memoria_RAM"] = f"{round(int(ram_raw) / (1024**3), 1)} GB"
             else: info["Memoria_RAM"] = "N/A"
         except ValueError: info["Memoria_RAM"] = "N/A"
-        os_name = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_OperatingSystem).Caption"', shell=True, text=True).strip()
+        os_name = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_OperatingSystem).Caption"', shell=True, text=True, creationflags=0x08000000).strip()
         info["Windows"] = os_name if os_name else "N/A"
-        serial = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_BIOS).SerialNumber"', shell=True, text=True).strip()
+        serial = subprocess.check_output('powershell -Command "(Get-CimInstance Win32_BIOS).SerialNumber"', shell=True, text=True, creationflags=0x08000000).strip()
         info["Serial_BIOS"] = serial if serial else "N/A"
     except Exception as e:
         _log(f"Erro ao coletar hardware: {e}", "AVISO")
@@ -697,7 +664,7 @@ def _get_anydesk_id():
     for exe in exe_paths:
         if os.path.exists(exe):
             try:
-                result = subprocess.run([exe, "--get-id"], capture_output=True, text=True, timeout=10)
+                result = subprocess.run([exe, "--get-id"], capture_output=True, text=True, timeout=10, creationflags=0x08000000)
                 if result.stdout.strip().isdigit(): return result.stdout.strip()
             except: pass
     return "AnyDesk não instalado"
