@@ -1,4 +1,4 @@
-"""gui.py — V5.9.4.6 (Edição CP Fani: Seleção Global, Prompt de Reinício e Smart-Installer Flameshot)"""
+"""gui.py — V5.9.4.7 (Edição CP Fani: Seleção Global, Prompt de Reinício e Smart-Installer Flameshot)"""
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
@@ -43,7 +43,7 @@ def show_windows_toast(title, message):
     $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
     [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
     """
-    subprocess.Popen(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_script], creationflags=subprocess.CREATE_NO_WINDOW)
+    subprocess.Popen(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_script], creationflags=0x08000000)
 
 import mod_config
 import mod_instalar
@@ -131,7 +131,6 @@ class CPFani_GUI(ctk.CTk):
         sw_header.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(sw_header, text="4. Softwares e Office", font=("", 12, "bold")).pack(side="left")
         
-        # Botões de Seleção Global (Todos / Nenhum)
         btn_none = ctk.CTkButton(sw_header, text="Limpar Todos", font=("", 10), width=80, height=22, fg_color="#2b2b2b", hover_color="#3a3a3a", command=self.select_none_apps)
         btn_none.pack(side="right", padx=2)
         btn_all = ctk.CTkButton(sw_header, text="Selecionar Todos", font=("", 10), width=95, height=22, fg_color="#2b2b2b", hover_color="#3a3a3a", command=self.select_all_apps)
@@ -217,20 +216,11 @@ class CPFani_GUI(ctk.CTk):
             self.current_app_label.configure(text=current_app_text)
         self.update_idletasks()
 
-    def start_deploy(self):
-        if not messagebox.askyesno("Confirmar", "Iniciar provisionamento (Modo Infiltrado + Self-Healing)?"): 
-            return
-        self.btn_run.configure(state="disabled", text="A EXECUTAR...")
-        self.log_area.configure(state="normal")
-        self.log_area.delete("1.0", "end")
-        self.log_area.configure(state="disabled")
-        threading.Thread(target=self._work, daemon=True).start()
-
     def install_smart_flameshot(self):
         self.log("Analisando repositórios do Flameshot (Chocolatey vs GitHub v13.3.0)...")
         choco_version = "0.0.0"
         try:
-            res = subprocess.run(["choco", "info", "flameshot", "--limit-output"], capture_output=True, text=True, timeout=10)
+            res = subprocess.run(["choco", "info", "flameshot", "--limit-output"], capture_output=True, text=True, timeout=10, creationflags=0x08000000)
             if res.returncode == 0 and res.stdout:
                 parts = res.stdout.strip().split('|')
                 if len(parts) >= 2:
@@ -254,7 +244,7 @@ class CPFani_GUI(ctk.CTk):
                 os.makedirs(os.path.dirname(temp_msi), exist_ok=True)
                 urllib.request.urlretrieve(msi_url, temp_msi)
                 self.log("Executando instalação silenciosa do MSI corporativo...")
-                install_res = subprocess.run(["msiexec", "/i", temp_msi, "/qn", "/norestart"], capture_output=True)
+                install_res = subprocess.run(["msiexec", "/i", temp_msi, "/qn", "/norestart"], capture_output=True, creationflags=0x08000000)
                 if install_res.returncode in [0, 3010]:
                     self.log("✓ Flameshot v13.3.0 instalado via GitHub MSI com sucesso.", "OK")
                     return True
@@ -362,10 +352,9 @@ class CPFani_GUI(ctk.CTk):
             self.update_status("✓ Setup finalizado com sucesso!", 100)
             show_windows_toast("CP Fani - Sucesso", "Provisionamento concluído com sucesso!")
             
-        # Pergunta se o usuário deseja reiniciar a máquina agora
         if messagebox.askyesno("Reiniciar Computador", "O provisionamento do computador foi concluído com sucesso.\n\nDeseja reiniciar o computador agora para aplicar todas as diretivas de teclado de forma definitiva?"):
             self.log("Forçando reinício imediato do sistema operacional...", "INFO")
-            subprocess.Popen(["shutdown", "/r", "/t", "5", "/f"], creationflags=subprocess.CREATE_NO_WINDOW)
+            subprocess.Popen(["shutdown", "/r", "/t", "5", "/f"], creationflags=0x08000000)
 
 if __name__ == "__main__":
     Path(r"C:\Scripts\Logs").mkdir(parents=True, exist_ok=True)
