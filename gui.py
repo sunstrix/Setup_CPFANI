@@ -1,4 +1,4 @@
-"""gui.py — V5.9.4.7 (Edição CP Fani: Seleção Global, Prompt de Reinício e Smart-Installer Flameshot)"""
+"""gui.py — V5.9.4.9 (Edição CP Fani: Seleção Global, Prompt de Reinício e Smart-Installer Flameshot)"""
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
@@ -64,7 +64,7 @@ class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Setup Automatizado CP Fani — V5.9.4 (Infiltrado + Self-Healing)")
-        self.geometry("740x780")
+        self.geometry("740x800")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
         self._build_ui()
@@ -103,12 +103,18 @@ class CPFani_GUI(ctk.CTk):
         sec_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         sec_frame.pack(padx=20, pady=5, fill="x")
         ctk.CTkLabel(sec_frame, text="2. Segurança e Privacidade", font=("", 12, "bold")).pack(anchor="w", padx=10)
+        
         self.sec_lgpd = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(sec_frame, text="Políticas LGPD (Remove Hello) + Sincronizar NTP.br", variable=self.sec_lgpd).pack(anchor="w", padx=10, pady=5)
+        ctk.CTkCheckBox(sec_frame, text="Políticas de Privacidade/LGPD + Sincronizar NTP.br", variable=self.sec_lgpd).pack(anchor="w", padx=10, pady=4)
+        
+        # Nova caixa de seleção explícita para o Windows Hello
+        self.sec_hello = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(sec_frame, text="Desabilitar Windows Hello, Biometria e Tela de Boas-Vindas", variable=self.sec_hello).pack(anchor="w", padx=10, pady=4)
+        
         self.sec_firewall = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(sec_frame, text="Firewall: Restringir SMB/RPC apenas à Rede Local (Whitelist)", variable=self.sec_firewall).pack(anchor="w", padx=10, pady=2)
+        ctk.CTkCheckBox(sec_frame, text="Firewall: Restringir SMB/RPC apenas à Rede Local (Whitelist)", variable=self.sec_firewall).pack(anchor="w", padx=10, pady=4)
         self.sec_bloatware = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(sec_frame, text="Remoção Agressiva de Bloatware (AllUsers)", variable=self.sec_bloatware).pack(anchor="w", padx=10, pady=2)
+        ctk.CTkCheckBox(sec_frame, text="Remoção Agressiva de Bloatware (AllUsers)", variable=self.sec_bloatware).pack(anchor="w", padx=10, pady=4)
 
         # 3. AUTOMAÇÃO LOGON
         tasks_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
@@ -277,7 +283,8 @@ class CPFani_GUI(ctk.CTk):
 
             self.update_status("► Aplicando Segurança e LGPD...", (completed / total_tasks) * 100, "")
             try:
-                if self.sec_lgpd.get(): mod_config.apply_security_lgpd()
+                # Agora repassa os valores de LGPD e Hello de forma individual
+                mod_config.apply_security_lgpd(apply_lgpd=self.sec_lgpd.get(), disable_hello=self.sec_hello.get())
                 if self.sec_firewall.get(): mod_config.apply_firewall_rules()
                 if self.sec_bloatware.get(): mod_config.remove_agressive_bloatware(SETTINGS.get("bloatware_remove", []))
             except: erros.append("Segurança")
