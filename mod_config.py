@@ -1,4 +1,4 @@
-"""mod_config.py — V5.9.4.7 (Edição CP Fani: Scanner Universal, Quebra de Cache do Explorer e Invisibilidade do Console)"""
+"""mod_config.py — V5.9.4.8 (Edição CP Fani: Varredura Universal, Neutralização de Cache do OneDrive e Explorer)"""
 import winreg
 import subprocess
 import os
@@ -41,7 +41,7 @@ def _apply_to_all_real_users():
                             if not profile_path or "System32" in profile_path:
                                 continue
                             
-                            # Injeção pura sem ganchos IFEO problemáticos
+                            # Injeção cirúrgica com processos de background devidamente finalizados
                             subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
                             subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
                             subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\OneDrive", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=0x08000000)
@@ -215,20 +215,20 @@ def set_apps_to_startup_all_users():
     startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
     os.makedirs(startup_path, exist_ok=True)
     
-    _log("Nivel 11: Sanando cache persistente e limpando interceptadores de imagem...", "INFO")
+    _log("Nivel 11: Purgando cache em memoria do OneDrive e do Shell...", "INFO")
     try:
-        # PURGA GERAL E DEFINITIVA DE IFEO ANTIGO (Remove ganchos que faziam o terminal abrir ao usar a tecla)
-        ifeo = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
-        subprocess.run(["reg", "delete", f"HKLM\\{ifeo}\\SnippingTool.exe", "/f"], capture_output=True, creationflags=0x08000000)
-        subprocess.run(["reg", "delete", f"HKLM\\{ifeo}\\ScreenClippingHost.exe", "/f"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["taskkill", "/f", "/im", "SnippingTool.exe"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["taskkill", "/f", "/im", "ScreenClippingHost.exe"], capture_output=True, creationflags=0x08000000)
+        subprocess.run(["taskkill", "/f", "/im", "flameshot.exe"], capture_output=True, creationflags=0x08000000)
         
-        # QUEBRA DE CACHE DO EXPLORER: Derruba o Explorer para ele descarregar a memória antes de alterarmos os registros das Hives
+        # QUEBRA DE CACHE DE DIRETIVAS DE MEMÓRIA: Derruba OneDrive e Explorer ANTES de escrever nas Hives corporativas
+        subprocess.run(["taskkill", "/f", "/im", "OneDrive.exe"], capture_output=True, creationflags=0x08000000)
         subprocess.run(["taskkill", "/f", "/im", "explorer.exe"], capture_output=True, creationflags=0x08000000)
-        time.sleep(1)
+        time.sleep(1.5)
         
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\TabletPC", "DisableSnippingTool", 1, winreg.REG_DWORD)
         
-        # Injeta as chaves em todos os profiles locais cadastrados
+        # Realiza a varredura e gravação pura com os processos de background desativados
         _apply_to_all_real_users()
 
         ps_nuke_snipping = """
@@ -239,9 +239,6 @@ def set_apps_to_startup_all_users():
         Get-AppxProvisionedPackage -Online | Where-Object {$_.DisplayName -match 'SnippingTool'} | Remove-AppxProvisionedPackage -Online
         """
         subprocess.run(["powershell", "-NoProfile", "-Command", ps_nuke_snipping], capture_output=True, creationflags=0x08000000)
-        
-        flameshot_exe = r"C:\Program Files\Flameshot\bin\flameshot.exe"
-        if not os.path.exists(flameshot_exe): flameshot_exe = r"C:\Program Files\Flameshot\flameshot.exe"
         
     except Exception as e:
         _log(f"Aviso no Mapeamento Geral Nível 11: {e}", "AVISO")
