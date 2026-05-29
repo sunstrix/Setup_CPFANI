@@ -1,4 +1,4 @@
-"""gui.py — V5.9.4.9 (Edição CP Fani: Seleção Global, Prompt de Reinício e Smart-Installer Flameshot)"""
+"""gui.py — V5.9.5.2 (Edição CP Fani: Interface Estabilizada e Seletor Windows Hello)"""
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
@@ -63,7 +63,7 @@ SETTINGS = load_settings()
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Setup Automatizado CP Fani — V5.9.4 (Infiltrado + Self-Healing)")
+        self.title("Setup Automatizado CP Fani — V5.9.5")
         self.geometry("740x800")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
@@ -88,7 +88,7 @@ class CPFani_GUI(ctk.CTk):
                     pass
         
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
-        ctk.CTkLabel(header_frame, text="v5.9.4  |  Gestão de Endpoints (Adaptação Dinâmica)", font=("Segoe UI", 11), text_color="#666666").pack()
+        ctk.CTkLabel(header_frame, text="v5.9.5  |  Gestão de Endpoints (Adaptação Dinâmica)", font=("Segoe UI", 11), text_color="#666666").pack()
 
         # 1. INTERFACE
         ui_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
@@ -107,7 +107,6 @@ class CPFani_GUI(ctk.CTk):
         self.sec_lgpd = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(sec_frame, text="Políticas de Privacidade/LGPD + Sincronizar NTP.br", variable=self.sec_lgpd).pack(anchor="w", padx=10, pady=4)
         
-        # Nova caixa de seleção explícita para o Windows Hello
         self.sec_hello = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(sec_frame, text="Desabilitar Windows Hello, Biometria e Tela de Boas-Vindas", variable=self.sec_hello).pack(anchor="w", padx=10, pady=4)
         
@@ -261,6 +260,15 @@ class CPFani_GUI(ctk.CTk):
             
         return mod_instalar._choco_install("flameshot")
 
+    def start_deploy(self):
+        if not messagebox.askyesno("Confirmar", "Iniciar provisionamento (Modo Infiltrado + Self-Healing)?"): 
+            return
+        self.btn_run.configure(state="disabled", text="A EXECUTAR...")
+        self.log_area.configure(state="normal")
+        self.log_area.delete("1.0", "end")
+        self.log_area.configure(state="disabled")
+        threading.Thread(target=self._work, daemon=True).start()
+
     def _work(self):
         erros = []
         try:
@@ -283,7 +291,6 @@ class CPFani_GUI(ctk.CTk):
 
             self.update_status("► Aplicando Segurança e LGPD...", (completed / total_tasks) * 100, "")
             try:
-                # Agora repassa os valores de LGPD e Hello de forma individual
                 mod_config.apply_security_lgpd(apply_lgpd=self.sec_lgpd.get(), disable_hello=self.sec_hello.get())
                 if self.sec_firewall.get(): mod_config.apply_firewall_rules()
                 if self.sec_bloatware.get(): mod_config.remove_agressive_bloatware(SETTINGS.get("bloatware_remove", []))
