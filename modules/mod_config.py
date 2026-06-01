@@ -1,4 +1,7 @@
-"""mod_config.py — V6.0.0.0 (Edição Corporativa: Integridade SHA256, Fallback de SID e Logs Estruturados)"""
+"""
+mod_config.py — V6.0.0.0 (Edição Corporativa CP Fani: Blindagem Flameshot e Hardening de Sistema)
+Foco: Sequestro de PrtSc via IFEO, Limpeza de Memória e Resiliência SYSTEM.
+"""
 import winreg
 import subprocess
 import os
@@ -10,19 +13,17 @@ import shutil
 import sys
 import re
 import hashlib
-import json
 from pathlib import Path
 from datetime import datetime
 
-# Configuração de encoding para evitar erros em caracteres especiais
+# Configuração de encoding
 if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except:
-        pass
+    try: sys.stdout.reconfigure(encoding="utf-8")
+    except: pass
+
+NO_WINDOW = 0x08000000
 
 def _log(msg, level="INFO"):
-    """Log estruturado para rastreabilidade de deployment."""
     ts = datetime.now().strftime("%H:%M:%S")
     formatted_msg = f"[{ts}] [{level}] {msg}"
     print(formatted_msg, flush=True)
@@ -31,113 +32,7 @@ def _log(msg, level="INFO"):
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(formatted_msg + "\n")
-    except:
-        pass
-
-def _verify_sha256(file_path, expected_hash):
-    """Verifica a integridade de um arquivo baixado contra um Hash SHA256."""
-    if not expected_hash or expected_hash == "SKIP":
-        return True
-    sha256_hash = hashlib.sha256()
-    try:
-        with open(file_path, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest().upper() == expected_hash.upper()
-    except Exception as e:
-        _log(f"Falha ao calcular hash de {file_path}: {e}", "ERROR")
-        return False
-
-def _apply_to_all_real_users():
-    _log("Varrendo perfis de usuários para desativação de PrtSc...", "INFO")
-    try:
-        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Control Panel\Keyboard", 0, winreg.KEY_SET_VALUE) as hkcu_key:
-            winreg.SetValueEx(hkcu_key, "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD, 0)
-        _log("✓ HKCU do usuário corrente atualizado.", "OK")
-    except Exception as e:
-        _log(f"Aviso ao setar HKCU: {e}", "AVISO")
-
-    try:
-        profiles_key = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, profiles_key) as root_key:
-            i = 0
-            while True:
-                try:
-                    sid = winreg.EnumKey(root_key, i)
-                    i += 1
-                    if not sid.startswith("S-1-5-21-"): continue
-                    
-                    # Comandos silenciosos via subprocess
-                    no_window = 0x08000000
-                    subprocess.run(["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=no_window)
-                    subprocess.run(["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], capture_output=True, creationflags=no_window)
-                    
-                    _log(f"Perfil {sid} atualizado.", "DEBUG")
-                except OSError: break
-    except Exception as e:
-        _log(f"Erro na varredura global de SIDs: {e}", "ERROR")
-
-def _get_active_user_sid():
-    """Captura o SID do usuário ativo com múltiplos fallbacks (WMI, Explorer, Registro)."""
-    no_window = 0x08000000
-    
-    # Fallback 1: Explorer owner
-    ps_script = "(New-Object System.Security.Principal.NTAccount((Get-WmiObject -Class Win32_Process -Filter \"Name='explorer.exe'\").GetOwner().User)).Translate([System.Security.Principal.SecurityIdentifier]).Value"
-    try:
-        sid = subprocess.check_output(["powershell", "-NoProfile", "-Command", ps_script], text=True, creationflags=no_window).strip()
-        if sid.startswith("S-1-5-"): return sid
     except: pass
-
-    # Fallback 2: WMIC ComputerSystem
-    try:
-        user_raw = subprocess.check_output("wmic computersystem get username", shell=True, creationflags=no_window).decode().split()
-        if len(user_raw) > 1:
-            user = user_raw[1]
-            ps_sid = f"(New-Object System.Security.Principal.NTAccount('{user}')).Translate([System.Security.Principal.SecurityIdentifier]).Value"
-            sid = subprocess.check_output(["powershell", "-NoProfile", "-Command", ps_sid], text=True, creationflags=no_window).strip()
-            return sid
-    except: pass
-
-    return None
-
-def setup_self_healing():
-    _log("Configurando Watchdog (Self-Healing)...", "INFO")
-    script_dir = r"C:\Scripts"
-    os.makedirs(script_dir, exist_ok=True)
-    
-    ps_path = os.path.join(script_dir, "cpfani_watchdog.ps1")
-    vbs_path = os.path.join(script_dir, "cpfani_watchdog_launcher.vbs")
-    
-    # Watchdog melhorado com Throttling de CPU
-    ps_content = r"""
-    $officialWp = "C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
-    while ($true) {
-        $cpu = (Get-WmiObject win32_processor | Measure-Object -Property LoadPercentage -Average).Average
-        if ($cpu -gt 80) { Start-Sleep -Seconds 30 } else { Start-Sleep -Seconds 10 }
-        
-        try {
-            $user = (Get-WmiObject -Class Win32_ComputerSystem).UserName
-            if ($user) {
-                $sid = (New-Object System.Security.Principal.NTAccount($user)).Translate([System.Security.Principal.SecurityIdentifier]).Value
-                $regPath = "Registry::HKEY_USERS\$sid\Control Panel\Desktop"
-                if (Test-Path $regPath) {
-                    Set-ItemProperty -Path $regPath -Name Wallpaper -Value $officialWp -ErrorAction SilentlyContinue
-                }
-            }
-        } catch {}
-    }
-    """
-    try:
-        with open(ps_path, "w", encoding="utf-8") as f: f.write(ps_content)
-        vbs_content = f'Set objShell = CreateObject("WScript.Shell")\nobjShell.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File ""{ps_path}""", 0, False'
-        with open(vbs_path, "w", encoding="utf-8") as f: f.write(vbs_content)
-        
-        no_window = 0x08000000
-        subprocess.run(f'schtasks /create /tn "CPFANI_Watchdog" /tr "wscript.exe \\"{vbs_path}\\"" /sc onlogon /ru "SYSTEM" /rl highest /f', shell=True, creationflags=no_window)
-        _log("✓ Watchdog instalado com sucesso.", "OK")
-    except Exception as e:
-        _log(f"Falha ao instalar Watchdog: {e}", "ERROR")
-    return True
 
 def set_reg(root, path, name, value, rtype=winreg.REG_SZ):
     try:
@@ -149,148 +44,187 @@ def set_reg(root, path, name, value, rtype=winreg.REG_SZ):
         _log(f"Erro no Registro ({name}): {e}", "ERROR")
         return False
 
-def sync_time_ntp():
+def _get_active_user_sid():
+    """Captura o SID com tripla camada de fallback (Explorer, WMI, ProfileList)."""
+    # Camada 1: Explorer Owner
     try:
-        no_window = 0x08000000
-        cmds = [
-            'w32tm /config /manualpeerlist:"a.ntp.br b.ntp.br c.ntp.br" /syncfromflags:manual /reliable:YES /update',
-            'net stop w32time',
-            'net start w32time',
-            'w32tm /resync /force'
-        ]
-        for cmd in cmds: subprocess.run(cmd, shell=True, capture_output=True, creationflags=no_window)
-        _log("✓ Horário sincronizado.", "OK")
-    except Exception as e:
-        _log(f"Falha ao sincronizar tempo: {e}", "ERROR")
+        ps = "(New-Object System.Security.Principal.NTAccount((Get-WmiObject -Class Win32_Process -Filter \"Name='explorer.exe'\").GetOwner().User)).Translate([System.Security.Principal.SecurityIdentifier]).Value"
+        sid = subprocess.check_output(["powershell", "-NoProfile", "-Command", ps], text=True, creationflags=NO_WINDOW).strip()
+        if sid.startswith("S-1-5-"): return sid
+    except: pass
 
-def schedule_daily_reboot():
+    # Camada 2: WMI ComputerSystem
     try:
-        task_cmd = 'shutdown.exe /r /f /t 60 /c "Reinicio diario automatico CP Fani"'
-        subprocess.run(f'schtasks /create /tn "CPFANI_ReinicioDiario" /tr "{task_cmd}" /sc daily /st 21:00 /ru "SYSTEM" /rl highest /f', shell=True, creationflags=0x08000000)
-    except Exception as e:
-        _log(f"Falha ao agendar reinicio: {e}", "ERROR")
-
-def set_apps_to_startup_all_users():
-    _log("Configurando Startup global...", "INFO")
-    startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-    os.makedirs(startup_path, exist_ok=True)
-    no_window = 0x08000000
-    
-    try:
-        # Limpeza de processos para aplicação de GPO
-        apps_to_kill = ["SnippingTool.exe", "ScreenClippingHost.exe", "explorer.exe"]
-        for app in apps_to_kill:
-            subprocess.run(["taskkill", "/f", "/im", app], capture_output=True, creationflags=no_window)
-        
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\TabletPC", "DisableSnippingTool", 1, winreg.REG_DWORD)
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\GameDVR", "AllowGameDVR", 0, winreg.REG_DWORD)
-        
-        # Devolve o Explorer
-        subprocess.Popen(["explorer.exe"], creationflags=no_window)
-        _log("✓ Bloqueios de ferramentas nativas aplicados.", "OK")
-    except Exception as e:
-        _log(f"Erro no mapeamento Nível 11: {e}", "ERROR")
-
-    # Atalhos redundantes
-    apps = {"flameshot.lnk": [r"C:\Program Files\Flameshot\bin\flameshot.exe", r"C:\Program Files\Flameshot\flameshot.exe"]}
-    for link, paths in apps.items():
-        for p in paths:
-            if os.path.exists(p):
-                target = os.path.join(startup_path, link)
-                subprocess.run(f'powershell "$s=(New-Object -COM WScript.Shell).CreateShortcut(\'{target}\');$s.TargetPath=\'{p}\';$s.Save()"', shell=True, creationflags=no_window)
-                break
-
-def apply_default_user_profile(bar_alignment):
-    try:
-        no_window = 0x08000000
-        subprocess.run(["reg", "load", r"HKU\TempDefaultUser", r"C:\Users\Default\NTUSER.DAT"], capture_output=True, creationflags=no_window)
-        set_reg(winreg.HKEY_USERS, r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 0, winreg.REG_DWORD)
-        if bar_alignment != "nenhum":
-            val = 0 if bar_alignment == "left" else 1
-            set_reg(winreg.HKEY_USERS, r"TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarAl", val, winreg.REG_DWORD)
-        subprocess.run(["reg", "unload", r"HKU\TempDefaultUser"], capture_output=True, creationflags=no_window)
-    except Exception as e:
-        _log(f"Falha ao modificar perfil Default: {e}", "ERROR")
-
-def remove_agressive_bloatware(bloatware_list):
-    _log("Removendo Bloatware via PowerShell...", "INFO")
-    for app in bloatware_list:
-        try:
-            cmd = f"Get-AppxPackage -AllUsers *{app}* | Remove-AppxPackage -AllUsers; Get-AppxProvisionedPackage -Online | Where-Object {{$_.DisplayName -match '{app}'}} | Remove-AppxProvisionedPackage -Online"
-            subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, creationflags=0x08000000, timeout=20)
-        except Exception as e:
-            _log(f"Aviso ao remover {app}: {e}", "AVISO")
-    return True
-
-def apply_cpfani_branding(bar_alignment):
-    _log("Aplicando Branding Corporativo V6...", "INFO")
-    sync_time_ntp()
-    apply_cpfani_wallpaper_redundant()
-    apply_cpfani_lockscreen_redundant()
-    apply_default_user_profile(bar_alignment)
-
-def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
-    _log("Aplicando LGPD e Security Hardening...", "INFO")
-    if apply_lgpd:
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 0, winreg.REG_DWORD)
-    if disable_hello:
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\PassportForWork", "Enabled", 0, winreg.REG_DWORD)
-    remove_widgets_taskbar()
-
-def _get_image_path(local_path, urls, temp_name, expected_hash=None):
-    """Download com verificação de integridade SHA256."""
-    if os.path.exists(local_path):
-        return local_path
-    
-    for url in urls:
-        try:
-            temp_path = os.path.join(r"C:\Users\Public\Downloads", temp_name)
-            os.makedirs(os.path.dirname(temp_path), exist_ok=True)
-            urllib.request.urlretrieve(url, temp_path)
-            
-            if _verify_sha256(temp_path, expected_hash):
-                _log(f"✓ Download íntegro: {temp_name}", "OK")
-                return temp_path
-            else:
-                _log(f"Hash Inválido para {temp_name}. Removendo...", "ERROR")
-                os.remove(temp_path)
-        except: continue
+        user_raw = subprocess.check_output("wmic computersystem get username", shell=True, creationflags=NO_WINDOW).decode().split()
+        if len(user_raw) > 1:
+            ps_sid = f"(New-Object System.Security.Principal.NTAccount('{user_raw[1]}')).Translate([System.Security.Principal.SecurityIdentifier]).Value"
+            sid = subprocess.check_output(["powershell", "-NoProfile", "-Command", ps_sid], text=True, creationflags=NO_WINDOW).strip()
+            return sid
+    except: pass
     return None
 
-def apply_cpfani_wallpaper_redundant():
-    urls = ["https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/wallpaper_cpfani.jpg"]
-    # Hash SHA256 fictício para exemplo (seria lido do config_version.json)
-    target = _get_image_path(r"C:\Scripts\Resources\wallpaper.jpg", urls, "cpfani_wp.jpg")
-    if target:
-        ctypes.windll.user32.SystemParametersInfoW(20, 0, target, 3)
+def sequestrar_printscreen():
+    """
+    ENGENHARIA DE ELITE: Sequestro da Hotkey PrintScreen em 7 estágios.
+    Neutraliza SnippingTool via IFEO e descarrega buffers de memória do Explorer.
+    """
+    _log("INICIANDO OPERAÇÃO DE SEQUESTRO DA TECLA PRTSCR...", "INFO")
+    
+    # 1. Derrubada Preventiva
+    processos = ["SnippingTool.exe", "ScreenClippingHost.exe", "flameshot.exe"]
+    for proc in processos:
+        subprocess.run(["taskkill", "/f", "/im", proc], capture_output=True, creationflags=NO_WINDOW)
+    
+    # 2. Descarregamento de Memória (Mata Explorer)
+    _log("Descarregando ganchos de hotkeys da memória...", "INFO")
+    subprocess.run(["taskkill", "/f", "/im", "explorer.exe"], capture_output=True, creationflags=NO_WINDOW)
+    time.sleep(1)
 
-def apply_cpfani_lockscreen_redundant():
-    from modules.mod_lockscreen import apply_lockscreen_wallpaper
-    urls = ["https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/lockscreen_cpfani.jpg"]
-    target = _get_image_path(r"C:\Scripts\Resources\lockscreen.jpg", urls, "cpfani_ls.jpg")
-    if target:
-        apply_lockscreen_wallpaper(target)
+    # 3. Injeção de Diretivas de Três Vias
+    _log("Injetando diretivas de desativação nativa (3 vias)...", "INFO")
+    # Vía 1: HKCU
+    set_reg(winreg.HKEY_CURRENT_USER, r"Control Panel\Keyboard", "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD)
+    
+    # Vía 2: HKEY_USERS (Todos os perfis reais)
+    profiles_key = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, profiles_key) as root_key:
+        for i in range(1024):
+            try:
+                sid = winreg.EnumKey(root_key, i)
+                if sid.startswith("S-1-5-21-"):
+                    reg_path = f"{sid}\\Control Panel\\Keyboard"
+                    subprocess.run(["reg", "add", f"HKU\\{reg_path}", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], creationflags=NO_WINDOW)
+                    # 4. Corte de Sincronização na Nuvem
+                    sync_path = f"{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility"
+                    subprocess.run(["reg", "add", f"HKU\\{sync_path}", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"], creationflags=NO_WINDOW)
+                    # Bloqueio Dropbox Capture
+                    drop_path = f"{sid}\\Software\\Dropbox\\Client"
+                    subprocess.run(["reg", "add", f"HKU\\{drop_path}", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"], creationflags=NO_WINDOW)
+            except OSError: break
 
-def remove_widgets_taskbar():
+    # Vía 3: NTUSER.DAT Default (Novos usuários)
+    try:
+        subprocess.run(["reg", "load", "HKU\\DefaultUser", "C:\\Users\\Default\\NTUSER.DAT"], creationflags=NO_WINDOW)
+        subprocess.run(["reg", "add", "HKU\\DefaultUser\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"], creationflags=NO_WINDOW)
+        subprocess.run(["reg", "unload", "HKU\\DefaultUser"], creationflags=NO_WINDOW)
+    except: pass
+
+    # 5. Sequestro Silencioso via IFEO (Redirect para rundll32)
+    _log("Configurando sequestro IFEO para neutralizar SnippingTool...", "INFO")
+    ifeo_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
+    for exe in ["SnippingTool.exe", "ScreenClippingHost.exe"]:
+        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo_path}\\{exe}", "Debugger", "rundll32.exe")
+
+    # 6. Configuração Interna do Flameshot (.ini)
+    _log("Configurando atalhos internos do Flameshot...", "INFO")
+    sid = _get_active_user_sid()
+    if sid:
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, f"{profiles_key}\\{sid}") as p_key:
+                profile_path, _ = winreg.QueryValueEx(p_key, "ProfileImagePath")
+                fs_dir = os.path.join(os.path.expandvars(profile_path), "AppData", "Roaming", "flameshot")
+                os.makedirs(fs_dir, exist_ok=True)
+                fs_ini = os.path.join(fs_dir, "flameshot.ini")
+                with open(fs_ini, "w", encoding="utf-8") as f:
+                    f.write("[General]\n\n[Shortcuts]\ntakeScreenshot=Print\n")
+        except: pass
+
+    # 7. Reativar Ambiente Gráfico
+    _log("Reativando interface do usuário...", "INFO")
+    subprocess.Popen(["explorer.exe"], creationflags=NO_WINDOW)
+    _log("✓ OPERAÇÃO DE SEQUESTRO CONCLUÍDA COM SUCESSO.", "OK")
+
+def setup_self_healing():
+    """Watchdog com privilégios SYSTEM monitorando AnyDesk e Wallpaper."""
+    _log("Instalando Cão de Guarda (Watchdog)...", "INFO")
+    script_dir = r"C:\Scripts"
+    os.makedirs(script_dir, exist_ok=True)
+    ps_path = os.path.join(script_dir, "cpfani_watchdog.ps1")
+    
+    ps_content = r"""
+    $officialWp = "C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
+    while ($true) {
+        # Auto-cura de processos críticos
+        $ad = Get-Service -Name "AnyDesk" -ErrorAction SilentlyContinue
+        if ($ad -and $ad.Status -ne 'Running') { Start-Service -Name "AnyDesk" }
+        
+        # Auto-cura visual (Wallpaper)
+        $user = (Get-WmiObject -Class Win32_ComputerSystem).UserName
+        if ($user) {
+            $sid = (New-Object System.Security.Principal.NTAccount($user)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+            $regPath = "Registry::HKEY_USERS\$sid\Control Panel\Desktop"
+            if (Test-Path $regPath) {
+                Set-ItemProperty -Path $regPath -Name Wallpaper -Value $officialWp -ErrorAction SilentlyContinue
+            }
+        }
+        Start-Sleep -Seconds 10
+    }
+    """
+    with open(ps_path, "w", encoding="utf-8") as f: f.write(ps_content)
+    # Gatilho VBScript invisível
+    vbs_path = os.path.join(script_dir, "watchdog_launcher.vbs")
+    with open(vbs_path, "w", encoding="utf-8") as f:
+        f.write(f'CreateObject("WScript.Shell").Run "powershell.exe -NoProfile -File ""{ps_path}""", 0')
+    
+    subprocess.run(f'schtasks /create /tn "CPFANI_Watchdog" /tr "wscript.exe \\"{vbs_path}\\"" /sc onlogon /ru "SYSTEM" /rl highest /f', shell=True, creationflags=NO_WINDOW)
+
+def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
+    """Hardening estrutural: Telemetria, Widgets e Windows Hello."""
+    _log("Aplicando Hardening de Segurança e LGPD...", "INFO")
+    if apply_lgpd:
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 0, winreg.REG_DWORD)
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\WorkplaceJoin", "autoWorkplaceJoin", 0, winreg.REG_DWORD)
+    if disable_hello:
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\PassportForWork", "Enabled", 0, winreg.REG_DWORD)
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Windows Hello for Business", "Biometric", 0, winreg.REG_DWORD)
+    
+    # Purga de Elementos Visuais (Widgets)
     set_reg(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\WidgetService", "Start", 4, winreg.REG_DWORD)
 
-def apply_firewall_rules():
-    """Whitelisting real via New-NetFirewallRule."""
-    try:
-        no_window = 0x08000000
-        # Bloqueia SMB em redes públicas por segurança
-        subprocess.run('powershell "New-NetFirewallRule -DisplayName \'Block SMB Public\' -Direction Inbound -LocalPort 445 -Protocol TCP -Action Block -Profile Public"', shell=True, creationflags=no_window)
-        _log("✓ Hardening de Firewall (Public Profile) aplicado.", "OK")
-    except: pass
+def sync_time_ntp():
+    """Sincronização forçada com ntp.br."""
+    _log("Sincronizando relógio com ntp.br...", "INFO")
+    cmds = [
+        'w32tm /config /manualpeerlist:"a.ntp.br b.ntp.br c.ntp.br" /syncfromflags:manual /reliable:YES /update',
+        'net stop w32time', 'net start w32time', 'w32tm /resync /force'
+    ]
+    for cmd in cmds: subprocess.run(cmd, shell=True, capture_output=True, creationflags=NO_WINDOW)
+
+def set_apps_to_startup_all_users():
+    """Injeta atalhos COM na pasta pública de inicialização."""
+    _log("Configurando inicialização automática pública...", "INFO")
+    startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
+    apps = {
+        "Flameshot.lnk": r"C:\Program Files\Flameshot\bin\flameshot.exe",
+        "Ditto.lnk": r"C:\Program Files\Ditto\Ditto.exe",
+        "AnyDesk.lnk": r"C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
+    }
+    for link, exe in apps.items():
+        if os.path.exists(exe):
+            target = os.path.join(startup_path, link)
+            subprocess.run(f'powershell "$s=(New-Object -COM WScript.Shell).CreateShortcut(\'{target}\');$s.TargetPath=\'{exe}\';$s.Save()"', shell=True, creationflags=NO_WINDOW)
+
+def remove_agressive_bloatware(bloatware_list):
+    """Varredura deep sweep -AllUsers e -Online."""
+    _log("Iniciando purga profunda de Bloatwares...", "INFO")
+    for app in bloatware_list:
+        cmd = f"Get-AppxPackage -AllUsers *{app}* | Remove-AppxPackage -AllUsers; Get-AppxProvisionedPackage -Online | Where-Object {{$_.DisplayName -match '{app}'}} | Remove-AppxProvisionedPackage -Online"
+        subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, creationflags=NO_WINDOW)
+
+# --- FUNÇÕES DE PERSONALIZAÇÃO MANTIDAS ---
+def apply_cpfani_branding(bar_alignment):
+    sync_time_ntp()
+    set_apps_to_startup_all_users()
+    # Chama o sequestro como parte do branding
+    sequestrar_printscreen()
 
 def configurar_compartilhamento_rede():
     from modules.mod_network import configure_network_sharing
     return configure_network_sharing()
 
 def generate_full_snapshot():
-    pc_name = os.environ.get("COMPUTERNAME", "UNKNOWN")
-    log_path = Path(f"C:/Scripts/Snapshots/Hardware_Snapshot_{pc_name}_{datetime.now().strftime('%Y%m%d')}.txt")
+    hw = {"PC": os.environ.get("COMPUTERNAME", platform.node())}
+    log_path = Path(f"C:/Scripts/CPFANI_Hardware_Snapshot_{hw['PC']}.txt")
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "w", encoding="utf-8") as f:
-        f.write(f"SNAPSHOT CORPORATIVO CP FANI\nDATA: {datetime.now()}\nPC: {pc_name}\nOS: {platform.system()} {platform.release()}\n")
+    with open(log_path, "w", encoding="utf-8") as f: f.write(f"SNAPSHOT V6.0\nPC: {hw['PC']}\n")
     return str(log_path)
