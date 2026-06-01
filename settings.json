@@ -1,51 +1,47 @@
 {
-  "metadata": {
-    "version": "5.9.5.5",
-    "project": "Setup Automatizado CP Fani",
-    "company": "CP Fani",
-    "author": "Alex Paulo",
-    "updated": "2026-05"
-  },
-  "apps": {
-    "choco": [
-      "googlechrome",
-      "anydesk",
-      "7zip",
-      "flameshot",
-      "teamviewer",
-      "vlc",
-      "winrar",
-      "vcredist-all",
-      "ditto",
-      "sharex"
-    ],
-    "onlyoffice": "onlyoffice-desktopeditors"
-  },
-  "bloatware_remove": [
-    "Microsoft.BingNews", "Microsoft.BingWeather", "Microsoft.GamingApp",
-    "Microsoft.GetHelp", "Microsoft.Getstarted", "Microsoft.Microsoft3DViewer",
-    "Microsoft.MicrosoftOfficeHub", "Microsoft.MicrosoftSolitaireCollection", 
-    "Microsoft.MixedReality.Portal", "Microsoft.People", "Microsoft.SkypeApp",
-    "Microsoft.WindowsMaps", "Microsoft.Xbox.TCUI", "Microsoft.XboxApp", 
-    "Microsoft.XboxGameOverlay", "Microsoft.XboxGamingOverlay", 
-    "Microsoft.XboxIdentityProvider", "Microsoft.XboxSpeechToTextOverlay", 
-    "Microsoft.ZuneVideo", "Microsoft.ZuneMusic", "Microsoft.YourPhone", 
-    "king.com.CandyCrushSaga", "king.com.CandyCrushSodaSaga",
-    "SpotifyAB.SpotifyMusic", "Clipchamp.Clipchamp", "McAfee", "TikTok"
-  ],
-  "drivers": {
-    "dell": "dellcommandupdate",
-    "lenovo": "lenovo-system-update",
-    "hp": "hp-support-assistant"
-  },
-  "features": {
-    "self_healing": true
-  },
-  "paths": {
-    "logo": "C:\\Scripts\\Setup_CPFANI\\resources\\logo_cpfani.png",
-    "wallpaper": "C:\\Scripts\\Setup_CPFANI\\resources\\wallpaper_cpfani.jpg",
-    "odt_setup": "C:\\Scripts\\Setup_CPFANI\\resources\\setup.exe",
-    "odt_config": "C:\\Scripts\\Setup_CPFANI\\resources\\configuration.xml",
-    "snapshot_output": "C:\\Scripts\\CPFANI_Hardware_Snapshot_{PC_NAME}.txt"
-  }
+    "user_preferences": {
+        "theme": "dark",
+        "taskbar_alignment": "left",
+        "wallpaper_enabled": true,
+        "lockscreen_enabled": true,
+        "bloatware_removal_enabled": true
+    },
+    "automation_settings": {
+        "apply_lgpd_policies": true,
+        "disable_windows_hello": true,
+        "sync_time_ntp": true,
+        "daily_reboot_enabled": false,
+        "daily_reboot_time": "21:00"
+    },
+    "network_sharing": {
+        "force_private_profile": true,
+        "enable_discovery_services": true,
+        "disable_password_protected_sharing": true,
+        "wsd_printer_support": true,
+        "allowed_local_network": "20.191.1.0/24"
+    },
+    "installation_policy": {
+        "use_redundancy": true,
+        "preferred_office_method": "odt",
+        "preferred_onlyoffice_method": "official_site",
+        "chocolatey_fallback": true,
+        "winget_fallback": true,
+        "local_network_share": "\\\\GI-PC2025\\Instaladores"
+    },
+    "security_and_integrity": {
+        "verify_sha256": true,
+        "strict_mode": false,
+        "log_level": "DEBUG",
+        "backup_registry_before_change": true
+    },
+    "paths": {
+        "log_file": "C:\\Scripts\\deployment.log",
+        "snapshot_dir": "C:\\Scripts\\Snapshots",
+        "temp_downloads": "C:\\Users\\Public\\Downloads"
+    },
+    "deployment_info": {
+        "last_admin_run": null,
+        "last_error": null,
+        "machine_name": null
+    }
 }
