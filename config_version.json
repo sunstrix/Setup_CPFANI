@@ -2,50 +2,62 @@
     "project_info": {
         "name": "Setup Automatizado CP Fani",
         "version": "6.0.0.0",
-        "author": "Engineered by Gemini & Sunstrix",
-        "last_update": "2024-05-20"
+        "author": "Alex Paulo",
+        "company": "CP Fani",
+        "last_update": "2026-06-01"
     },
     "security": {
         "integrity_check": true,
+        "verify_sha256": true,
         "hashes": {
             "wallpaper_cpfani.jpg": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
             "lockscreen_cpfani.jpg": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
             "instalar_tudo.ps1": "A54D88E06612DD15EB3834927236E557C1FC67C34D690E8F8077598858A999D5"
         }
     },
-    "network_discovery": {
-        "services": ["FdResPub", "SSDPDiscovery", "upnphost", "LanmanServer"],
-        "firewall_ports": [445, 139, 5357, 3389],
-        "default_category": "Private"
-    },
     "software_lists": {
-        "bloatware_to_remove": [
-            "Microsoft.ZuneVideo",
-            "Microsoft.ZuneMusic",
-            "Microsoft.SkypeApp",
-            "Microsoft.Messaging",
-            "Microsoft.OneConnect",
-            "Microsoft.BingWeather",
-            "Microsoft.BingNews",
-            "Microsoft.GetHelp",
-            "Microsoft.YourPhone"
-        ],
         "essential_apps": [
             "googlechrome",
-            "7zip",
             "anydesk",
+            "7zip",
             "flameshot",
-            "sharex",
-            "foxitreader"
-        ]
+            "teamviewer",
+            "vlc",
+            "winrar",
+            "vcredist-all",
+            "ditto",
+            "sharex"
+        ],
+        "bloatware_to_remove": [
+            "Microsoft.BingNews", "Microsoft.BingWeather", "Microsoft.GamingApp",
+            "Microsoft.GetHelp", "Microsoft.Getstarted", "Microsoft.Microsoft3DViewer",
+            "Microsoft.MicrosoftOfficeHub", "Microsoft.MicrosoftSolitaireCollection", 
+            "Microsoft.MixedReality.Portal", "Microsoft.People", "Microsoft.SkypeApp",
+            "Microsoft.WindowsMaps", "Microsoft.Xbox.TCUI", "Microsoft.XboxApp", 
+            "Microsoft.XboxGameOverlay", "Microsoft.XboxGamingOverlay", 
+            "Microsoft.XboxIdentityProvider", "Microsoft.XboxSpeechToTextOverlay", 
+            "Microsoft.ZuneVideo", "Microsoft.ZuneMusic", "Microsoft.YourPhone", 
+            "king.com.CandyCrushSaga", "king.com.CandyCrushSodaSaga",
+            "SpotifyAB.SpotifyMusic", "Clipchamp.Clipchamp", "McAfee", "TikTok"
+        ],
+        "driver_utilities": {
+            "dell": "dellcommandupdate",
+            "lenovo": "lenovo-system-update",
+            "hp": "hp-support-assistant"
+        }
     },
     "redundancy_methods": {
-        "microsoft_office": ["odt", "offline_installer", "chocolatey", "winget", "unc_share"],
+        "microsoft_office": ["odt", "chocolatey", "winget", "unc_share"],
         "only_office": ["official_site", "chocolatey", "winget", "local_installer"]
     },
-    "urls": {
-        "wallpaper": "https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/wallpaper_cpfani.jpg",
-        "lockscreen": "https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/lockscreen_cpfani.jpg",
-        "odt_config": "https://raw.githubusercontent.com/sunstrix/Setup_CPFANI/main/resources/configuration.xml"
+    "network_config": {
+        "services": ["FdResPub", "SSDPDiscovery", "upnphost", "LanmanServer", "Spooler"],
+        "firewall_ports": [445, 139, 5357, 3389],
+        "category": "Private"
+    },
+    "paths": {
+        "resources": "C:\\Scripts\\Setup_CPFANI\\resources",
+        "logs": "C:\\Scripts\\deployment.log",
+        "snapshots": "C:\\Scripts\\Snapshots"
     }
 }
