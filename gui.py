@@ -54,9 +54,12 @@ ctk.set_default_color_theme("blue")
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "settings.json")
 def load_settings():
     if not os.path.exists(SETTINGS_PATH): 
+        return {"apps": {"choco": ["googlechrome", "anydesk", "flameshot", "sharex", "7zip", "lightshot"]}, "bloatware_remove": ["Microsoft.ZuneVideo", "Microsoft.WindowsFeedbackHub"]}
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f: 
+            return json.load(f)
+    except:
         return {"apps": {"choco": []}, "bloatware_remove": []}
-    with open(SETTINGS_PATH, "r", encoding="utf-8") as f: 
-        return json.load(f)
 
 SETTINGS = load_settings()
 
