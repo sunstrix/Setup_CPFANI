@@ -2,6 +2,10 @@
 setlocal enabledelayedexpansion
 title Setup CP Fani - Launcher Corporativo V6
 
+:: ? CORRE«√O CRÕTICA: Garante que o script rode na pasta onde ele est· salvo
+:: %~dp0 extrai o Drive e o Caminho do arquivo .bat atual
+cd /d "%~dp0"
+
 :: Cores para o terminal
 set "GREEN=[92m"
 set "RED=[91m"
@@ -9,29 +13,29 @@ set "YELLOW=[93m"
 set "RESET=[0m"
 
 echo ============================================================
-echo        LAN√áADOR AUTOMATIZADO - SETUP CP FANI V6
+echo        LAN«ADOR AUTOMATIZADO - SETUP CP FANI V6
 echo ============================================================
 
-:: 1. Verifica√ß√£o de privil√©gios para o log inicial
+:: 1. VerificaÁ„o de privilÈgios para o log inicial
 net session >nul 2>&1
 if %errorLevel% == 0 (
-    echo [%GREEN%INFO%RESET%] Executando com privil√©gios de Administrador.
+    echo [%GREEN%INFO%RESET%] Executando com privilÈgios de Administrador.
 ) else (
-    echo [%YELLOW%AVISO%RESET%] Executando como Usu√°rio Padr√£o. Algumas fun√ß√µes de sistema solicitar√£o UAC.
+    echo [%YELLOW%AVISO%RESET%] Executando como Usu·rio Padr„o. Algumas funÁıes de sistema solicitar„o UAC.
 )
 
-:: 2. Detec√ß√£o de Python no PATH atual
+:: 2. DetecÁ„o de Python no PATH atual
 python --version >nul 2>&1
 if %errorLevel% == 0 (
-    echo [%GREEN%OK%RESET%] Python j√° est√° configurado no sistema.
+    echo [%GREEN%OK%RESET%] Python j· est· configurado no sistema.
     set "PYTHON_EXE=python"
     goto RUN_APP
 )
 
-echo [%YELLOW%AVISO%RESET%] Python n√£o detectado no PATH. Verificando instala√ß√µes locais...
+echo [%YELLOW%AVISO%RESET%] Python n„o detectado no PATH. Verificando instalaÁıes locais...
 
-:: 3. Tentativa de localizar Python em caminhos comuns (Local e Program Files)
-set "SEARCH_PATHS="%LocalAppData%\Programs\Python" "%ProgramFiles%\Python" "%ProgramFiles(x86)%\Python""
+:: 3. Tentativa de localizar Python em caminhos comuns
+set "SEARCH_PATHS="%LocalAppData%\Programs\Python" "%ProgramFiles%\Python""
 for %%P in (%SEARCH_PATHS%) do (
     if exist %%P (
         for /f "delims=" %%I in ('dir /b /s "%%~P\python.exe" 2^>nul') do (
@@ -42,34 +46,30 @@ for %%P in (%SEARCH_PATHS%) do (
     )
 )
 
-:: 4. Se n√£o encontrou, inicia instala√ß√£o autom√°tica
-echo [%RED%ERRO%RESET%] Python n√£o encontrado. Iniciando download do instalador...
+:: 4. InstalaÁ„o autom·tica se necess·rio
+echo [%RED%ERRO%RESET%] Python n„o encontrado. Iniciando download...
 set "PY_URL=https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
 set "PY_INSTALLER=%temp%\python_installer.exe"
 
 powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('%PY_URL%', '%PY_INSTALLER%')"
 
-echo [%YELLOW%INFO%RESET%] Instalando Python silenciosamente. Aguarde...
-start /wait "" "%PY_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
+echo [%YELLOW%INFO%RESET%] Instalando Python silenciosamente...
+start /wait "" "%PY_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1
 
-:: Re-verifica√ß√£o imediata ap√≥s instala√ß√£o
-echo [%YELLOW%INFO%RESET%] Atualizando sess√£o e re-verificando...
-:: Tenta caminhos fixos que o instalador costuma usar
+:: Re-verificaÁ„o apÛs instalaÁ„o
 if exist "C:\Program Files\Python311\python.exe" (
     set "PYTHON_EXE=C:\Program Files\Python311\python.exe"
-) else if exist "%LocalAppData%\Programs\Python\Python311\python.exe" (
-    set "PYTHON_EXE=%LocalAppData%\Programs\Python\Python311\python.exe"
 ) else (
-    :: √öltimo recurso: tenta chamar pelo nome e torcer para o shell ter atualizado
     set "PYTHON_EXE=python"
 )
 
 :RUN_APP
-echo [%GREEN%INFO%RESET%] Iniciando Interface Gr√°fica...
-"%PYTHON_EXE%" gui.py
+echo [%GREEN%INFO%RESET%] Iniciando Interface Gr·fica...
+:: ? Uso de aspas para garantir caminhos com espaÁos
+"%PYTHON_EXE%" "gui.py"
 
 if %errorLevel% neq 0 (
-    echo [%RED%ERRO%RESET%] A aplica√ß√£o encerrou com erro.
+    echo [%RED%ERRO%RESET%] A aplicaÁ„o encerrou com erro %errorLevel%.
     pause
 )
 
