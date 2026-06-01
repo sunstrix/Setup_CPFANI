@@ -308,6 +308,56 @@ def apply_firewall_rules():
     try: subprocess.run('netsh advfirewall firewall set rule group="Compartilhamento de Arquivo e Impressora" new enable=Yes profile=private,domain', shell=True, capture_output=True, creationflags=0x08000000)
     except: pass
 
+def configurar_compartilhamento_rede():
+    """
+    Configura o Windows para permitir compartilhamento transparente de arquivos e impressoras,
+    eliminando a solicitação de credenciais de rede e ativando a descoberta.
+    """
+    _log("DESBLOQUEANDO COMPARTILHAMENTO E DESCOBERTA DE REDE...", "INFO")
+    NO_WINDOW = 0x08000000
+
+    # 1. Forçar Perfil de Rede como Privado via PowerShell
+    try:
+        ps_cmd = "Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private"
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], creationflags=NO_WINDOW, capture_output=True)
+        _log("✓ Perfil de todas as interfaces de rede alterado para Privado.", "OK")
+    except Exception as e:
+        _log(f"Erro ao alterar perfil de rede: {e}", "AVISO")
+
+    # 2. Configurar e Iniciar Serviços de Descoberta
+    servicos = [
+        ("FdResPub", "Publicação de Recursos de Descoberta"),
+        ("SSDPDiscovery", "Descoberta SSDP"),
+        ("upnphost", "Hospedador de Dispositivo UPnP")
+    ]
+    for svc_name, svc_desc in servicos:
+        try:
+            subprocess.run(["sc", "config", svc_name, "start=", "auto"], creationflags=NO_WINDOW, capture_output=True)
+            subprocess.run(["sc", "start", svc_name], creationflags=NO_WINDOW, capture_output=True)
+            _log(f"✓ Serviço '{svc_desc}' ativado e iniciado.", "OK")
+        except Exception as e:
+            _log(f"Aviso no serviço {svc_name}: {e}", "AVISO")
+
+    # 3. Modificações de Registro para Liberação Guest/Anônimo (Usando set_reg nativo)
+    reg_configs = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters", "AllowInsecureGuestAuth", 1),
+        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "RestrictNullSvcSession", 0),
+        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Lsa", "everyoneincludesanonymous", 1),
+        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Lsa", "LimitBlankPasswordUse", 0)
+    ]
+    for root, path, name, val in reg_configs:
+        if set_reg(root, path, name, val, winreg.REG_DWORD):
+            _log(f"✓ Registro configurado: {name} = {val}", "OK")
+        else:
+            _log(f"Falha ao configurar registro: {name}", "AVISO")
+
+    # 4. Ativar Regras de Firewall (Redundante ao apply_firewall_rules para garantir escopo)
+    try:
+        subprocess.run('netsh advfirewall firewall set rule group="Compartilhamento de Arquivo e Impressora" new enable=Yes profile=private,domain', shell=True, capture_output=True, creationflags=NO_WINDOW)
+        _log("✓ Regras de Firewall para compartilhamento liberadas com sucesso.", "OK")
+    except Exception as e:
+        _log(f"Aviso ao liberar Firewall: {e}", "AVISO")
+
 def schedule_manutencao_rede(): return True
 def schedule_instalar_tudo(): return True
 def _get_hardware_info(): return {"Nome_Computador": os.environ.get("COMPUTERNAME", platform.node())}
