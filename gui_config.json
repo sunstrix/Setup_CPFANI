@@ -1,0 +1,19 @@
+{
+    "mode": "admin",
+    "tasks": {
+        "Instalar Microsoft Office": false,
+        "Instalar Only Office": false,
+        "Instalar Python 3.11": false,
+        "Remover Bloatwares": false,
+        "Ativar Descoberta de Rede": false,
+        "Compartilhar Impressoras": false,
+        "Configurar SMB Sem Senha": false,
+        "Whitelist no Firewall": false,
+        "Aplicar Wallpaper Desktop": true,
+        "Aplicar Wallpaper LockScreen": true,
+        "Fixar Barra de Tarefas \u00e0 Esquerda": false,
+        "Ativar Watchdog (Self-healing)": true,
+        "Sincronizar Rel\u00f3gio NTP": true,
+        "Limpar Cache de Sistema": true
+    }
+}
