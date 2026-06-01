@@ -1,140 +1,77 @@
 @echo off
-:: Forca o modo de expansao de variaveis atrasadas
-setlocal EnableDelayedExpansion
+setlocal enabledelayedexpansion
+title Setup CP Fani - Launcher Corporativo V6
 
-:: ==========================================
-:: 1. CONFIGURACAO DE LOG IMEDIATA
-:: ==========================================
-:: Cria pasta de logs se nao existir
-if not exist "C:\Scripts\Logs" mkdir "C:\Scripts\Logs"
+:: Cores para o terminal
+set "GREEN=[92m"
+set "RED=[91m"
+set "YELLOW=[93m"
+set "RESET=[0m"
 
-:: Gera nome do arquivo de log usando data/hora simples (sem WMIC)
-set "LOG_FILE=C:\Scripts\Logs\DEPLOY_%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log"
-:: Substitui espacos por zeros no horario (ex: 9:05 vira 0905)
-set "LOG_FILE=!LOG_FILE: =0!"
+echo ============================================================
+echo        LANÇADOR AUTOMATIZADO - SETUP CP FANI V6
+echo ============================================================
 
-:: Escreve cabecalho NO ARQUIVO imediatamente
-(
-echo ========================================
-echo SETUP CP FANI V5.9.3 - INFILTRADO + SELF-HEALING
-echo Data: %date% %time%
-echo Arquivo Log: !LOG_FILE!
-echo ========================================
-) > "!LOG_FILE!"
-
-:: ==========================================
-:: 2. CHECK ADMIN
-:: ==========================================
-echo [START] Script iniciado. >> "!LOG_FILE!"
-echo [INFO] Verificando Administrador... >> "!LOG_FILE!"
-
-whoami /groups | findstr /i "S-1-5-32-544" >nul 2>&1
-if !errorLevel! NEQ 0 (
-    echo [ERROR] NAO E ADMINISTRADOR! >> "!LOG_FILE!"
-    echo.
-    echo ERRO CRITICO: Este script requer privilegios de Administrador.
-    echo Por favor, clique com o botao direito e selecione "Executar como Administrador".
-    pause
-    exit /b 1
+:: 1. Verificação de privilégios para o log inicial
+net session >nul 2>&1
+if %errorLevel% == 0 (
+    echo [%GREEN%INFO%RESET%] Executando com privilégios de Administrador.
+) else (
+    echo [%YELLOW%AVISO%RESET%] Executando como Usuário Padrão. Algumas funções de sistema solicitarão UAC.
 )
-echo [OK] Admin confirmado. >> "!LOG_FILE!"
 
-:: ==========================================
-:: 3. TESTE DE INTERNET
-:: ==========================================
-echo [STEP 1] Testando Internet... >> "!LOG_FILE!"
-ping -n 2 8.8.8.8 >nul 2>&1
-if !errorLevel! NEQ 0 (
-    echo [ERROR] Sem conexao com a Internet! >> "!LOG_FILE!"
-    echo ERRO: O computador precisa de internet para baixar o Python e os programas.
-    pause
-    exit /b 1
-)
-echo [OK] Internet OK. >> "!LOG_FILE!"
-
-:: ==========================================
-:: 4. INSTALACAO DO PYTHON
-:: ==========================================
-echo [STEP 2] Verificando Python... >> "!LOG_FILE!"
+:: 2. Detecção de Python no PATH atual
 python --version >nul 2>&1
-if !errorLevel! NEQ 0 (
-    echo [INFO] Python nao encontrado. Baixando e instalando... >> "!LOG_FILE!"
-    curl -o "%TEMP%\python_installer.exe" "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
-    if !errorLevel! NEQ 0 (
-        echo [ERROR] Falha ao baixar o Python. >> "!LOG_FILE!"
-        pause
-        exit /b 1
-    )
-    echo [INFO] Instalando Python silenciosamente... >> "!LOG_FILE!"
-    "%TEMP%\python_installer.exe" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
-    
-    :: Atualiza a variavel PATH local para a sessao atual do CMD
-    set "PATH=%PATH%;C:\Program Files\Python312\Scripts\;C:\Program Files\Python312\"
-    
-    python --version >nul 2>&1
-    if !errorLevel! NEQ 0 (
-        echo [ERROR] Falha na instalacao do Python. >> "!LOG_FILE!"
-        pause
-        exit /b 1
-    )
-    echo [OK] Python instalado com sucesso! >> "!LOG_FILE!"
-) else (
-    echo [OK] Python ja instalado. >> "!LOG_FILE!"
+if %errorLevel% == 0 (
+    echo [%GREEN%OK%RESET%] Python já está configurado no sistema.
+    set "PYTHON_EXE=python"
+    goto RUN_APP
 )
 
-:: ==========================================
-:: 5. INSTALACAO DO CHOCOLATEY
-:: ==========================================
-echo [STEP 3] Verificando Chocolatey... >> "!LOG_FILE!"
-choco --version >nul 2>&1
-if !errorLevel! NEQ 0 (
-    echo [INFO] Chocolatey nao encontrado. Instalando... >> "!LOG_FILE!"
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))" >> "!LOG_FILE!" 2>&1
-    set "PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin"
-    echo [OK] Chocolatey instalado. >> "!LOG_FILE!"
-) else (
-    echo [OK] Chocolatey ja instalado. >> "!LOG_FILE!"
+echo [%YELLOW%AVISO%RESET%] Python não detectado no PATH. Verificando instalações locais...
+
+:: 3. Tentativa de localizar Python em caminhos comuns (Local e Program Files)
+set "SEARCH_PATHS="%LocalAppData%\Programs\Python" "%ProgramFiles%\Python" "%ProgramFiles(x86)%\Python""
+for %%P in (%SEARCH_PATHS%) do (
+    if exist %%P (
+        for /f "delims=" %%I in ('dir /b /s "%%~P\python.exe" 2^>nul') do (
+            set "PYTHON_EXE=%%I"
+            echo [%GREEN%OK%RESET%] Python localizado em: !PYTHON_EXE!
+            goto RUN_APP
+        )
+    )
 )
 
-:: ==========================================
-:: 6. DEPENDENCIAS DO PYTHON (PIP)
-:: ==========================================
-echo [STEP 4] Validacao final de dependencias... >> "!LOG_FILE!"
-echo [INFO] Instalando bibliotecas graficas e dependencias (customtkinter, psutil, pillow)... >> "!LOG_FILE!"
-python -m pip install --upgrade pip >> "!LOG_FILE!" 2>&1
-python -m pip install customtkinter psutil pillow >> "!LOG_FILE!" 2>&1
-echo [OK] Dependencias PIP validadas com sucesso! >> "!LOG_FILE!"
+:: 4. Se não encontrou, inicia instalação automática
+echo [%RED%ERRO%RESET%] Python não encontrado. Iniciando download do instalador...
+set "PY_URL=https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+set "PY_INSTALLER=%temp%\python_installer.exe"
 
-:: ==========================================
-:: 7. EXECUTAR GUI
-:: ==========================================
-echo [STEP 5] Iniciando GUI Python... >> "!LOG_FILE!"
-cd /d "%~dp0"
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('%PY_URL%', '%PY_INSTALLER%')"
 
-if not exist "%~dp0gui.py" (
-    echo [ERROR] gui.py NAO ENCONTRADO em %~dp0 >> "!LOG_FILE!"
+echo [%YELLOW%INFO%RESET%] Instalando Python silenciosamente. Aguarde...
+start /wait "" "%PY_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
+
+:: Re-verificação imediata após instalação
+echo [%YELLOW%INFO%RESET%] Atualizando sessão e re-verificando...
+:: Tenta caminhos fixos que o instalador costuma usar
+if exist "C:\Program Files\Python311\python.exe" (
+    set "PYTHON_EXE=C:\Program Files\Python311\python.exe"
+) else if exist "%LocalAppData%\Programs\Python\Python311\python.exe" (
+    set "PYTHON_EXE=%LocalAppData%\Programs\Python\Python311\python.exe"
+) else (
+    :: Último recurso: tenta chamar pelo nome e torcer para o shell ter atualizado
+    set "PYTHON_EXE=python"
+)
+
+:RUN_APP
+echo [%GREEN%INFO%RESET%] Iniciando Interface Gráfica...
+"%PYTHON_EXE%" gui.py
+
+if %errorLevel% neq 0 (
+    echo [%RED%ERRO%RESET%] A aplicação encerrou com erro.
     pause
-    exit /b 1
 )
 
-echo [INFO] Executando: python -u gui.py >> "!LOG_FILE!"
-echo [INFO] Redirecionando saida para log... >> "!LOG_FILE!"
-echo. >> "!LOG_FILE!"
-echo ========================================== >> "!LOG_FILE!"
-echo SAIDA DO GUI.PY >> "!LOG_FILE!"
-echo ========================================== >> "!LOG_FILE!"
-echo. >> "!LOG_FILE!"
-
-python -u "%~dp0gui.py" >> "!LOG_FILE!" 2>&1
-set "GUI_CODE=!errorLevel!"
-
-echo. >> "!LOG_FILE!"
-echo ========================================== >> "!LOG_FILE!"
-echo [INFO] Python encerrou com codigo: !GUI_CODE! >> "!LOG_FILE!"
-
-if !GUI_CODE! NEQ 0 (
-    echo [ERROR] A GUI falhou ou foi encerrada com erro. >> "!LOG_FILE!"
-) else (
-    echo [OK] Execucao do deploy concluida. >> "!LOG_FILE!"
-)
-exit /b !GUI_CODE!
+echo [%GREEN%SUCESSO%RESET%] Processo finalizado.
+pause
