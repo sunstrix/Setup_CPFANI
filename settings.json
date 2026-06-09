@@ -4,7 +4,9 @@
     "project": "Setup Automatizado CP Fani",
     "company": "CP Fani",
     "author": "Alex Paulo",
-    "updated": "2026-05"
+    "updated": "2026-05",
+    "min_windows_version": "10.0.19041",
+    "supported_architectures": ["x64", "ARM64"]
   },
   "apps": {
     "choco": [
@@ -17,35 +19,166 @@
       "winrar",
       "vcredist-all",
       "ditto",
-      "sharex"
+      "sharex",
+      "notepadplusplus",
+      "powertoys",
+      "firefox",
+      "adobereader",
+      "paint.net"
     ],
-    "onlyoffice": "onlyoffice-desktopeditors"
+    "onlyoffice": "onlyoffice-desktopeditors",
+    "winget": [
+      "Microsoft.PowerToys",
+      "Microsoft.WindowsTerminal"
+    ]
   },
   "bloatware_remove": [
-    "Microsoft.BingNews", "Microsoft.BingWeather", "Microsoft.GamingApp",
-    "Microsoft.GetHelp", "Microsoft.Getstarted", "Microsoft.Microsoft3DViewer",
-    "Microsoft.MicrosoftOfficeHub", "Microsoft.MicrosoftSolitaireCollection", 
-    "Microsoft.MixedReality.Portal", "Microsoft.People", "Microsoft.SkypeApp",
-    "Microsoft.WindowsMaps", "Microsoft.Xbox.TCUI", "Microsoft.XboxApp", 
-    "Microsoft.XboxGameOverlay", "Microsoft.XboxGamingOverlay", 
-    "Microsoft.XboxIdentityProvider", "Microsoft.XboxSpeechToTextOverlay", 
-    "Microsoft.ZuneVideo", "Microsoft.ZuneMusic", "Microsoft.YourPhone", 
-    "king.com.CandyCrushSaga", "king.com.CandyCrushSodaSaga",
-    "SpotifyAB.SpotifyMusic", "Clipchamp.Clipchamp", "McAfee", "TikTok"
+    "Microsoft.BingNews",
+    "Microsoft.BingWeather",
+    "Microsoft.GamingApp",
+    "Microsoft.GetHelp",
+    "Microsoft.Getstarted",
+    "Microsoft.Microsoft3DViewer",
+    "Microsoft.MicrosoftOfficeHub",
+    "Microsoft.MicrosoftSolitaireCollection",
+    "Microsoft.MixedReality.Portal",
+    "Microsoft.People",
+    "Microsoft.SkypeApp",
+    "Microsoft.WindowsMaps",
+    "Microsoft.Xbox.TCUI",
+    "Microsoft.XboxApp",
+    "Microsoft.XboxGameOverlay",
+    "Microsoft.XboxGamingOverlay",
+    "Microsoft.XboxIdentityProvider",
+    "Microsoft.XboxSpeechToTextOverlay",
+    "Microsoft.ZuneVideo",
+    "Microsoft.ZuneMusic",
+    "Microsoft.YourPhone",
+    "king.com.CandyCrushSaga",
+    "king.com.CandyCrushSodaSaga",
+    "SpotifyAB.SpotifyMusic",
+    "Clipchamp.Clipchamp",
+    "McAfee",
+    "TikTok",
+    "Microsoft.549981C3F5F10",
+    "Disney.37853FC22B2CE",
+    "AmazonVideo.PrimeVideo",
+    "Facebook.Facebook",
+    "Facebook.InstagramBeta",
+    "Twitter.Twitter",
+    "Bytedance.P23970D6E466A",
+    "Microsoft.Teams",
+    "Microsoft.OneDriveSync",
+    "Microsoft.WindowsCamera",
+    "Microsoft.WindowsSoundRecorder",
+    "Microsoft.WindowsAlarms",
+    "Microsoft.WindowsCalculator",
+    "Microsoft.WindowsStore"
   ],
   "drivers": {
     "dell": "dellcommandupdate",
     "lenovo": "lenovo-system-update",
-    "hp": "hp-support-assistant"
+    "hp": "hp-support-assistant",
+    "asus": "myasus",
+    "acer": "acer-care-center"
   },
   "features": {
-    "self_healing": true
+    "self_healing": true,
+    "auto_restart": true,
+    "silent_install": true,
+    "create_restore_point": true,
+    "disable_cortana": true,
+    "disable_telemetry": true,
+    "enable_dark_mode": true,
+    "optimize_services": true
   },
   "paths": {
     "logo": "C:\\Scripts\\Setup_CPFANI\\resources\\logo_cpfani.png",
     "wallpaper": "C:\\Scripts\\Setup_CPFANI\\resources\\wallpaper_cpfani.jpg",
     "odt_setup": "C:\\Scripts\\Setup_CPFANI\\resources\\setup.exe",
     "odt_config": "C:\\Scripts\\Setup_CPFANI\\resources\\configuration.xml",
-    "snapshot_output": "C:\\Scripts\\CPFANI_Hardware_Snapshot_{PC_NAME}.txt"
+    "snapshot_output": "C:\\Scripts\\CPFANI_Hardware_Snapshot_{PC_NAME}.txt",
+    "logs": "C:\\Scripts\\Logs",
+    "temp_downloads": "C:\\Users\\Public\\Downloads",
+    "scripts": "C:\\Scripts"
+  },
+  "network": {
+    "ntp_servers": [
+      "a.ntp.br",
+      "b.ntp.br",
+      "c.ntp.br",
+      "time.windows.com"
+    ],
+    "dns_servers": [
+      "8.8.8.8",
+      "8.8.4.4",
+      "1.1.1.1",
+      "1.0.0.1"
+    ],
+    "firewall_rules": {
+      "enable_file_sharing": true,
+      "enable_network_discovery": true,
+      "allow_remote_desktop": true,
+      "restrict_smb_to_lan": true
+    }
+  },
+  "security": {
+    "disable_windows_hello": true,
+    "disable_biometrics": true,
+    "enable_firewall": true,
+    "enable_defender": true,
+    "disable_uac_prompts": false,
+    "enable_smart_screen": true,
+    "lgpd_compliance": true,
+    "disable_cortana": true,
+    "disable_advertising_id": true,
+    "disable_activity_history": true
+  },
+  "updates": {
+    "windows_update": {
+      "enabled": true,
+      "auto_download": true,
+      "defer_feature_updates_days": 0,
+      "defer_quality_updates_days": 0
+    },
+    "driver_updates": {
+      "via_windows_update": true,
+      "via_manufacturer": true,
+      "auto_restart_if_needed": false
+    }
+  },
+  "logging": {
+    "enabled": true,
+    "level": "INFO",
+    "max_file_size_mb": 10,
+    "max_files": 5,
+    "include_timestamps": true,
+    "include_stack_traces": true,
+    "output_path": "C:\\Scripts\\Logs"
+  },
+  "timeouts": {
+    "choco_install_seconds": 300,
+    "winget_install_seconds": 300,
+    "office_install_seconds": 1800,
+    "windows_update_seconds": 1800,
+    "download_file_seconds": 300,
+    "subprocess_default_seconds": 30
+  },
+  "validation": {
+    "min_file_size_bytes": {
+      "installer": 1048576,
+      "image": 10240,
+      "config": 100
+    },
+    "max_retries": 3,
+    "retry_delay_seconds": 5,
+    "verify_checksums": false
+  },
+  "backup": {
+    "create_before_changes": true,
+    "backup_registry": true,
+    "backup_path": "C:\\Scripts\\Backups",
+    "max_backups": 3,
+    "compress_backups": true
   }
 }
