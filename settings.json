@@ -1,14 +1,49 @@
 {
+  "_schema_version": "2.0.0",
+  "_schema_documentation": {
+    "description": "Schema de configuração para Setup Automatizado CP Fani",
+    "author": "Alex Paulo",
+    "last_updated": "2026-06-13",
+    "validation_rules": {
+      "required_fields": ["metadata", "apps", "paths"],
+      "optional_fields": ["bloatware_remove", "drivers", "features", "network", "security", "updates", "logging", "timeouts", "validation", "backup"],
+      "type_validation": true,
+      "range_validation": true,
+      "format_validation": true,
+      "cross_validation": true
+    }
+  },
+  
   "metadata": {
     "version": "5.9.5.5",
+    "schema_version": "2.0.0",
     "project": "Setup Automatizado CP Fani",
     "company": "CP Fani",
     "author": "Alex Paulo",
-    "updated": "2026-05",
+    "updated": "2026-06-13",
     "min_windows_version": "10.0.19041",
-    "supported_architectures": ["x64", "ARM64"]
+    "supported_architectures": ["x64", "ARM64"],
+    "python_version_required": "3.8.0",
+    "choco_version_required": "1.0.0",
+    "supported_os": ["Windows 10", "Windows 11"],
+    "license": "Proprietary",
+    "repository": "https://github.com/sunstrix/Setup_CPFANI",
+    "documentation": "https://github.com/sunstrix/Setup_CPFANI/wiki"
   },
+  
   "apps": {
+    "_documentation": {
+      "description": "Lista de aplicações a serem instaladas",
+      "validation": {
+        "choco": "Lista de pacotes Chocolatey válidos (sem espaços, apenas letras minúsculas, números e hífens)",
+        "winget": "Lista de pacotes WinGet válidos (formato: Publisher.Application)",
+        "onlyoffice": "Nome do pacote OnlyOffice no Chocolatey"
+      },
+      "examples": {
+        "choco": ["googlechrome", "firefox", "vlc"],
+        "winget": ["Microsoft.PowerToys", "Microsoft.WindowsTerminal"]
+      }
+    },
     "choco": [
       "googlechrome",
       "anydesk",
@@ -32,57 +67,83 @@
       "Microsoft.WindowsTerminal"
     ]
   },
-  "bloatware_remove": [
-    "Microsoft.BingNews",
-    "Microsoft.BingWeather",
-    "Microsoft.GamingApp",
-    "Microsoft.GetHelp",
-    "Microsoft.Getstarted",
-    "Microsoft.Microsoft3DViewer",
-    "Microsoft.MicrosoftOfficeHub",
-    "Microsoft.MicrosoftSolitaireCollection",
-    "Microsoft.MixedReality.Portal",
-    "Microsoft.People",
-    "Microsoft.SkypeApp",
-    "Microsoft.WindowsMaps",
-    "Microsoft.Xbox.TCUI",
-    "Microsoft.XboxApp",
-    "Microsoft.XboxGameOverlay",
-    "Microsoft.XboxGamingOverlay",
-    "Microsoft.XboxIdentityProvider",
-    "Microsoft.XboxSpeechToTextOverlay",
-    "Microsoft.ZuneVideo",
-    "Microsoft.ZuneMusic",
-    "Microsoft.YourPhone",
-    "king.com.CandyCrushSaga",
-    "king.com.CandyCrushSodaSaga",
-    "SpotifyAB.SpotifyMusic",
-    "Clipchamp.Clipchamp",
-    "McAfee",
-    "TikTok",
-    "Microsoft.549981C3F5F10",
-    "Disney.37853FC22B2CE",
-    "AmazonVideo.PrimeVideo",
-    "Facebook.Facebook",
-    "Facebook.InstagramBeta",
-    "Twitter.Twitter",
-    "Bytedance.P23970D6E466A",
-    "Microsoft.Teams",
-    "Microsoft.OneDriveSync",
-    "Microsoft.WindowsCamera",
-    "Microsoft.WindowsSoundRecorder",
-    "Microsoft.WindowsAlarms",
-    "Microsoft.WindowsCalculator",
-    "Microsoft.WindowsStore"
-  ],
+  
+  "bloatware_remove": {
+    "_documentation": {
+      "description": "Lista de aplicativos UWP/bloatware para remoção",
+      "validation": {
+        "format": "Formato: Publisher.ApplicationName ou nome parcial",
+        "examples": ["Microsoft.BingNews", "king.com.CandyCrushSaga"]
+      }
+    },
+    "list": [
+      "Microsoft.BingNews",
+      "Microsoft.BingWeather",
+      "Microsoft.GamingApp",
+      "Microsoft.GetHelp",
+      "Microsoft.Getstarted",
+      "Microsoft.Microsoft3DViewer",
+      "Microsoft.MicrosoftOfficeHub",
+      "Microsoft.MicrosoftSolitaireCollection",
+      "Microsoft.MixedReality.Portal",
+      "Microsoft.People",
+      "Microsoft.SkypeApp",
+      "Microsoft.WindowsMaps",
+      "Microsoft.Xbox.TCUI",
+      "Microsoft.XboxApp",
+      "Microsoft.XboxGameOverlay",
+      "Microsoft.XboxGamingOverlay",
+      "Microsoft.XboxIdentityProvider",
+      "Microsoft.XboxSpeechToTextOverlay",
+      "Microsoft.ZuneVideo",
+      "Microsoft.ZuneMusic",
+      "Microsoft.YourPhone",
+      "king.com.CandyCrushSaga",
+      "king.com.CandyCrushSodaSaga",
+      "SpotifyAB.SpotifyMusic",
+      "Clipchamp.Clipchamp",
+      "McAfee",
+      "TikTok",
+      "Microsoft.549981C3F5F10",
+      "Disney.37853FC22B2CE",
+      "AmazonVideo.PrimeVideo",
+      "Facebook.Facebook",
+      "Facebook.InstagramBeta",
+      "Twitter.Twitter",
+      "Bytedance.P23970D6E466A",
+      "Microsoft.Teams",
+      "Microsoft.OneDriveSync",
+      "Microsoft.WindowsCamera",
+      "Microsoft.WindowsSoundRecorder",
+      "Microsoft.WindowsAlarms",
+      "Microsoft.WindowsCalculator",
+      "Microsoft.WindowsStore"
+    ]
+  },
+  
   "drivers": {
+    "_documentation": {
+      "description": "Mapeamento de fabricantes para pacotes de drivers",
+      "validation": {
+        "manufacturer": "Nome do fabricante (case-insensitive)",
+        "package": "Nome do pacote Chocolatey correspondente"
+      }
+    },
     "dell": "dellcommandupdate",
     "lenovo": "lenovo-system-update",
     "hp": "hp-support-assistant",
     "asus": "myasus",
     "acer": "acer-care-center"
   },
+  
   "features": {
+    "_documentation": {
+      "description": "Flags de funcionalidades do sistema",
+      "validation": {
+        "type": "boolean",
+        "default": false
+      }
+    },
     "self_healing": true,
     "auto_restart": true,
     "silent_install": true,
@@ -90,9 +151,23 @@
     "disable_cortana": true,
     "disable_telemetry": true,
     "enable_dark_mode": true,
-    "optimize_services": true
+    "optimize_services": true,
+    "enable_firewall_rules": true,
+    "enable_ntp_sync": true,
+    "enable_watchdog": true,
+    "enable_snapshot": true
   },
+  
   "paths": {
+    "_documentation": {
+      "description": "Caminhos de arquivos e diretórios do sistema",
+      "validation": {
+        "type": "string",
+        "format": "Windows path (backslashes duplos)",
+        "must_exist": false,
+        "writable": true
+      }
+    },
     "logo": "C:\\Scripts\\Setup_CPFANI\\resources\\logo_cpfani.png",
     "wallpaper": "C:\\Scripts\\Setup_CPFANI\\resources\\wallpaper_cpfani.jpg",
     "odt_setup": "C:\\Scripts\\Setup_CPFANI\\resources\\setup.exe",
@@ -100,9 +175,22 @@
     "snapshot_output": "C:\\Scripts\\CPFANI_Hardware_Snapshot_{PC_NAME}.txt",
     "logs": "C:\\Scripts\\Logs",
     "temp_downloads": "C:\\Users\\Public\\Downloads",
-    "scripts": "C:\\Scripts"
+    "scripts": "C:\\Scripts",
+    "backups": "C:\\Scripts\\Backups",
+    "registry_backups": "C:\\Scripts\\RegistryBackups",
+    "watchdog_script": "C:\\Scripts\\cpfani_watchdog.ps1",
+    "watchdog_launcher": "C:\\Scripts\\cpfani_watchdog_launcher.vbs"
   },
+  
   "network": {
+    "_documentation": {
+      "description": "Configurações de rede e conectividade",
+      "validation": {
+        "ntp_servers": "Lista de servidores NTP válidos (hostname ou IP)",
+        "dns_servers": "Lista de servidores DNS válidos (IPv4 ou IPv6)",
+        "firewall_rules": "Objeto com booleanos para regras de firewall"
+      }
+    },
     "ntp_servers": [
       "a.ntp.br",
       "b.ntp.br",
@@ -119,10 +207,27 @@
       "enable_file_sharing": true,
       "enable_network_discovery": true,
       "allow_remote_desktop": true,
-      "restrict_smb_to_lan": true
+      "restrict_smb_to_lan": true,
+      "allow_ping": true,
+      "block_telnet": true
+    },
+    "connectivity_test": {
+      "enabled": true,
+      "test_hosts": ["8.8.8.8", "www.google.com"],
+      "timeout_seconds": 10,
+      "retry_count": 3
     }
   },
+  
   "security": {
+    "_documentation": {
+      "description": "Configurações de segurança e privacidade",
+      "validation": {
+        "type": "boolean",
+        "default": false,
+        "critical_fields": ["disable_uac_prompts", "enable_defender"]
+      }
+    },
     "disable_windows_hello": true,
     "disable_biometrics": true,
     "enable_firewall": true,
@@ -132,53 +237,253 @@
     "lgpd_compliance": true,
     "disable_cortana": true,
     "disable_advertising_id": true,
-    "disable_activity_history": true
+    "disable_activity_history": true,
+    "disable_location_tracking": true,
+    "disable_feedback_notifications": true,
+    "disable_suggested_content": true,
+    "enable_audit_logging": true,
+    "require_admin_privileges": true
   },
+  
   "updates": {
+    "_documentation": {
+      "description": "Configurações de atualizações do sistema",
+      "validation": {
+        "windows_update": "Objeto com configurações do Windows Update",
+        "driver_updates": "Objeto com configurações de atualização de drivers"
+      }
+    },
     "windows_update": {
       "enabled": true,
       "auto_download": true,
       "defer_feature_updates_days": 0,
-      "defer_quality_updates_days": 0
+      "defer_quality_updates_days": 0,
+      "active_hours_start": "08:00",
+      "active_hours_end": "18:00",
+      "pause_updates": false
     },
     "driver_updates": {
       "via_windows_update": true,
       "via_manufacturer": true,
-      "auto_restart_if_needed": false
+      "auto_restart_if_needed": false,
+      "exclude_drivers": [],
+      "preferred_source": "manufacturer"
     }
   },
+  
   "logging": {
+    "_documentation": {
+      "description": "Configurações de logging e auditoria",
+      "validation": {
+        "level": "Enum: DEBUG, INFO, WARNING, ERROR, CRITICAL",
+        "max_file_size_mb": "Número positivo (MB)",
+        "max_files": "Número positivo"
+      }
+    },
     "enabled": true,
     "level": "INFO",
     "max_file_size_mb": 10,
     "max_files": 5,
     "include_timestamps": true,
     "include_stack_traces": true,
-    "output_path": "C:\\Scripts\\Logs"
+    "output_path": "C:\\Scripts\\Logs",
+    "log_to_file": true,
+    "log_to_console": true,
+    "log_format": "[{timestamp}] [{level}] {message}",
+    "date_format": "%Y-%m-%d %H:%M:%S",
+    "rotation_policy": "size",
+    "compress_old_logs": true
   },
+  
   "timeouts": {
+    "_documentation": {
+      "description": "Timeouts para operações (em segundos)",
+      "validation": {
+        "type": "integer",
+        "min": 1,
+        "max": 86400,
+        "unit": "seconds"
+      }
+    },
     "choco_install_seconds": 300,
     "winget_install_seconds": 300,
     "office_install_seconds": 1800,
     "windows_update_seconds": 1800,
     "download_file_seconds": 300,
-    "subprocess_default_seconds": 30
+    "subprocess_default_seconds": 30,
+    "registry_operation_seconds": 15,
+    "service_operation_seconds": 30,
+    "network_test_seconds": 10,
+    "health_check_seconds": 60
   },
+  
   "validation": {
+    "_documentation": {
+      "description": "Configurações de validação de arquivos e downloads",
+      "validation": {
+        "min_file_size_bytes": "Objeto com tamanhos mínimos por tipo",
+        "max_retries": "Número positivo",
+        "retry_delay_seconds": "Número positivo"
+      }
+    },
     "min_file_size_bytes": {
       "installer": 1048576,
-      "image": 10240,
-      "config": 100
+      "image": 51200,
+      "config": 100,
+      "script": 50,
+      "executable": 1048576
     },
     "max_retries": 3,
     "retry_delay_seconds": 5,
-    "verify_checksums": false
+    "verify_checksums": true,
+    "verify_signatures": true,
+    "validate_json_schema": true,
+    "validate_paths": true,
+    "validate_permissions": true,
+    "max_list_size": 1000,
+    "allow_duplicates_in_lists": false
   },
+  
   "backup": {
+    "_documentation": {
+      "description": "Configurações de backup e recuperação",
+      "validation": {
+        "create_before_changes": "boolean",
+        "backup_registry": "boolean",
+        "max_backups": "Número positivo",
+        "compress_backups": "boolean"
+      }
+    },
     "create_before_changes": true,
     "backup_registry": true,
     "backup_path": "C:\\Scripts\\Backups",
     "max_backups": 3,
-    "compress_backups": true
+    "compress_backups": true,
+    "backup_settings": true,
+    "backup_logs": true,
+    "retention_days": 30,
+    "include_timestamp_in_name": true,
+    "backup_format": "zip"
+  },
+  
+  "advanced": {
+    "_documentation": {
+      "description": "Configurações avançadas para usuários experientes",
+      "validation": {
+        "warning": "Alterar estas configurações pode causar instabilidade"
+      }
+    },
+    "debug_mode": false,
+    "verbose_logging": false,
+    "skip_validations": false,
+    "force_install": false,
+    "ignore_errors": false,
+    "parallel_downloads": 3,
+    "max_concurrent_installs": 1,
+    "cleanup_temp_files": true,
+    "preserve_existing_configs": false,
+    "enable_experimental_features": false
+  },
+  
+  "ui": {
+    "_documentation": {
+      "description": "Configurações de interface do usuário",
+      "validation": {
+        "theme": "Enum: light, dark, system",
+        "language": "Código de idioma ISO 639-1"
+      }
+    },
+    "theme": "dark",
+    "language": "pt-BR",
+    "show_progress_bar": true,
+    "show_notifications": true,
+    "auto_scroll_logs": true,
+    "confirm_before_install": true,
+    "confirm_before_restart": true,
+    "window_width": 740,
+    "window_height": 800,
+    "minimize_to_tray": false
+  },
+  
+  "performance": {
+    "_documentation": {
+      "description": "Configurações de otimização de desempenho",
+      "validation": {
+        "priority": "Enum: low, normal, high, realtime",
+        "thread_count": "Número positivo"
+      }
+    },
+    "process_priority": "normal",
+    "thread_count": 4,
+    "memory_limit_mb": 512,
+    "cache_enabled": true,
+    "cache_size_mb": 100,
+    "optimize_for_ssd": true,
+    "disable_animations": false,
+    "batch_operations": true
+  },
+  
+  "notifications": {
+    "_documentation": {
+      "description": "Configurações de notificações do sistema",
+      "validation": {
+        "type": "boolean",
+        "methods": "Lista de métodos de notificação"
+      }
+    },
+    "enabled": true,
+    "show_toast_notifications": true,
+    "show_balloon_notifications": false,
+    "play_sounds": false,
+    "notification_duration_seconds": 5,
+    "methods": ["windows_toast", "log_file"],
+    "on_success": true,
+    "on_error": true,
+    "on_warning": true
+  },
+  
+  "error_handling": {
+    "_documentation": {
+      "description": "Configurações de tratamento de erros",
+      "validation": {
+        "strategy": "Enum: stop, continue, retry, prompt"
+      }
+    },
+    "strategy": "continue",
+    "max_consecutive_errors": 5,
+    "show_error_dialogs": true,
+    "log_all_errors": true,
+    "send_error_reports": false,
+    "create_crash_dumps": false,
+    "auto_restart_on_failure": false,
+    "rollback_on_critical_error": true
+  },
+  
+  "compliance": {
+    "_documentation": {
+      "description": "Configurações de conformidade e auditoria",
+      "validation": {
+        "lgpd": "Configurações específicas da LGPD",
+        "audit": "Configurações de auditoria"
+      }
+    },
+    "lgpd": {
+      "enabled": true,
+      "disable_telemetry": true,
+      "disable_advertising": true,
+      "disable_location": true,
+      "encrypt_sensitive_data": true,
+      "data_retention_days": 30,
+      "anonymize_logs": false
+    },
+    "audit": {
+      "enabled": true,
+      "log_all_changes": true,
+      "log_registry_changes": true,
+      "log_file_operations": true,
+      "log_network_operations": true,
+      "audit_log_path": "C:\\Scripts\\Logs\\audit.log",
+      "retain_audit_logs_days": 90
+    }
   }
 }
