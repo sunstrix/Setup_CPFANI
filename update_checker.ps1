@@ -1,4 +1,4 @@
-# update_checker.ps1 — V5.0.3 (Setup Automatizado CP Fani)
+# update_checker.ps1 — V5.9.5.2 (Setup Automatizado CP Fani)
 # Executa atualizações automáticas no logon do usuário (Versão Otimizada e Robusta)
 
 # ============================================================
@@ -45,7 +45,7 @@ function Test-AlreadyRanToday {
 # ============================================================
 # INÍCIO DA EXECUÇÃO
 # ============================================================
-Write-Log "=== Início da verificação de atualizações CP Fani V5.0.3 ==="
+Write-Log "=== Início da verificação de atualizações CP Fani V5.9.5.2 ==="
 
 # 1. Verifica se já rodou hoje para evitar sobrecarga no logon
 if (Test-AlreadyRanToday) {
