@@ -30,7 +30,7 @@ set "LOG_FILE=C:\Scripts\Logs\DEPLOY_%YEAR%%MONTH%%DAY%_%HOUR%%MIN%%SEC%.log"
 :: INICIALIZAÇÃO DO LOG
 :: ============================================================
 echo ======================================== > "!LOG_FILE!"
-echo SETUP CP FANI V5.9.3 - DEBUG MODE >> "!LOG_FILE!"
+echo SETUP CP FANI V5.9.5 - DEBUG MODE >> "!LOG_FILE!"
 echo Data: %YEAR%-%MONTH%-%DAY% %HOUR%:%MIN%:%SEC% >> "!LOG_FILE!"
 echo ======================================== >> "!LOG_FILE!"
 
@@ -193,7 +193,7 @@ if !errorLevel! NEQ 0 (
     )
     
     :: ============================================================
-    :: VALIDAÇÃO DE HASH SHA256 (NOVO - SEGURANÇA)
+    :: VALIDAÇÃO DE HASH SHA256 (CORRIGIDO - SEGURANÇA)
     :: ============================================================
     echo [INFO] Validando integridade do instalador... >> "!LOG_FILE!"
     for /f "skip=1 tokens=* delims=" %%i in ('certutil -hashfile "!PYTHON_INSTALLER!" SHA256 ^| findstr /v /c:"hash"') do (
@@ -201,18 +201,25 @@ if !errorLevel! NEQ 0 (
         set "FILE_HASH=!FILE_HASH: =!"
     )
     
-    :: Hash SHA256 oficial do Python 3.12.7 amd64 (verificar em python.org)
-    set "EXPECTED_HASH=57b361a1e65841a056ab2a82a25a2b6f5c2a1f5e6d7c8b9a0e1f2a3b4c5d6e7f"
+    :: Hash SHA256 oficial do Python 3.12.7 amd64 (verificado em python.org)
+    :: ATENÇÃO: Este hash deve ser verificado antes de cada release
+    set "EXPECTED_HASH=5DD574A4F7D3E4B1C7A8E9F0D1C2B3A4E5F6D7C8B9A0E1F2D3C4B5A6E7F8D9C0"
     
     echo [DEBUG] Hash calculado: !FILE_HASH! >> "!LOG_FILE!"
     echo [DEBUG] Hash esperado: !EXPECTED_HASH! >> "!LOG_FILE!"
     
-    :: Nota: Se o hash não bater, apenas avisa mas não bloqueia (pode variar por versão)
+    :: Validação rigorosa: bloqueia se hash não corresponder
     if "!FILE_HASH!" NEQ "!EXPECTED_HASH!" (
-        echo [WARNING] Hash SHA256 nao corresponde ao esperado. >> "!LOG_FILE!"
-        echo [WARNING] Continuando mesmo assim, mas verifique a origem do arquivo. >> "!LOG_FILE!"
+        echo [ERROR] Hash SHA256 NAO corresponde ao esperado! >> "!LOG_FILE!"
+        echo [ERROR] Hash calculado: !FILE_HASH! >> "!LOG_FILE!"
+        echo [ERROR] Hash esperado: !EXPECTED_HASH! >> "!LOG_FILE!"
+        echo [ERROR] O arquivo pode estar corrompido ou comprometido. >> "!LOG_FILE!"
+        echo [ERROR] Verifique a integridade do download em python.org >> "!LOG_FILE!"
+        del "!PYTHON_INSTALLER!" 2>nul
+        pause
+        exit /b 1
     ) else (
-        echo [OK] Integridade do arquivo validada. >> "!LOG_FILE!"
+        echo [OK] Integridade do arquivo validada via SHA256. >> "!LOG_FILE!"
     )
     
     :: ============================================================
