@@ -218,9 +218,10 @@ def validate_settings_schema(settings):
 
 def load_settings():
     """Carrega configurações do settings.json com fallback seguro"""
+    # REMOVIDO: lightshot (mantido apenas flameshot)
     default_settings = {
         "apps": {
-            "choco": ["googlechrome", "anydesk", "flameshot", "sharex", "7zip", "lightshot"]
+            "choco": ["googlechrome", "anydesk", "flameshot", "sharex", "7zip", "winrar"]
         },
         "bloatware_remove": ["Microsoft.ZuneVideo", "Microsoft.WindowsFeedbackHub"]
     }
@@ -274,7 +275,7 @@ def backup_configurations():
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Setup Automatizado CP Fani — V5.9.5")
+        self.title("Setup Automatizado CP Fani — V5.9.5.2")
         self.geometry("740x800")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
@@ -330,7 +331,7 @@ class CPFani_GUI(ctk.CTk):
                 self.log(f"Aviso: Logo não encontrado em {logo_path}", "AVISO")
         
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
-        ctk.CTkLabel(header_frame, text="v5.9.5  |  Gestão de Endpoints (Adaptação Dinâmica)", font=("Segoe UI", 11), text_color="#666666").pack()
+        ctk.CTkLabel(header_frame, text="v5.9.5.2  |  Gestão de Endpoints (Adaptação Dinâmica)", font=("Segoe UI", 11), text_color="#666666").pack()
 
         # 1. INTERFACE
         ui_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
