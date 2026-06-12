@@ -1,13 +1,15 @@
 # =======================================================
 # INSTALADOR / ATUALIZADOR CHOCOLATEY (CP FANI)
-# Com logs detalhados de Debug - V5.9.3
+# Versão Leve para Startup - V5.9.4
+# Otimizado para execução automática no boot do Windows
 # =======================================================
 
+# Configurações básicas
 $PastaLog       = "C:\Scripts\Logs"
 $ArquivoLog     = "$PastaLog\instalar_tudo.log"
 $ArquivoErros   = "$PastaLog\instalar_tudo_erros.log"
-$ArquivoDebug   = "$PastaLog\instalar_tudo_debug.log"
 
+# Lista de programas (mantida concisa)
 $Programas      = @("googlechrome", "anydesk", "7zip", "flameshot", "teamviewer", "vlc", "winrar", "vcredist-all", "ditto")
 
 $TotalPrograma  = $Programas.Count
@@ -15,73 +17,91 @@ $ProgAtual      = 0
 $SucessoCount   = 0
 $FalhaCount     = 0
 
+# ============================================================
+# SISTEMA DE LOG SIMPLIFICADO (LEVE)
+# ============================================================
 function Write-Log {
     param([string]$Mensagem)
     $timestamp = Get-Date -Format 'dd/MM/yyyy HH:mm:ss'
-    if (!(Test-Path $PastaLog)) { New-Item -ItemType Directory -Path $PastaLog -Force | Out-Null }
-    "$timestamp | $Mensagem" | Add-Content -Path $ArquivoLog -Encoding UTF8
+    if (!(Test-Path $PastaLog)) { New-Item -ItemType Directory -Path $PastaLog -Force -ErrorAction SilentlyContinue | Out-Null }
+    "$timestamp | $Mensagem" | Add-Content -Path $ArquivoLog -Encoding UTF8 -ErrorAction SilentlyContinue
 }
 
 function Write-Erro {
     param([string]$Mensagem)
     $timestamp = Get-Date -Format 'dd/MM/yyyy HH:mm:ss'
-    if (!(Test-Path $PastaLog)) { New-Item -ItemType Directory -Path $PastaLog -Force | Out-Null }
-    "$timestamp | ERRO: $Mensagem" | Add-Content -Path $ArquivoErros -Encoding UTF8
+    if (!(Test-Path $PastaLog)) { New-Item -ItemType Directory -Path $PastaLog -Force -ErrorAction SilentlyContinue | Out-Null }
+    "$timestamp | ERRO: $Mensagem" | Add-Content -Path $ArquivoErros -Encoding UTF8 -ErrorAction SilentlyContinue
 }
 
-function Write-DebugLog {
-    param([string]$Mensagem)
-    $timestamp = Get-Date -Format 'dd/MM/yyyy HH:mm:ss'
-    if (!(Test-Path $PastaLog)) { New-Item -ItemType Directory -Path $PastaLog -Force | Out-Null }
-    "$timestamp | $Mensagem" | Add-Content -Path $ArquivoDebug -Encoding UTF8
-}
+# ============================================================
+# INÍCIO DA EXECUÇÃO
+# ============================================================
+Write-Log "=== INÍCIO DA ATUALIZAÇÃO V5.9.4 (STARTUP) ==="
 
-Write-Log "=== INÍCIO DA ATUALIZAÇÃO DE SOFTWARE V5.9.3 ==="
-
+# Validação rápida de privilégios administrativos
 if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Erro "Este script precisa de ser executado como Administrador."
-    exit
+    Write-Erro "Script requer privilégios administrativos"
+    exit 1
 }
 
+# ============================================================
+# VERIFICAÇÃO RÁPIDA DO CHOCOLATEY
+# ============================================================
 $chocoExe = "C:\ProgramData\chocolatey\bin\choco.exe"
 if (!(Test-Path $chocoExe)) {
-    Write-Log "Chocolatey não encontrado. A iniciar a instalação..."
+    Write-Log "Chocolatey não encontrado. Instalando..."
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = 3072
-        $script = (New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')
-        Invoke-Expression $script
+        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
         $env:Path += ";$env:ProgramData\chocolatey\bin"
-        Write-Log "Chocolatey instalado."
+        Write-Log "Chocolatey instalado"
     } catch {
         Write-Erro "Falha ao instalar Chocolatey: $_"
-        return
+        exit 1
     }
 }
 
-Write-Log "A iniciar instalação / atualização de $TotalPrograma programas..."
+# ============================================================
+# LOOP DE INSTALAÇÃO COM RETRY SIMPLIFICADO
+# ============================================================
+Write-Log "Atualizando $TotalPrograma programas..."
 
 foreach ($prog in $Programas) {
     $ProgAtual++
-    Write-Log "[$ProgAtual/$TotalPrograma] A processar via Choco: $prog"
-    Write-DebugLog "`n--- EXECUTANDO: choco upgrade $prog -y ---"
+    Write-Log "[$ProgAtual/$TotalPrograma] $prog"
     
-    try {
-        $output = & $chocoExe upgrade $prog -y --ignore-checksums 2>&1
-        Write-DebugLog $output
-        
-        if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 3010 -or $LASTEXITCODE -eq 1641 -or $LASTEXITCODE -eq 1638) {
-            Write-Log "  [SUCESSO] $prog instalado/atualizado"
-            $SucessoCount++
-        } else {
-            Write-Erro "$prog falhou com código $LASTEXITCODE. Verifique instalar_tudo_debug.log."
-            $FalhaCount++
+    # Tenta até 2 vezes
+    $instalado = $false
+    for ($tentativa = 1; $tentativa -le 2; $tentativa++) {
+        try {
+            $output = & $chocoExe upgrade $prog -y --no-progress --limit-output 2>&1
+            
+            if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 3010 -or $LASTEXITCODE -eq 1641 -or $LASTEXITCODE -eq 1638) {
+                Write-Log "  ✓ $prog OK"
+                $SucessoCount++
+                $instalado = $true
+                break
+            } else {
+                Write-Log "  ⚠ $prog falhou (código $LASTEXITCODE) - Tentativa $tentativa"
+            }
+        } catch {
+            Write-Log "  ⚠ $prog exceção: $_"
         }
-    } catch {
-        Write-Erro "$prog gerou exceção: $_"
-        Write-DebugLog $_
+        
+        if ($tentativa -lt 2) { Start-Sleep -Seconds 3 }
+    }
+    
+    if (!$instalado) {
+        Write-Erro "$prog falhou após 2 tentativas"
         $FalhaCount++
     }
 }
 
-Write-Log "RESUMO: $SucessoCount atualizados com sucesso. $FalhaCount falhas."
+# ============================================================
+# RESUMO FINAL
+# ============================================================
+Write-Log "Concluído: $SucessoCount/$TotalPrograma sucessos, $FalhaCount falhas"
 Write-Log "=== FIM DA ATUALIZAÇÃO ==="
+
+exit $(if ($FalhaCount -gt 0) { 1 } else { 0 })
