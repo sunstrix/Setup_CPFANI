@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Manutencao de Rede - Forca DHCP (V7.2 - LEVE)
+title Manutencao de Rede - Forca DHCP (V5.9.5.2 - LEVE)
 color 0B
 
 :: ==================================================
@@ -96,7 +96,7 @@ if defined FREE_SPACE (
 )
 
 call :log "=========================================="
-call :log " INICIO DA MANUTENCAO DE REDE V7.2"
+call :log " INICIO DA MANUTENCAO DE REDE V5.9.5.2"
 call :log " Correcao: Forca IP Manual -> DHCP"
 call :log " Modo: Log Detalhado + Validacoes"
 call :log "=========================================="
