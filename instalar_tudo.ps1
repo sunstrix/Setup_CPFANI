@@ -1,6 +1,6 @@
 # =======================================================
 # INSTALADOR / ATUALIZADOR CHOCOLATEY (CP FANI)
-# Versão Leve para Startup - V5.9.4
+# Versão Leve para Startup - V5.9.5.2
 # Otimizado para execução automática no boot do Windows
 # =======================================================
 
@@ -9,8 +9,24 @@ $PastaLog       = "C:\Scripts\Logs"
 $ArquivoLog     = "$PastaLog\instalar_tudo.log"
 $ArquivoErros   = "$PastaLog\instalar_tudo_erros.log"
 
-# Lista de programas (mantida concisa)
-$Programas      = @("googlechrome", "anydesk", "7zip", "flameshot", "teamviewer", "vlc", "winrar", "vcredist-all", "ditto")
+# Lista completa de programas (do settings.json)
+$Programas      = @(
+    "googlechrome",
+    "anydesk",
+    "7zip",
+    "flameshot",
+    "teamviewer",
+    "vlc",
+    "winrar",
+    "vcredist-all",
+    "ditto",
+    "sharex",
+    "notepadplusplus",
+    "powertoys",
+    "firefox",
+    "adobereader",
+    "paint.net"
+)
 
 $TotalPrograma  = $Programas.Count
 $ProgAtual      = 0
@@ -35,15 +51,64 @@ function Write-Erro {
 }
 
 # ============================================================
+# VALIDAÇÃO DE CONECTIVIDADE (NOVO)
+# ============================================================
+function Test-InternetConnection {
+    try {
+        $testHosts = @("8.8.8.8", "1.1.1.1", "www.google.com")
+        foreach ($host in $testHosts) {
+            if (Test-Connection -ComputerName $host -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+                return $true
+            }
+        }
+        # Fallback: tenta HTTP
+        $response = Invoke-WebRequest -Uri "http://www.google.com" -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue
+        return ($response.StatusCode -eq 200)
+    } catch {
+        return $false
+    }
+}
+
+# ============================================================
+# VALIDAÇÃO DE ESPAÇO EM DISCO (NOVO)
+# ============================================================
+function Test-DiskSpace {
+    param([int]$MinMB = 500)
+    try {
+        $drive = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'" -ErrorAction SilentlyContinue
+        $freeSpaceMB = [math]::Round($drive.FreeSpace / 1MB, 2)
+        return ($freeSpaceMB -ge $MinMB)
+    } catch {
+        return $true  # Continua mesmo se falhar
+    }
+}
+
+# ============================================================
 # INÍCIO DA EXECUÇÃO
 # ============================================================
-Write-Log "=== INÍCIO DA ATUALIZAÇÃO V5.9.4 (STARTUP) ==="
+Write-Log "=== INÍCIO DA ATUALIZAÇÃO V5.9.5.2 (STARTUP) ==="
 
 # Validação rápida de privilégios administrativos
 if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Erro "Script requer privilégios administrativos"
     exit 1
 }
+
+# Validação de conectividade com internet (NOVO)
+Write-Log "Verificando conectividade com internet..."
+if (!(Test-InternetConnection)) {
+    Write-Erro "Sem conectividade com internet. Abortando atualização."
+    exit 1
+}
+Write-Log "✓ Conectividade confirmada"
+
+# Validação de espaço em disco (NOVO)
+Write-Log "Verificando espaço em disco..."
+if (!(Test-DiskSpace -MinMB 500)) {
+    Write-Erro "Espaço em disco insuficiente (mínimo 500MB necessário)"
+    exit 1
+}
+Write-Log "✓ Espaço em disco suficiente"
 
 # ============================================================
 # VERIFICAÇÃO RÁPIDA DO CHOCOLATEY
