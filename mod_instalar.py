@@ -1,4 +1,4 @@
-"""mod_instalar.py — V5.9.3 (CP Fani)"""
+"""mod_instalar.py — V5.9.5.2 (CP Fani)"""
 import subprocess
 import os
 import shutil
@@ -46,7 +46,7 @@ def _log(msg, level="INFO", context=None):
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         log_file = LOG_DIR / f"mod_instalar_{datetime.now().strftime('%Y%m%d')}.log"
-        with open(log_file, 'a', encoding='utf-8', errors='replace') as f:
+        with open(log_file, 'a', encoding="utf-8", errors='replace') as f:
             f.write(f"{log_msg}\n")
     except Exception:
         pass
