@@ -11,10 +11,14 @@ import urllib.request
 import re
 import time
 import traceback
+import socket
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
-# Configuração de encoding para evitar crashes em caracteres especiais
+# ============================================================
+# CONFIGURAÇÃO DE ENCODING PARA EVITAR CRASHES
+# ============================================================
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors='replace')
@@ -29,6 +33,50 @@ except ImportError:
     HAS_PIL = False
     print("[AVISO] PIL não encontrado. Logo não será exibido.", flush=True)
 
+# ============================================================
+# SISTEMA DE LOCK PARA PREVENIR EXECUÇÃO MÚLTIPLA
+# ============================================================
+LOCK_FILE = os.path.join(os.path.dirname(__file__), ".setup_lock")
+
+def acquire_lock():
+    """Adquire lock para prevenir execução múltipla"""
+    try:
+        if os.path.exists(LOCK_FILE):
+            # Verifica se o processo ainda está ativo
+            try:
+                with open(LOCK_FILE, 'r') as f:
+                    pid = int(f.read().strip())
+                # Verifica se processo existe (Windows)
+                if sys.platform == "win32":
+                    result = subprocess.run(
+                        ['tasklist', '/FI', f'PID eq {pid}'],
+                        capture_output=True, text=True, timeout=5,
+                        encoding='utf-8', errors='replace'
+                    )
+                    if str(pid) in result.stdout:
+                        return False, pid
+            except Exception:
+                pass
+        
+        # Cria lock file
+        with open(LOCK_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+        return True, os.getpid()
+    except Exception as e:
+        print(f"[AVISO] Falha ao adquirir lock: {e}", flush=True)
+        return True, os.getpid()  # Continua mesmo se falhar
+
+def release_lock():
+    """Libera lock do arquivo"""
+    try:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
+    except Exception:
+        pass
+
+# ============================================================
+# SISTEMA DE NOTIFICAÇÃO WINDOWS (MANTIDO COM MELHORIAS)
+# ============================================================
 def show_windows_toast(title, message):
     """Exibe notificação nativa do Windows"""
     # Escapa caracteres especiais para evitar erros no PowerShell
@@ -66,9 +114,76 @@ def show_windows_toast(title, message):
     except Exception as e:
         print(f"[AVISO] Falha ao exibir notificação: {e}", flush=True)
 
+# ============================================================
+# VALIDAÇÃO DE PRÉ-REQUISITOS (NOVO)
+# ============================================================
+def validate_prerequisites():
+    """Valida pré-requisitos antes de iniciar o deploy"""
+    errors = []
+    warnings = []
+    
+    # 1. Verifica privilégios administrativos
+    try:
+        import ctypes
+        is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+        if not is_admin:
+            errors.append("Privilégios administrativos necessários")
+    except Exception as e:
+        warnings.append(f"Falha ao verificar admin: {e}")
+    
+    # 2. Verifica conectividade com internet
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=5)
+    except Exception:
+        try:
+            urllib.request.urlopen("http://www.google.com", timeout=10)
+        except Exception:
+            errors.append("Sem conectividade com a internet")
+    
+    # 3. Verifica espaço em disco (mínimo 500MB)
+    try:
+        free_space = shutil.disk_usage("/").free
+        if free_space < 500 * 1024 * 1024:  # 500MB
+            errors.append(f"Espaço em disco insuficiente: {free_space / (1024*1024):.0f}MB disponíveis")
+    except Exception as e:
+        warnings.append(f"Falha ao verificar espaço em disco: {e}")
+    
+    # 4. Verifica versão do Python
+    try:
+        python_version = sys.version_info
+        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 8):
+            errors.append(f"Python 3.8+ necessário (atual: {python_version.major}.{python_version.minor})")
+    except Exception as e:
+        warnings.append(f"Falha ao verificar versão do Python: {e}")
+    
+    # 5. Verifica se módulos existem
+    required_modules = ['mod_config.py', 'mod_instalar.py']
+    script_dir = os.path.dirname(__file__)
+    for module in required_modules:
+        if not os.path.exists(os.path.join(script_dir, module)):
+            errors.append(f"Módulo obrigatório não encontrado: {module}")
+    
+    return errors, warnings
+
+# ============================================================
+# IMPORTAÇÃO DE MÓDULOS COM VALIDAÇÃO
+# ============================================================
 try:
     import mod_config
     import mod_instalar
+    
+    # Valida se módulos têm funções essenciais
+    required_functions = {
+        'mod_config': ['apply_cpfani_branding', 'apply_security_lgpd', 'apply_firewall_rules'],
+        'mod_instalar': ['_choco_install', 'install_office_suite']
+    }
+    
+    for module_name, functions in required_functions.items():
+        module = sys.modules[module_name]
+        for func in functions:
+            if not hasattr(module, func):
+                print(f"[AVISO] Função {func} não encontrada em {module_name}", flush=True)
+    
 except ImportError as e:
     print(f"[ERRO CRÍTICO] Falha ao importar módulos: {e}", flush=True)
     print("Certifique-se de que mod_config.py e mod_instalar.py estão no mesmo diretório.", flush=True)
@@ -78,6 +193,28 @@ ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "settings.json")
+
+# ============================================================
+# VALIDAÇÃO DE SCHEMA DO SETTINGS.JSON (NOVO)
+# ============================================================
+def validate_settings_schema(settings):
+    """Valida estrutura do settings.json"""
+    if not isinstance(settings, dict):
+        return False, "Settings deve ser um dicionário"
+    
+    # Valida estrutura básica
+    if 'apps' in settings:
+        if not isinstance(settings['apps'], dict):
+            return False, "'apps' deve ser um dicionário"
+        if 'choco' in settings['apps']:
+            if not isinstance(settings['apps']['choco'], list):
+                return False, "'apps.choco' deve ser uma lista"
+    
+    if 'bloatware_remove' in settings:
+        if not isinstance(settings['bloatware_remove'], list):
+            return False, "'bloatware_remove' deve ser uma lista"
+    
+    return True, "OK"
 
 def load_settings():
     """Carrega configurações do settings.json com fallback seguro"""
@@ -95,6 +232,13 @@ def load_settings():
     try:
         with open(SETTINGS_PATH, "r", encoding="utf-8", errors='replace') as f:
             settings = json.load(f)
+            
+            # Valida schema
+            is_valid, message = validate_settings_schema(settings)
+            if not is_valid:
+                print(f"[ERRO] settings.json com schema inválido: {message}. Usando padrão.", flush=True)
+                return default_settings
+            
             print(f"[OK] Configurações carregadas de {SETTINGS_PATH}", flush=True)
             return settings
     except json.JSONDecodeError as e:
@@ -106,6 +250,27 @@ def load_settings():
 
 SETTINGS = load_settings()
 
+# ============================================================
+# SISTEMA DE BACKUP DE CONFIGURAÇÕES (NOVO)
+# ============================================================
+def backup_configurations():
+    """Cria backup das configurações atuais antes de aplicar mudanças"""
+    try:
+        backup_dir = os.path.join(os.path.dirname(__file__), "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = os.path.join(backup_dir, f"settings_backup_{timestamp}.json")
+        
+        if os.path.exists(SETTINGS_PATH):
+            shutil.copy2(SETTINGS_PATH, backup_file)
+            print(f"[OK] Backup criado: {backup_file}", flush=True)
+            return backup_file
+        return None
+    except Exception as e:
+        print(f"[AVISO] Falha ao criar backup: {e}", flush=True)
+        return None
+
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -113,13 +278,35 @@ class CPFani_GUI(ctk.CTk):
         self.geometry("740x800")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
+        
+        # ============================================================
+        # VALIDAÇÃO DE LOCK (NOVO)
+        # ============================================================
+        self.lock_acquired, self.lock_pid = acquire_lock()
+        if not self.lock_acquired:
+            print(f"[ERRO] Outra instância já está executando (PID: {self.lock_pid})", flush=True)
+            messagebox.showerror("Erro", f"Outra instância do setup já está executando.\nPID: {self.lock_pid}")
+            sys.exit(1)
+        
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
+        
+        # ============================================================
+        # LOG DE VARIÁVEIS DE AMBIENTE (NOVO)
+        # ============================================================
+        self.log("=== VARIÁVEIS DE AMBIENTE ===", "INFO")
+        self.log(f"Python: {sys.version}", "INFO")
+        self.log(f"Plataforma: {sys.platform}", "INFO")
+        self.log(f"Diretório: {os.path.dirname(__file__)}", "INFO")
+        self.log(f"Usuário: {os.getenv('USERNAME', 'N/A')}", "INFO")
+        self.log(f"Computador: {os.getenv('COMPUTERNAME', 'N/A')}", "INFO")
+        self.log("=============================", "INFO")
 
     def _on_closing(self):
         """Tratamento seguro para fechamento da janela"""
         if messagebox.askokcancel("Sair", "Deseja realmente sair do setup?"):
             self.log("Interface fechada pelo usuário.", "INFO")
+            release_lock()  # Libera lock ao fechar
             self.destroy()
 
     def _build_ui(self):
@@ -139,6 +326,8 @@ class CPFani_GUI(ctk.CTk):
                     logo_label.pack(pady=(0, 10))
                 except Exception as e:
                     self.log(f"Aviso: Falha ao carregar logo: {e}", "AVISO")
+            else:
+                self.log(f"Aviso: Logo não encontrado em {logo_path}", "AVISO")
         
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
         ctk.CTkLabel(header_frame, text="v5.9.5  |  Gestão de Endpoints (Adaptação Dinâmica)", font=("Segoe UI", 11), text_color="#666666").pack()
@@ -305,9 +494,11 @@ class CPFani_GUI(ctk.CTk):
                 # Cria diretório se não existir
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                 
-                # Download com timeout
+                # Download com timeout (CORRIGIDO)
                 start_time = time.time()
-                urllib.request.urlretrieve(url, dest_path)
+                with urllib.request.urlopen(url, timeout=timeout) as response:
+                    with open(dest_path, 'wb') as out_file:
+                        shutil.copyfileobj(response, out_file)
                 elapsed = time.time() - start_time
                 
                 # Validação de tamanho
@@ -322,6 +513,17 @@ class CPFani_GUI(ctk.CTk):
                         continue
                     else:
                         return False
+                
+                # ============================================================
+                # CÁLCULO DE CHECKSUM (NOVO)
+                # ============================================================
+                self.log(f"Calculando checksum SHA256...")
+                sha256_hash = hashlib.sha256()
+                with open(dest_path, "rb") as f:
+                    for byte_block in iter(lambda: f.read(4096), b""):
+                        sha256_hash.update(byte_block)
+                checksum = sha256_hash.hexdigest()
+                self.log(f"SHA256: {checksum[:16]}...", "INFO")
                 
                 self.log(f"✓ Download concluído: {file_size / (1024*1024):.2f} MB em {elapsed:.1f}s", "OK")
                 return True
@@ -418,6 +620,32 @@ class CPFani_GUI(ctk.CTk):
 
     def start_deploy(self):
         """Inicia o processo de deploy com confirmação"""
+        # ============================================================
+        # VALIDAÇÃO DE PRÉ-REQUISITOS (NOVO)
+        # ============================================================
+        self.log("Validando pré-requisitos...")
+        errors, warnings = validate_prerequisites()
+        
+        if warnings:
+            for warning in warnings:
+                self.log(f"⚠ {warning}", "AVISO")
+        
+        if errors:
+            error_msg = "Pré-requisitos não atendidos:\n\n" + "\n".join(f"• {e}" for e in errors)
+            self.log(f"ERRO: {error_msg}", "ERRO")
+            messagebox.showerror("Erro de Pré-requisitos", error_msg)
+            return
+        
+        self.log("✓ Todos os pré-requisitos atendidos", "OK")
+        
+        # ============================================================
+        # BACKUP DE CONFIGURAÇÕES (NOVO)
+        # ============================================================
+        self.log("Criando backup de configurações...")
+        backup_file = backup_configurations()
+        if backup_file:
+            self.log(f"✓ Backup criado: {os.path.basename(backup_file)}", "OK")
+        
         if not messagebox.askyesno("Confirmar", "Iniciar provisionamento (Modo Infiltrado + Self-Healing)?"): 
             return
         
@@ -465,10 +693,13 @@ class CPFani_GUI(ctk.CTk):
             self.update_status("► Aplicando Interface e Branding...", (completed / total_tasks) * 100, "")
             try:
                 self.log("Aplicando branding CP Fani...")
-                mod_config.apply_cpfani_branding(self.bar_var.get())
+                result = mod_config.apply_cpfani_branding(self.bar_var.get())
+                if result is False:
+                    self.log("Função apply_cpfani_branding retornou False", "AVISO")
                 self.log("✓ Branding aplicado com sucesso", "OK")
             except Exception as e:
                 self.log(f"Falha ao aplicar branding: {e}", "ERRO")
+                self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                 erros.append("Branding")
             completed += 1
 
@@ -476,22 +707,29 @@ class CPFani_GUI(ctk.CTk):
             self.update_status("► Aplicando Segurança e LGPD...", (completed / total_tasks) * 100, "")
             try:
                 self.log("Aplicando políticas de segurança...")
-                mod_config.apply_security_lgpd(
+                result = mod_config.apply_security_lgpd(
                     apply_lgpd=self.sec_lgpd.get(),
                     disable_hello=self.sec_hello.get()
                 )
+                if result is False:
+                    self.log("Função apply_security_lgpd retornou False", "AVISO")
                 
                 if self.sec_firewall.get():
                     self.log("Configurando regras de firewall...")
-                    mod_config.apply_firewall_rules()
+                    result = mod_config.apply_firewall_rules()
+                    if result is False:
+                        self.log("Função apply_firewall_rules retornou False", "AVISO")
                 
                 if self.sec_bloatware.get():
                     self.log("Removendo bloatware...")
-                    mod_config.remove_agressive_bloatware(SETTINGS.get("bloatware_remove", []))
+                    result = mod_config.remove_agressive_bloatware(SETTINGS.get("bloatware_remove", []))
+                    if result is False:
+                        self.log("Função remove_agressive_bloatware retornou False", "AVISO")
                 
                 self.log("✓ Segurança aplicada com sucesso", "OK")
             except Exception as e:
                 self.log(f"Falha ao aplicar segurança: {e}", "ERRO")
+                self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                 erros.append("Segurança")
             completed += 1
 
@@ -501,16 +739,23 @@ class CPFani_GUI(ctk.CTk):
                 self.log("Configurando agendamentos...")
                 if self.task_reinicio.get():
                     self.log("Agendando reinício diário...")
-                    mod_config.schedule_daily_reboot()
+                    result = mod_config.schedule_daily_reboot()
+                    if result is False:
+                        self.log("Função schedule_daily_reboot retornou False", "AVISO")
                 if self.task_manutencao.get():
                     self.log("Agendando manutenção de rede...")
-                    mod_config.schedule_manutencao_rede()
+                    result = mod_config.schedule_manutencao_rede()
+                    if result is False:
+                        self.log("Função schedule_manutencao_rede retornou False", "AVISO")
                 if self.task_instalar.get():
                     self.log("Agendando atualizador...")
-                    mod_config.schedule_instalar_tudo()
+                    result = mod_config.schedule_instalar_tudo()
+                    if result is False:
+                        self.log("Função schedule_instalar_tudo retornou False", "AVISO")
                 self.log("✓ Agendamentos configurados", "OK")
             except Exception as e:
                 self.log(f"Falha ao configurar agendamentos: {e}", "ERRO")
+                self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                 erros.append("Agendamentos")
             completed += 1
             
@@ -519,10 +764,13 @@ class CPFani_GUI(ctk.CTk):
                 self.update_status("► Instalando Motor de Auto-Cura...", (completed / total_tasks) * 100, "Injetando Watchdog...")
                 try:
                     self.log("Configurando self-healing...")
-                    mod_config.setup_self_healing()
+                    result = mod_config.setup_self_healing()
+                    if result is False:
+                        self.log("Função setup_self_healing retornou False", "AVISO")
                     self.log("✓ Self-healing ativado", "OK")
                 except Exception as e:
                     self.log(f"Falha ao configurar self-healing: {e}", "ERRO")
+                    self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                     erros.append("Self-Healing")
                 completed += 1
 
@@ -549,6 +797,7 @@ class CPFani_GUI(ctk.CTk):
                         erros.append(app)
                 except Exception as e:
                     self.log(f"Erro crítico ao instalar {app}: {e}", "ERRO")
+                    self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                     erros.append(app)
                 
                 completed += 1
@@ -557,10 +806,13 @@ class CPFani_GUI(ctk.CTk):
             self.update_status("► Configurando arranque global...", (completed / total_tasks) * 100, "Configurando ferramentas de suporte...")
             try:
                 self.log("Configurando aplicativos de startup...")
-                mod_config.set_apps_to_startup_all_users()
+                result = mod_config.set_apps_to_startup_all_users()
+                if result is False:
+                    self.log("Função set_apps_to_startup_all_users retornou False", "AVISO")
                 self.log("✓ Startup configurado", "OK")
             except Exception as e:
                 self.log(f"Falha ao configurar startup: {e}", "ERRO")
+                self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                 erros.append("Startup Global")
             completed += 1
             
@@ -569,13 +821,15 @@ class CPFani_GUI(ctk.CTk):
                 self.update_status("► Instalando Office...", (completed / total_tasks) * 100, f"Instalando {self.office_var.get()}")
                 try:
                     self.log(f"Instalando {self.office_var.get()}...")
-                    if not mod_instalar.install_office_suite(self.office_var.get()):
+                    success = mod_instalar.install_office_suite(self.office_var.get())
+                    if not success:
                         self.log(f"Falha ao instalar {self.office_var.get()}", "ERRO")
                         erros.append("Office")
                     else:
                         self.log("✓ Office instalado", "OK")
                 except Exception as e:
                     self.log(f"Erro ao instalar Office: {e}", "ERRO")
+                    self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                     erros.append("Office")
                 completed += 1
 
@@ -585,20 +839,23 @@ class CPFani_GUI(ctk.CTk):
                 try:
                     if self.driver_var.get() == "fabricante":
                         self.log("Instalando drivers do fabricante...")
-                        if not mod_instalar.install_manufacturer_drivers(SETTINGS):
+                        success = mod_instalar.install_manufacturer_drivers(SETTINGS)
+                        if not success:
                             self.log("Falha ao instalar drivers do fabricante", "ERRO")
                             erros.append("Drivers Fabricante")
                         else:
                             self.log("✓ Drivers do fabricante instalados", "OK")
                     elif self.driver_var.get() == "wu":
                         self.log("Forçando Windows Update para drivers...")
-                        if not mod_instalar.force_windows_update_drivers():
+                        success = mod_instalar.force_windows_update_drivers()
+                        if not success:
                             self.log("Falha ao forçar Windows Update", "ERRO")
                             erros.append("Windows Update")
                         else:
                             self.log("✓ Windows Update executado", "OK")
                 except Exception as e:
                     self.log(f"Erro ao instalar drivers: {e}", "ERRO")
+                    self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                     erros.append("Drivers")
                 completed += 1
 
@@ -606,10 +863,13 @@ class CPFani_GUI(ctk.CTk):
             self.update_status("► Gerando snapshot de hardware...", (completed / total_tasks) * 100, "")
             try:
                 self.log("Gerando snapshot de hardware...")
-                mod_config.generate_full_snapshot()
+                result = mod_config.generate_full_snapshot()
+                if result is False:
+                    self.log("Função generate_full_snapshot retornou False", "AVISO")
                 self.log("✓ Snapshot gerado", "OK")
             except Exception as e:
                 self.log(f"Falha ao gerar snapshot: {e}", "ERRO")
+                self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
                 erros.append("Snapshot")
             completed += 1
 
@@ -650,6 +910,12 @@ class CPFani_GUI(ctk.CTk):
                 )
         except Exception as e:
             self.log(f"Erro ao finalizar: {e}", "ERRO")
+            self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
+        finally:
+            # ============================================================
+            # LIBERA LOCK AO FINALIZAR (NOVO)
+            # ============================================================
+            release_lock()
 
 if __name__ == "__main__":
     try:
