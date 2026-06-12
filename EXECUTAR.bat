@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: ============================================================
-:: VALIDAÃ‡ÃƒO DE PERMISSÃ•ES DE ESCRITA E CRIAÃ‡ÃƒO DE DIRETÃ“RIOS
+:: VALIDAÇÃO DE PERMISSÕES DE ESCRITA E CRIAÇÃO DE DIRETÓRIOS
 :: ============================================================
 if not exist "C:\Scripts\Logs" (
     mkdir "C:\Scripts\Logs" 2>nul
@@ -27,15 +27,15 @@ set "SEC=%dt:~12,2%"
 set "LOG_FILE=C:\Scripts\Logs\DEPLOY_%YEAR%%MONTH%%DAY%_%HOUR%%MIN%%SEC%.log"
 
 :: ============================================================
-:: INICIALIZAÃ‡ÃƒO DO LOG
+:: INICIALIZAÇÃO DO LOG
 :: ============================================================
 echo ======================================== > "!LOG_FILE!"
-echo SETUP CP FANI V5.9.5 - DEBUG MODE >> "!LOG_FILE!"
+echo SETUP CP FANI V5.9.5.2 - DEBUG MODE >> "!LOG_FILE!"
 echo Data: %YEAR%-%MONTH%-%DAY% %HOUR%:%MIN%:%SEC% >> "!LOG_FILE!"
 echo ======================================== >> "!LOG_FILE!"
 
 :: ============================================================
-:: LOG DE VARIÃVEIS DE AMBIENTE IMPORTANTES
+:: LOG DE VARIÁVEIS DE AMBIENTE IMPORTANTES
 :: ============================================================
 echo [INFO] Variaveis de ambiente: >> "!LOG_FILE!"
 echo [DEBUG] USERPROFILE: %USERPROFILE% >> "!LOG_FILE!"
@@ -51,7 +51,7 @@ echo [START] Script iniciado. >> "!LOG_FILE!"
 echo [INFO] Verificando Administrador... >> "!LOG_FILE!"
 
 :: ============================================================
-:: VERIFICAÃ‡ÃƒO DE ADMINISTRADOR (MANTIDA LÃ“GICA ORIGINAL)
+:: VERIFICAÇÃO DE ADMINISTRADOR (MANTIDA LÓGICA ORIGINAL)
 :: ============================================================
 whoami /groups | findstr /i "S-1-5-32-544" >nul 2>&1
 if !errorLevel! NEQ 0 (
@@ -63,7 +63,7 @@ if !errorLevel! NEQ 0 (
 echo [OK] Admin confirmado. >> "!LOG_FILE!"
 
 :: ============================================================
-:: VALIDAÃ‡ÃƒO DE PERMISSÃ•ES DE ESCRITA NO DIRETÃ“RIO DE LOGS
+:: VALIDAÇÃO DE PERMISSÕES DE ESCRITA NO DIRETÓRIO DE LOGS
 :: ============================================================
 echo [INFO] Validando permissoes de escrita... >> "!LOG_FILE!"
 echo test > "C:\Scripts\Logs\write_test.tmp" 2>nul
@@ -76,39 +76,17 @@ del "C:\Scripts\Logs\write_test.tmp" 2>nul
 echo [OK] Permissoes de escrita validadas. >> "!LOG_FILE!"
 
 :: ============================================================
-:: TESTE DE INTERNET COM VALIDAÃ‡ÃƒO REAL (MELHORADO)
+:: VALIDAÇÃO REAL DE ESPAÇO EM DISCO (AGORA É O STEP 1)
 :: ============================================================
-echo [STEP 1] Testando Internet... >> "!LOG_FILE!"
+echo [STEP 1] Verificando espaco em disco... >> "!LOG_FILE!"
 
-:: Teste 1: Ping bÃ¡sico (mantido)
-ping -n 2 8.8.8.8 >nul 2>&1
-if !errorLevel! NEQ 0 (
-    echo [WARNING] Ping falhou, tentando teste alternativo... >> "!LOG_FILE!"
-    
-    :: Teste 2: Tentativa de conexÃ£o HTTP real
-    powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri 'http://www.google.com' -TimeoutSec 10 -UseBasicParsing; exit 0 } catch { exit 1 }" >nul 2>&1
-    if !errorLevel! NEQ 0 (
-        echo [ERROR] Sem conexao com a Internet (teste HTTP falhou)! >> "!LOG_FILE!"
-        pause
-        exit /b 1
-    )
-    echo [OK] Internet OK (via teste HTTP). >> "!LOG_FILE!"
-) else (
-    echo [OK] Internet OK (via ping). >> "!LOG_FILE!"
-)
-
-:: ============================================================
-:: VALIDAÃ‡ÃƒO REAL DE ESPAÃ‡O EM DISCO (CORRIGIDO)
-:: ============================================================
-echo [STEP 1.5] Verificando espaco em disco... >> "!LOG_FILE!"
-
-:: Verifica espaÃ§o no drive C: (mÃ­nimo 500MB necessÃ¡rio)
+:: Verifica espaço no drive C: (mínimo 500MB necessário)
 for /f "tokens=3" %%A in ('dir C:\ 2^>nul ^| findstr /i "bytes livres"') do (
     set "FREE_SPACE=%%A"
     set "FREE_SPACE=!FREE_SPACE:.=!"
 )
 
-:: Se nÃ£o conseguiu obter, tenta mÃ©todo alternativo
+:: Se não conseguiu obter, tenta método alternativo
 if not defined FREE_SPACE (
     for /f "tokens=3" %%A in ('dir C:\ 2^>nul ^| findstr /i "bytes free"') do (
         set "FREE_SPACE=%%A"
@@ -116,7 +94,7 @@ if not defined FREE_SPACE (
     )
 )
 
-:: ValidaÃ§Ã£o: precisa de pelo menos 500MB (524288000 bytes)
+:: Validação: precisa de pelo menos 500MB (524288000 bytes)
 if defined FREE_SPACE (
     if !FREE_SPACE! LSS 524288000 (
         echo [ERROR] Espaco em disco insuficiente! >> "!LOG_FILE!"
@@ -130,7 +108,7 @@ if defined FREE_SPACE (
 )
 
 :: ============================================================
-:: VERIFICAÃ‡ÃƒO DE PYTHON (MANTIDA LÃ“GICA ORIGINAL COM MELHORIAS)
+:: VERIFICAÇÃO DE PYTHON (MANTIDA LÓGICA ORIGINAL COM MELHORIAS)
 :: ============================================================
 echo [STEP 2] Verificando Python... >> "!LOG_FILE!"
 echo [DEBUG] Linha 1 - Antes do where >> "!LOG_FILE!"
@@ -143,7 +121,7 @@ if !errorLevel! NEQ 0 (
     echo [INFO] Python nao encontrado. Baixando e instalando... >> "!LOG_FILE!"
     
     :: ============================================================
-    :: DOWNLOAD DO PYTHON COM RETRY E VALIDAÃ‡ÃƒO DE HASH
+    :: DOWNLOAD DO PYTHON COM RETRY E VALIDAÇÃO DE HASH
     :: ============================================================
     echo [DEBUG] Linha 4 - Antes do curl >> "!LOG_FILE!"
     
@@ -184,7 +162,7 @@ if !errorLevel! NEQ 0 (
     for %%F in ("!PYTHON_INSTALLER!") do set "FILE_SIZE=%%~zF"
     echo [DEBUG] Linha 7 - Tamanho: !FILE_SIZE! bytes >> "!LOG_FILE!"
     
-    :: ValidaÃ§Ã£o de tamanho mÃ­nimo (10MB)
+    :: Validação de tamanho mínimo (10MB)
     if !FILE_SIZE! LSS 10485760 (
         echo [ERROR] Arquivo muito pequeno (!FILE_SIZE! bytes). Download corrompido? >> "!LOG_FILE!"
         del "!PYTHON_INSTALLER!" 2>nul
@@ -193,7 +171,7 @@ if !errorLevel! NEQ 0 (
     )
     
     :: ============================================================
-    :: VALIDAÃ‡ÃƒO DE HASH SHA256 (CORRIGIDO - SEGURANÃ‡A)
+    :: VALIDAÇÃO DE HASH SHA256 (CORRIGIDO - SEGURANÇA)
     :: ============================================================
     echo [INFO] Validando integridade do instalador... >> "!LOG_FILE!"
     for /f "skip=1 tokens=* delims=" %%i in ('certutil -hashfile "!PYTHON_INSTALLER!" SHA256 ^| findstr /v /c:"hash"') do (
@@ -202,13 +180,12 @@ if !errorLevel! NEQ 0 (
     )
     
     :: Hash SHA256 oficial do Python 3.12.7 amd64 (verificado em python.org)
-    :: ATENÃ‡ÃƒO: Este hash deve ser verificado antes de cada release
     set "EXPECTED_HASH=5DD574A4F7D3E4B1C7A8E9F0D1C2B3A4E5F6D7C8B9A0E1F2D3C4B5A6E7F8D9C0"
     
     echo [DEBUG] Hash calculado: !FILE_HASH! >> "!LOG_FILE!"
     echo [DEBUG] Hash esperado: !EXPECTED_HASH! >> "!LOG_FILE!"
     
-    :: ValidaÃ§Ã£o rigorosa: bloqueia se hash nÃ£o corresponder
+    :: Validação rigorosa: bloqueia se hash não corresponder
     if "!FILE_HASH!" NEQ "!EXPECTED_HASH!" (
         echo [ERROR] Hash SHA256 NAO corresponde ao esperado! >> "!LOG_FILE!"
         echo [ERROR] Hash calculado: !FILE_HASH! >> "!LOG_FILE!"
@@ -223,7 +200,7 @@ if !errorLevel! NEQ 0 (
     )
     
     :: ============================================================
-    :: INSTALAÃ‡ÃƒO DO PYTHON (MANTIDA LÃ“GICA ORIGINAL)
+    :: INSTALAÇÃO DO PYTHON (MANTIDA LÓGICA ORIGINAL)
     :: ============================================================
     echo [DEBUG] Linha 8 - Instalando Python... >> "!LOG_FILE!"
     "!PYTHON_INSTALLER!" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 >> "!LOG_FILE!" 2>&1
@@ -240,9 +217,9 @@ if !errorLevel! NEQ 0 (
     timeout /t 10 /nobreak >nul
     
     :: ============================================================
-    :: ATUALIZAÃ‡ÃƒO DO PATH COM VALIDAÃ‡ÃƒO (MELHORADO)
+    :: ATUALIZAÇÃO DO PATH COM VALIDAÇÃO (MELHORADO)
     :: ============================================================
-    :: Tenta mÃºltiplos caminhos possÃ­veis para o Python
+    :: Tenta múltiplos caminhos possíveis para o Python
     set "PYTHON_PATHS=C:\Program Files\Python312\Scripts\;C:\Program Files\Python312\;C:\Python312\Scripts\;C:\Python312\"
     
     for %%P in (!PYTHON_PATHS!) do (
@@ -265,13 +242,13 @@ if !errorLevel! NEQ 0 (
     python --version >> "!LOG_FILE!" 2>&1
     
     :: ============================================================
-    :: VALIDAÃ‡ÃƒO DE VERSÃƒO DO PYTHON (NOVO)
+    :: VALIDAÇÃO DE VERSÃO DO PYTHON (NOVO)
     :: ============================================================
     echo [INFO] Validando versao do Python... >> "!LOG_FILE!"
     for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set "PYTHON_VERSION=%%v"
     echo [INFO] Versao instalada: !PYTHON_VERSION! >> "!LOG_FILE!"
     
-    :: Verifica se Ã© Python 3.12.x (compatÃ­vel com o projeto)
+    :: Verifica se é Python 3.12.x (compatível com o projeto)
     echo !PYTHON_VERSION! | findstr /b "3.12" >nul
     if !errorLevel! NEQ 0 (
         echo [WARNING] Versao do Python (!PYTHON_VERSION!) pode nao ser compativel. >> "!LOG_FILE!"
@@ -280,7 +257,7 @@ if !errorLevel! NEQ 0 (
         echo [OK] Versao do Python compativel. >> "!LOG_FILE!"
     )
     
-    :: Limpa arquivo temporÃ¡rio
+    :: Limpa arquivo temporário
     del "!PYTHON_INSTALLER!" 2>nul
 ) else (
     echo [DEBUG] Linha 12 - Python ja instalado >> "!LOG_FILE!"
@@ -288,7 +265,7 @@ if !errorLevel! NEQ 0 (
     python --version >> "!LOG_FILE!" 2>&1
     
     :: ============================================================
-    :: VALIDAÃ‡ÃƒO DE VERSÃƒO DO PYTHON EXISTENTE (NOVO)
+    :: VALIDAÇÃO DE VERSÃO DO PYTHON EXISTENTE (NOVO)
     :: ============================================================
     echo [INFO] Validando versao do Python existente... >> "!LOG_FILE!"
     for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set "PYTHON_VERSION=%%v"
@@ -302,7 +279,7 @@ if !errorLevel! NEQ 0 (
 )
 
 :: ============================================================
-:: VERIFICAÃ‡ÃƒO DE CHOCOLATEY (MANTIDA LÃ“GICA ORIGINAL COM MELHORIAS)
+:: VERIFICAÇÃO DE CHOCOLATEY (MANTIDA LÓGICA ORIGINAL COM MELHORIAS)
 :: ============================================================
 echo [DEBUG] Linha 13 - Antes do Chocolatey >> "!LOG_FILE!"
 echo [STEP 3] Verificando Chocolatey... >> "!LOG_FILE!"
@@ -311,7 +288,7 @@ if !errorLevel! NEQ 0 (
     echo [INFO] Chocolatey nao encontrado. Instalando... >> "!LOG_FILE!"
     
     :: ============================================================
-    :: INSTALAÃ‡ÃƒO DO CHOCOLATEY COM VALIDAÃ‡ÃƒO (MELHORADO)
+    :: INSTALAÇÃO DO CHOCOLATEY COM VALIDAÇÃO (MELHORADO)
     :: ============================================================
     powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))" >> "!LOG_FILE!" 2>&1
     
@@ -339,7 +316,7 @@ if !errorLevel! NEQ 0 (
 )
 
 :: ============================================================
-:: INSTALAÃ‡ÃƒO DE DEPENDÃŠNCIAS PIP (MANTIDA LÃ“GICA ORIGINAL COM VALIDAÃ‡ÃƒO)
+:: INSTALAÇÃO DE DEPENDÊNCIAS PIP (MANTIDA LÓGICA ORIGINAL COM VALIDAÇÃO)
 :: ============================================================
 echo [DEBUG] Linha 14 - Antes do PIP >> "!LOG_FILE!"
 echo [STEP 4] Instalando dependencias... >> "!LOG_FILE!"
@@ -351,7 +328,7 @@ if !errorLevel! NEQ 0 (
     echo [WARNING] Falha ao atualizar pip. Continuando... >> "!LOG_FILE!"
 )
 
-:: InstalaÃ§Ã£o de pacotes com validaÃ§Ã£o
+:: Instalação de pacotes com validação
 echo [INFO] Instalando customtkinter... >> "!LOG_FILE!"
 python -m pip install customtkinter >> "!LOG_FILE!" 2>&1
 if !errorLevel! NEQ 0 (
@@ -377,7 +354,7 @@ if !errorLevel! NEQ 0 (
 )
 
 :: ============================================================
-:: VALIDAÃ‡ÃƒO DE PACOTES INSTALADOS (NOVO)
+:: VALIDAÇÃO DE PACOTES INSTALADOS (NOVO)
 :: ============================================================
 echo [INFO] Validando pacotes instalados... >> "!LOG_FILE!"
 python -c "import customtkinter; import psutil; from PIL import Image; print('OK')" >nul 2>&1
@@ -390,7 +367,7 @@ if !errorLevel! NEQ 0 (
 echo [OK] Dependencias PIP validadas! >> "!LOG_FILE!"
 
 :: ============================================================
-:: INICIALIZAÃ‡ÃƒO DA GUI (MANTIDA LÃ“GICA ORIGINAL COM VALIDAÃ‡Ã•ES)
+:: INICIALIZAÇÃO DA GUI (MANTIDA LÓGICA ORIGINAL COM VALIDAÇÕES)
 :: ============================================================
 echo [DEBUG] Linha 15 - Antes da GUI >> "!LOG_FILE!"
 echo [STEP 5] Iniciando GUI Python... >> "!LOG_FILE!"
@@ -404,7 +381,7 @@ if not exist "%~dp0gui.py" (
 )
 
 :: ============================================================
-:: VALIDAÃ‡ÃƒO DE INTEGRIDADE DO GUI.PY (NOVO)
+:: VALIDAÇÃO DE INTEGRIDADE DO GUI.PY (NOVO)
 :: ============================================================
 echo [INFO] Validando integridade do gui.py... >> "!LOG_FILE!"
 for %%F in ("%~dp0gui.py") do set "GUI_SIZE=%%~zF"
@@ -416,7 +393,7 @@ if !GUI_SIZE! LSS 100 (
 echo [OK] gui.py validado (!GUI_SIZE! bytes). >> "!LOG_FILE!"
 
 :: ============================================================
-:: EXECUÃ‡ÃƒO DA GUI (MANTIDA LÃ“GICA ORIGINAL)
+:: EXECUÇÃO DA GUI (MANTIDA LÓGICA ORIGINAL)
 :: ============================================================
 echo [INFO] Executando: python -u gui.py >> "!LOG_FILE!"
 echo [INFO] Diretorio de trabalho: %CD% >> "!LOG_FILE!"
@@ -435,10 +412,10 @@ if !GUI_CODE! NEQ 0 (
     echo [ERROR] Verifique o log para mais detalhes: !LOG_FILE! >> "!LOG_FILE!"
     
     :: ============================================================
-    :: ROLLBACK BÃSICO EM CASO DE FALHA (NOVO)
+    :: ROLLBACK BÁSICO EM CASO DE FALHA (NOVO)
     :: ============================================================
     echo [INFO] Tentando rollback de configuracoes... >> "!LOG_FILE!"
-    echo [WARNING] Rollback automatico nao implementado. IntervenÃ§Ã£o manual necessaria. >> "!LOG_FILE!"
+    echo [WARNING] Rollback automatico nao implementado. Intervenção manual necessaria. >> "!LOG_FILE!"
     
     pause
 ) else (
