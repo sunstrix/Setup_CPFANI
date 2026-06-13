@@ -1,0 +1,69 @@
+# ============================================
+# Setup_CPFANI - Arquivos Ignorados pelo Git
+# ============================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Ambientes Virtuais Python
+venv/
+ENV/
+env/
+.venv
+
+# Logs e Arquivos Temporários
+*.log
+*.tmp
+*.temp
+logs/
+
+# Arquivos de Sistema Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Configurações de IDE e Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Arquivos de Configuração Local (sensíveis)
+config_local.json
+*.local.json
+
+# Arquivos de Backup
+*.bak
+*.backup
+*.old
+
+# Arquivos de Instalação Temporários
+installer_temp/
+downloads_temp/
+*.msi
+*.exe
+!Setup_CPFANI.exe
