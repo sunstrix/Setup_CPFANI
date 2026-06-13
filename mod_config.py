@@ -98,7 +98,7 @@ def _apply_to_all_real_users():
     _log("Desativando PrtSc no usuário corrente (HKCU)...", "INFO")
     try:
         with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Control Panel\Keyboard", 0, winreg.KEY_SET_VALUE) as hkcu_key:
-            winreg.SetValueEx(hkcu_key, "PrintScreenKeyForSnippingToolEnabled", 0, winreg_REG_DWORD, 0)
+            winreg.SetValueEx(hkcu_key, "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD, 0)
         _log("✓ Chave PrintScreenKeyForSnippingToolEnabled desativada no HKCU", "OK")
     except Exception as e:
         _log(f"Aviso ao setar HKCU direto: {e}", "AVISO")
@@ -113,7 +113,7 @@ def _apply_to_all_real_users():
         if result and result.returncode == 0:
             _log("✓ PrtSc desativado via reg add", "OK")
         else:
-            “⚠ Falha ao desativar via reg add", "AVISO")
+            _log("⚠ Falha ao desativar via reg add", "AVISO")
     except Exception as e:
         _log(f"Erro no reg add: {e}", "AVISO")
     
@@ -921,7 +921,8 @@ def schedule_manutencao_rede():
         if os.path.exists(script_path):
             cmd = ['schtasks', '/create', '/tn', 'CP_Fani_Network_Maintenance', '/tr', f'"{script_path}"', '/sc', 'weekly', '/d', 'SAT', '/st', '02:00', '/rl', 'highest', '/f']
             res = _safe_subprocess_run(cmd, timeout=15)
-            if res and res.returncode ==  “OK")
+            if res and res.returncode == 0:
+                _log("✓ Manutenção agendada", "OK")
             return True
         return False
     except Exception as e:
