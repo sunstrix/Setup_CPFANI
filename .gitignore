@@ -2,7 +2,25 @@
 # Setup_CPFANI - Arquivos Ignorados pelo Git
 # ============================================
 
-# Python
+# ============================================================
+# ARQUIVOS TEMPORÁRIOS DO SETUP
+# ============================================================
+.setup_lock
+*.lock
+*.tmp
+*.temp
+
+# ============================================================
+# BACKUPS AUTOMÁTICOS
+# ============================================================
+backups/
+*.backup
+*.bak
+*.old
+
+# ============================================================
+# CACHE PYTHON
+# ============================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -24,25 +42,33 @@ wheels/
 .installed.cfg
 *.egg
 
-# Ambientes Virtuais Python
+# ============================================================
+# AMBIENTES VIRTUAIS PYTHON
+# ============================================================
 venv/
 ENV/
 env/
 .venv
 
-# Logs e Arquivos Temporários
+# ============================================================
+# LOGS E ARQUIVOS DE EXECUÇÃO
+# ============================================================
 *.log
-*.tmp
-*.temp
 logs/
+C:\Scripts\Logs\
+C:\Scripts\Backups\
 
-# Arquivos de Sistema Windows
+# ============================================================
+# ARQUIVOS DE SISTEMA WINDOWS
+# ============================================================
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
-# Configurações de IDE e Editores
+# ============================================================
+# CONFIGURAÇÕES DE IDE E EDITORES
+# ============================================================
 .vscode/
 .idea/
 *.swp
@@ -52,18 +78,23 @@ $RECYCLE.BIN/
 .pydevproject
 .settings/
 
-# Arquivos de Configuração Local (sensíveis)
+# ============================================================
+# ARQUIVOS DE CONFIGURAÇÃO LOCAL (SENSÍVEIS)
+# ============================================================
 config_local.json
 *.local.json
 
-# Arquivos de Backup
-*.bak
-*.backup
-*.old
-
-# Arquivos de Instalação Temporários
+# ============================================================
+# ARQUIVOS DE INSTALAÇÃO TEMPORÁRIOS
+# ============================================================
 installer_temp/
 downloads_temp/
 *.msi
 *.exe
 !Setup_CPFANI.exe
+
+# ============================================================
+# ARQUIVOS GERADOS DURANTE EXECUÇÃO
+# ============================================================
+CPFANI_Hardware_Snapshot_*.txt
+battery_report.html
