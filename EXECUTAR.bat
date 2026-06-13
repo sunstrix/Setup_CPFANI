@@ -15,14 +15,16 @@ if not exist "C:\Scripts\Logs" (
 
 :: ============================================================
 :: FORMATO DE DATA/HORA ROBUSTO (INDEPENDENTE DE LOCALE)
+:: Usa PowerShell em vez de wmic (que foi removido do Windows 10/11)
 :: ============================================================
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set "dt=%%I"
-set "YEAR=%dt:~0,4%"
-set "MONTH=%dt:~4,2%"
-set "DAY=%dt:~6,2%"
-set "HOUR=%dt:~8,2%"
-set "MIN=%dt:~10,2%"
-set "SEC=%dt:~12,2%"
+for /f "tokens=1-6 delims=/" %%A in ('powershell -NoProfile -Command "Get-Date -Format yyyy/MM/dd/HH/mm/ss"') do (
+    set "YEAR=%%A"
+    set "MONTH=%%B"
+    set "DAY=%%C"
+    set "HOUR=%%D"
+    set "MIN=%%E"
+    set "SEC=%%F"
+)
 
 set "LOG_FILE=C:\Scripts\Logs\DEPLOY_%YEAR%%MONTH%%DAY%_%HOUR%%MIN%%SEC%.log"
 
