@@ -281,17 +281,17 @@ def check_chocolatey():
     
     if shutil.which("choco") is None:
         _log("Chocolatey não encontrado no PATH", "ERRO")
-        raise RuntimeError("Chocolatey não encontrado no PATH.")
+        return False
     
     result = _safe_subprocess_run(["choco", "--version"], timeout=15)
     
     if not result:
         _log("Falha ao executar choco --version", "ERRO")
-        raise RuntimeError("Erro ao executar Chocolatey.")
+        return False
     
     if result.returncode != 0:
         _log(f"Chocolatey retornou código {result.returncode}", "ERRO")
-        raise RuntimeError(f"Erro no Chocolatey. Saida: {result.stderr}")
+        return False
     
     version = result.stdout.strip()
     _log(f"Chocolatey OK: {version}", "OK")
