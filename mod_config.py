@@ -85,16 +85,10 @@ def _apply_to_all_real_users():
     """Varre todos os perfis de usuários para desativar o atalho nativo do PrtSc"""
     _log("Varrendo todos os perfis de usuários para desativar o atalho nativo do PrtSc...", "INFO")
     
-    # ============================================================
-    # VALIDAÇÃO DE PRÉ-REQUISITOS (NOVO)
-    # ============================================================
     if not _validate_admin_privileges():
         _log("Privilégios administrativos necessários para esta operação", "ERRO")
         return False
     
-    # ============================================================
-    # DESATIVAÇÃO NO USUÁRIO ATIVO (HKCU) - REFORÇADO
-    # ============================================================
     _log("Desativando PrtSc no usuário corrente (HKCU)...", "INFO")
     try:
         with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Control Panel\Keyboard", 0, winreg.KEY_SET_VALUE) as hkcu_key:
@@ -103,9 +97,6 @@ def _apply_to_all_real_users():
     except Exception as e:
         _log(f"Aviso ao setar HKCU direto: {e}", "AVISO")
     
-    # ============================================================
-    # DESATIVAÇÃO VIA REG ADD (MÉTODO ALTERNATIVO - WINDOWS 11)
-    # ============================================================
     _log("Aplicando via reg add (método alternativo para Windows 11)...", "INFO")
     try:
         cmd_reg = ["reg", "add", r"HKCU\Control Panel\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"]
@@ -117,9 +108,6 @@ def _apply_to_all_real_users():
     except Exception as e:
         _log(f"Erro no reg add: {e}", "AVISO")
     
-    # ============================================================
-    # DESATIVAÇÃO VIA POWERSHELL (MÉTODO COMPLEMENTAR - WINDOWS 11)
-    # ============================================================
     _log("Aplicando via PowerShell (método complementar)...", "INFO")
     try:
         ps_script = """
@@ -137,9 +125,6 @@ def _apply_to_all_real_users():
     except Exception as e:
         _log(f"Erro no PowerShell: {e}", "AVISO")
     
-    # ============================================================
-    # VARREDURA DE TODOS OS SIDs (MANTIDO COM VALIDAÇÕES)
-    # ============================================================
     try:
         profiles_key = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, profiles_key) as root_key:
@@ -158,14 +143,12 @@ def _apply_to_all_real_users():
                     try:
                         _log(f"Processando SID: {sid}", "INFO")
                         
-                        # Backup de registro antes de modificar
                         _backup_registry_key(
                             winreg.HKEY_USERS,
                             f"{sid}\\Control Panel\\Keyboard",
                             f"Backup antes de modificar SID {sid}"
                         )
                         
-                        # Desativa o interruptor de captura nativa
                         cmd_keyboard = ["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"]
                         result = _safe_subprocess_run(cmd_keyboard, timeout=10)
                         if result and result.returncode == 0:
@@ -173,15 +156,12 @@ def _apply_to_all_real_users():
                         else:
                             _log(f"⚠ Falha ao desativar PrintScreen para SID {sid}", "AVISO")
                         
-                        # Desativa a sincronização de acessibilidade
                         cmd_sync = ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"]
                         _safe_subprocess_run(cmd_sync, timeout=10)
                         
-                        # Remove ganchos de ferramentas concorrentes
                         cmd_dropbox = ["reg", "add", f"HKU\\{sid}\\Software\\Dropbox\\Client", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"]
                         _safe_subprocess_run(cmd_dropbox, timeout=10)
                         
-                        # Configuração do Flameshot
                         try:
                             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, f"{profiles_key}\\{sid}") as p_key:
                                 profile_path, _ = winreg.QueryValueEx(p_key, "ProfileImagePath")
@@ -247,15 +227,11 @@ def _apply_to_all_real_users():
     return True
 
 def generate_full_snapshot():
-    """Gera snapshot COMPLETO de hardware e sistema"""
-    _log("Gerando snapshot COMPLETO de hardware e sistema...", "INFO")
+    """Gera snapshot FOCADO EM HARDWARE e versão do SO (Ultra-rápido)"""
+    _log("Gerando snapshot de hardware...", "INFO")
     
-    # ============================================================
-    # VALIDAÇÃO DE PRÉ-REQUISITOS
-    # ============================================================
     if not _validate_admin_privileges():
         _log("Privilégios administrativos necessários para snapshot completo", "AVISO")
-        # Continua mesmo sem admin, mas com dados limitados
     
     hw = _get_hardware_info()
     pc_name = hw.get("Nome_Computador", "UNKNOWN")
@@ -263,568 +239,210 @@ def generate_full_snapshot():
     
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
-    except PermissionError:
-        _log(f"Sem permissão para criar diretório: {log_path.parent}", "ERRO")
-        return None
     except Exception as e:
-        _log(f"Erro ao criar diretório: {e}", "ERRO")
+        _log(f"Erro ao criar diretório de snapshot: {e}", "ERRO")
         return None
     
     try:
         with open(log_path, "w", encoding="utf-8", errors='replace') as f:
-            # ============================================================
-            # CABEÇALHO
-            # ============================================================
             f.write("=" * 80 + "\n")
-            f.write("SNAPSHOT COMPLETO CP FANI - RELATÓRIO DETALHADO DE HARDWARE E SISTEMA\n")
+            f.write("SNAPSHOT DE HARDWARE CP FANI\n")
             f.write("=" * 80 + "\n")
             f.write(f"Data/Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"PC: {pc_name}\n")
-            f.write(f"Gerado por: Setup Automatizado CP Fani V5.9.5.2\n")
+            f.write(f"Computador: {pc_name}\n")
             f.write("=" * 80 + "\n\n")
             
-            # ============================================================
-            # 1. SISTEMA OPERACIONAL
-            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("1. SISTEMA OPERACIONAL\n")
             f.write("=" * 80 + "\n")
             try:
-                f.write(f"Sistema: {hw.get('Sistema_Operacional', 'N/A')}\n")
-                f.write(f"Versão: {hw.get('Versao_SO', 'N/A')}\n")
-                f.write(f"Release: {platform.release()}\n")
-                f.write(f"Arquitetura: {hw.get('Arquitetura', 'N/A')}\n")
-                f.write(f"Processador: {hw.get('Processador', 'N/A')}\n")
-                
-                # Informações adicionais via WMI
-                try:
-                    os_info = _safe_subprocess_run(
-                        ['powershell', '-NoProfile', '-Command', 
-                         'Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber, OSArchitecture, InstallDate, LastBootUpTime, SystemDirectory, WindowsDirectory | Format-List'],
-                        timeout=30
-                    )
-                    if os_info and os_info.stdout:
-                        f.write(f"\nDetalhes WMI:\n{os_info.stdout}\n")
-                except Exception as e:
-                    f.write(f"Erro ao obter detalhes WMI: {e}\n")
-                
-                # Timezone
-                try:
-                    tz_info = _safe_subprocess_run(
-                        ['powershell', '-NoProfile', '-Command', 'Get-TimeZone | Format-List'],
-                        timeout=10
-                    )
-                    if tz_info and tz_info.stdout:
-                        f.write(f"\nTimezone:\n{tz_info.stdout}\n")
-                except Exception as e:
-                    f.write(f"Erro ao obter timezone: {e}\n")
-                
-                # Idioma do sistema
-                try:
-                    lang_info = _safe_subprocess_run(
-                        ['powershell', '-NoProfile', '-Command', 'Get-WinSystemLocale | Format-List'],
-                        timeout=10
-                    )
-                    if lang_info and lang_info.stdout:
-                        f.write(f"\nIdioma do Sistema:\n{lang_info.stdout}\n")
-                except Exception as e:
-                    f.write(f"Erro ao obter idioma: {e}\n")
-                
-            except Exception as e:
-                f.write(f"Erro ao coletar informações do SO: {e}\n")
+                os_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     '(Get-CimInstance Win32_OperatingSystem).Caption + " (Build " + (Get-CimInstance Win32_OperatingSystem).Version + ")"'],
+                    timeout=10
+                )
+                if os_info and os_info.stdout:
+                    f.write(f"Versão: {os_info.stdout.strip()}\n")
+                else:
+                    f.write(f"Versão: {hw.get('Sistema_Operacional', 'N/A')} {hw.get('Versao_SO', 'N/A')}\n")
+            except Exception:
+                f.write(f"Versão: {hw.get('Sistema_Operacional', 'N/A')} {hw.get('Versao_SO', 'N/A')}\n")
             f.write("\n")
             
-            # ============================================================
-            # 2. PROCESSADOR (CPU)
-            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("2. PROCESSADOR (CPU)\n")
             f.write("=" * 80 + "\n")
             try:
                 cpu_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_Processor | Select-Object Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, CurrentClockSpeed, AddressWidth, Architecture, ProcessorId, L2CacheSize, L3CacheSize | Format-List'],
-                    timeout=30
+                     'Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed | Format-List'],
+                    timeout=15
                 )
                 if cpu_info and cpu_info.stdout:
                     f.write(cpu_info.stdout)
-                else:
-                    f.write("Não foi possível obter informações do CPU\n")
             except Exception as e:
-                f.write(f"Erro ao coletar informações do CPU: {e}\n")
+                f.write(f"Erro ao coletar CPU: {e}\n")
             f.write("\n")
             
-            # ============================================================
-            # 3. MEMÓRIA RAM
-            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("3. MEMÓRIA RAM\n")
             f.write("=" * 80 + "\n")
             try:
-                # Memória total do sistema
-                mem_info = _safe_subprocess_run(
+                ram_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_ComputerSystem | Select-Object TotalPhysicalMemory | Format-List'],
+                     'Get-CimInstance Win32_PhysicalMemory | Select-Object DeviceLocator, Manufacturer, @{Name="Capacity(GB)";Expression={[math]::Round($_.Capacity/1GB,2)}}, Speed | Format-Table -AutoSize'],
                     timeout=15
                 )
-                if mem_info and mem_info.stdout:
-                    f.write(f"Memória Total do Sistema:\n{mem_info.stdout}\n")
+                if ram_info and ram_info.stdout:
+                    f.write(ram_info.stdout)
                 
-                # Módulos de memória (slots)
-                ram_modules = _safe_subprocess_run(
+                total_ram = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_PhysicalMemory | Select-Object DeviceLocator, Manufacturer, Capacity, Speed, ConfiguredClockSpeed, MemoryType, SMBIOSMemoryType, PartNumber, SerialNumber | Format-Table -AutoSize'],
-                    timeout=30
+                     '[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB, 2)'],
+                    timeout=10
                 )
-                if ram_modules and ram_modules.stdout:
-                    f.write(f"\nMódulos de Memória (Slots):\n{ram_modules.stdout}\n")
-                
-                # Memória disponível
-                mem_available = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_OperatingSystem | Select-Object FreePhysicalMemory, TotalVisibleMemorySize | Format-List'],
-                    timeout=15
-                )
-                if mem_available and mem_available.stdout:
-                    f.write(f"\nMemória Disponível:\n{mem_available.stdout}\n")
+                if total_ram and total_ram.stdout:
+                    f.write(f"Memória Total Instalada: {total_ram.stdout.strip()} GB\n")
             except Exception as e:
-                f.write(f"Erro ao coletar informações de RAM: {e}\n")
+                f.write(f"Erro ao coletar RAM: {e}\n")
             f.write("\n")
             
-            # ============================================================
-            # 4. DISCOS E ARMAZENAMENTO
-            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("4. DISCOS E ARMAZENAMENTO\n")
             f.write("=" * 80 + "\n")
             try:
-                # Discos físicos
                 disk_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_DiskDrive | Select-Object Model, Manufacturer, MediaType, Size, InterfaceType, SerialNumber, FirmwareRevision, BytesPerSector, TotalSectors, Partitions | Format-List'],
-                    timeout=30
+                     'Get-PhysicalDisk | Select-Object FriendlyName, MediaType, @{Name="Size(GB)";Expression={[math]::Round($_.Size/1GB,2)}}, HealthStatus | Format-Table -AutoSize'],
+                    timeout=15
                 )
                 if disk_info and disk_info.stdout:
-                    f.write(f"Discos Físicos:\n{disk_info.stdout}\n")
+                    f.write(disk_info.stdout)
                 
-                # Partições
-                partition_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_DiskPartition | Select-Object Name, Size, Type, PrimaryPartition, Bootable, BootPartition, DiskIndex | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if partition_info and partition_info.stdout:
-                    f.write(f"\nPartições:\n{partition_info.stdout}\n")
-                
-                # Volumes lógicos (C:, D:, etc)
                 volume_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID, VolumeName, FileSystem, Size, FreeSpace, DriveType, VolumeSerialNumber | Format-Table -AutoSize'],
-                    timeout=30
+                     'Get-Volume | Select-Object DriveLetter, FileSystemLabel, @{Name="Size(GB)";Expression={[math]::Round($_.Size/1GB,2)}}, @{Name="Free(GB)";Expression={[math]::Round($_.SizeRemaining/1GB,2)}} | Format-Table -AutoSize'],
+                    timeout=15
                 )
                 if volume_info and volume_info.stdout:
-                    f.write(f"\nVolumes Lógicos:\n{volume_info.stdout}\n")
-                
-                # Tipo de disco (SSD vs HDD)
-                ssd_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-PhysicalDisk | Select-Object FriendlyName, MediaType, BusType, Size, HealthStatus, OperationalStatus | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if ssd_info and ssd_info.stdout:
-                    f.write(f"\nTipo de Disco (SSD/HDD):\n{ssd_info.stdout}\n")
+                    f.write("\nVolumes Lógicos:\n" + volume_info.stdout)
             except Exception as e:
-                f.write(f"Erro ao coletar informações de discos: {e}\n")
+                f.write(f"Erro ao coletar Discos: {e}\n")
             f.write("\n")
             
-            # ============================================================
-            # 5. PLACA DE VÍDEO (GPU)
-            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("5. PLACA DE VÍDEO (GPU)\n")
             f.write("=" * 80 + "\n")
             try:
                 gpu_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM, DriverVersion, DriverDate, VideoProcessor, AdapterCompatibility, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, VideoModeDescription | Format-List'],
-                    timeout=30
+                     'Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM, DriverVersion | Format-List'],
+                    timeout=15
                 )
                 if gpu_info and gpu_info.stdout:
                     f.write(gpu_info.stdout)
-                else:
-                    f.write("Não foi possível obter informações da GPU\n")
             except Exception as e:
-                f.write(f"Erro ao coletar informações da GPU: {e}\n")
+                f.write(f"Erro ao coletar GPU: {e}\n")
             f.write("\n")
             
-            # ============================================================
-            # 6. PLACA-MÃE E BIOS
-            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("6. PLACA-MÃE E BIOS\n")
             f.write("=" * 80 + "\n")
             try:
-                # Placa-mãe
-                motherboard_info = _safe_subprocess_run(
+                mb_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer, Product, Version, SerialNumber, Tag | Format-List'],
-                    timeout=30
+                     'Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer, Product, Version | Format-List'],
+                    timeout=15
                 )
-                if motherboard_info and motherboard_info.stdout:
-                    f.write(f"Placa-Mãe:\n{motherboard_info.stdout}\n")
+                if mb_info and mb_info.stdout:
+                    f.write("Placa-Mãe:\n" + mb_info.stdout)
                 
-                # BIOS
                 bios_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_BIOS | Select-Object Manufacturer, Name, Version, ReleaseDate, SerialNumber, SMBIOSBIOSVersion, BIOSVersion | Format-List'],
-                    timeout=30
+                     'Get-CimInstance Win32_BIOS | Select-Object Manufacturer, Version, ReleaseDate | Format-List'],
+                    timeout=15
                 )
                 if bios_info and bios_info.stdout:
-                    f.write(f"\nBIOS:\n{bios_info.stdout}\n")
-                
-                # Sistema (para detectar se é VM)
-                system_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer, Model, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, Domain, Workgroup, HypervisorPresent | Format-List'],
-                    timeout=30
-                )
-                if system_info and system_info.stdout:
-                    f.write(f"\nSistema:\n{system_info.stdout}\n")
+                    f.write("\nBIOS:\n" + bios_info.stdout)
             except Exception as e:
-                f.write(f"Erro ao coletar informações da placa-mãe/BIOS: {e}\n")
+                f.write(f"Erro ao coletar Placa-mãe/BIOS: {e}\n")
             f.write("\n")
             
-            # ============================================================
-            # 7. REDE
-            # ============================================================
             f.write("=" * 80 + "\n")
-            f.write("7. REDE\n")
+            f.write("7. REDE (ADAPTADORES FÍSICOS)\n")
             f.write("=" * 80 + "\n")
             try:
-                # Adaptadores de rede
-                network_info = _safe_subprocess_run(
+                net_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-NetAdapter -Physical | Select-Object Name, InterfaceDescription, Status, MacAddress, LinkSpeed, MediaType, DriverVersion, DriverDate | Format-Table -AutoSize'],
-                    timeout=30
+                     'Get-NetAdapter -Physical | Select-Object Name, InterfaceDescription, Status, MacAddress, LinkSpeed | Format-Table -AutoSize'],
+                    timeout=15
                 )
-                if network_info and network_info.stdout:
-                    f.write(f"Adaptadores de Rede:\n{network_info.stdout}\n")
-                
-                # Configuração IP
-                ip_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias, IPAddress, PrefixLength, AddressFamily, SkipAsSource | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if ip_info and ip_info.stdout:
-                    f.write(f"\nConfiguração IP (IPv4):\n{ip_info.stdout}\n")
-                
-                # DNS
-                dns_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-DnsClientServerAddress -AddressFamily IPv4 | Select-Object InterfaceAlias, ServerAddresses | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if dns_info and dns_info.stdout:
-                    f.write(f"\nServidores DNS:\n{dns_info.stdout}\n")
-                
-                # Gateway padrão
-                gateway_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-NetRoute -DestinationPrefix "0.0.0.0/0" | Select-Object InterfaceAlias, NextHop, RouteMetric | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if gateway_info and gateway_info.stdout:
-                    f.write(f"\nGateway Padrão:\n{gateway_info.stdout}\n")
-                
-                # ipconfig completo
-                ipconfig_info = _safe_subprocess_run(['ipconfig', '/all'], timeout=30)
-                if ipconfig_info and ipconfig_info.stdout:
-                    f.write(f"\nipconfig /all:\n{ipconfig_info.stdout}\n")
+                if net_info and net_info.stdout:
+                    f.write(net_info.stdout)
             except Exception as e:
-                f.write(f"Erro ao coletar informações de rede: {e}\n")
+                f.write(f"Erro ao coletar Rede: {e}\n")
             f.write("\n")
             
-            # ============================================================
-            # 8. BATERIA (SE NOTEBOOK)
-            # ============================================================
             f.write("=" * 80 + "\n")
-            f.write("8. BATERIA (Se Notebook)\n")
-            f.write("=" * 80 + "\n")
-            try:
-                battery_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_Battery | Select-Object Name, Status, EstimatedChargeRemaining, EstimatedRunTime, BatteryStatus, Chemistry, DesignCapacity, FullChargeCapacity | Format-List'],
-                    timeout=30
-                )
-                if battery_info and battery_info.stdout:
-                    f.write(battery_info.stdout)
-                else:
-                    f.write("Nenhuma bateria detectada (Desktop ou bateria não reportada)\n")
-                
-                # Relatório detalhado de bateria
-                battery_report = _safe_subprocess_run(
-                    ['powercfg', '/batteryreport', '/output', 'C:\\Scripts\\battery_report.html'],
-                    timeout=30
-                )
-                if battery_report and battery_report.returncode == 0:
-                    f.write("\nRelatório detalhado da bateria gerado em: C:\\Scripts\\battery_report.html\n")
-            except Exception as e:
-                f.write(f"Erro ao coletar informações de bateria: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # 9. MONITORES
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("9. MONITORES\n")
+            f.write("8. MONITORES\n")
             f.write("=" * 80 + "\n")
             try:
                 monitor_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance -Namespace root\\wmi -ClassName WmiMonitorID | ForEach-Object { $manufacturer = ($_.ManufacturerName -notmatch 0 | ForEach-Object {[char]$_}) -join ""; $name = ($_.UserFriendlyName -notmatch 0 | ForEach-Object {[char]$_}) -join ""; [PSCustomObject]@{Manufacturer=$manufacturer; Name=$name; Serial=($_.SerialNumberID -notmatch 0 | ForEach-Object {[char]$_}) -join ""} } | Format-Table -AutoSize'],
-                    timeout=30
+                     'Get-CimInstance Win32_DesktopMonitor | Select-Object Name, MonitorType, ScreenWidth, ScreenHeight | Format-Table -AutoSize'],
+                    timeout=15
                 )
                 if monitor_info and monitor_info.stdout:
-                    f.write(f"Monitores Detectados:\n{monitor_info.stdout}\n")
-                
-                # Resolução atual
-                resolution_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_VideoController | Select-Object Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if resolution_info and resolution_info.stdout:
-                    f.write(f"\nResolução Atual:\n{resolution_info.stdout}\n")
+                    f.write(monitor_info.stdout)
             except Exception as e:
-                f.write(f"Erro ao coletar informações de monitores: {e}\n")
+                f.write(f"Erro ao coletar Monitores: {e}\n")
             f.write("\n")
             
-            # ============================================================
-            # 10. PERIFÉRICOS USB
-            # ============================================================
             f.write("=" * 80 + "\n")
-            f.write("10. PERIFÉRICOS USB\n")
+            f.write("9. PERIFÉRICOS USB\n")
             f.write("=" * 80 + "\n")
             try:
                 usb_info = _safe_subprocess_run(
                     ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_USBHub | Select-Object Name, DeviceID, Manufacturer, Status | Format-Table -AutoSize'],
-                    timeout=30
+                     'Get-CimInstance Win32_USBHub | Select-Object Name, DeviceID | Format-Table -AutoSize'],
+                    timeout=15
                 )
                 if usb_info and usb_info.stdout:
                     f.write(usb_info.stdout)
+            except Exception as e:
+                f.write(f"Erro ao coletar USB: {e}\n")
+            f.write("\n")
+            
+            f.write("=" * 80 + "\n")
+            f.write("10. BATERIA (Se Notebook)\n")
+            f.write("=" * 80 + "\n")
+            try:
+                battery_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-CimInstance Win32_Battery | Select-Object Name, Status, EstimatedChargeRemaining, BatteryStatus | Format-List'],
+                    timeout=15
+                )
+                if battery_info and battery_info.stdout and "NULL" not in battery_info.stdout:
+                    f.write(battery_info.stdout)
                 else:
-                    f.write("Nenhum dispositivo USB detectado\n")
+                    f.write("Nenhuma bateria detectada (Desktop).\n")
             except Exception as e:
-                f.write(f"Erro ao coletar informações USB: {e}\n")
+                f.write(f"Erro ao coletar Bateria: {e}\n")
             f.write("\n")
             
-            # ============================================================
-            # 11. IMPRESSORAS
-            # ============================================================
             f.write("=" * 80 + "\n")
-            f.write("11. IMPRESSORAS INSTALADAS\n")
-            f.write("=" * 80 + "\n")
-            try:
-                printer_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-Printer | Select-Object Name, DriverName, PortName, Shared, Location, Comment | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if printer_info and printer_info.stdout:
-                    f.write(printer_info.stdout)
-                else:
-                    f.write("Nenhuma impressora detectada\n")
-            except Exception as e:
-                f.write(f"Erro ao coletar informações de impressoras: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # 12. PROGRAMAS INSTALADOS
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("12. PROGRAMAS INSTALADOS\n")
-            f.write("=" * 80 + "\n")
-            try:
-                programs_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*, HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue | Where-Object {$_.DisplayName} | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Sort-Object DisplayName | Format-Table -AutoSize'],
-                    timeout=60
-                )
-                if programs_info and programs_info.stdout:
-                    f.write(programs_info.stdout)
-                else:
-                    f.write("Não foi possível listar programas instalados\n")
-            except Exception as e:
-                f.write(f"Erro ao coletar lista de programas: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # 13. HOTFIXES/UPDATES DO WINDOWS
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("13. HOTFIXES/UPDATES DO WINDOWS\n")
-            f.write("=" * 80 + "\n")
-            try:
-                hotfix_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-HotFix | Select-Object HotFixID, Description, InstalledOn, InstalledBy | Sort-Object InstalledOn -Descending | Format-Table -AutoSize'],
-                    timeout=60
-                )
-                if hotfix_info and hotfix_info.stdout:
-                    f.write(hotfix_info.stdout)
-                else:
-                    f.write("Não foi possível listar hotfixes\n")
-            except Exception as e:
-                f.write(f"Erro ao coletar hotfixes: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # 14. VARIÁVEIS DE AMBIENTE DO SISTEMA
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("14. VARIÁVEIS DE AMBIENTE DO SISTEMA\n")
-            f.write("=" * 80 + "\n")
-            try:
-                env_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-ChildItem Env: | Format-Table Name, Value -AutoSize'],
-                    timeout=30
-                )
-                if env_info and env_info.stdout:
-                    f.write(env_info.stdout)
-            except Exception as e:
-                f.write(f"Erro ao coletar variáveis de ambiente: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # 15. SERVIÇOS EM EXECUÇÃO
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("15. SERVIÇOS EM EXECUÇÃO\n")
-            f.write("=" * 80 + "\n")
-            try:
-                services_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-Service | Where-Object {$_.Status -eq "Running"} | Select-Object Name, DisplayName, Status, StartType | Sort-Object Name | Format-Table -AutoSize'],
-                    timeout=60
-                )
-                if services_info and services_info.stdout:
-                    f.write(services_info.stdout)
-                else:
-                    f.write("Não foi possível listar serviços\n")
-            except Exception as e:
-                f.write(f"Erro ao coletar serviços: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # 16. USUÁRIOS DO SISTEMA
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("16. USUÁRIOS DO SISTEMA\n")
-            f.write("=" * 80 + "\n")
-            try:
-                users_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-LocalUser | Select-Object Name, Enabled, LastLogon, Description | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if users_info and users_info.stdout:
-                    f.write(users_info.stdout)
-                else:
-                    f.write("Não foi possível listar usuários\n")
-            except Exception as e:
-                f.write(f"Erro ao coletar usuários: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # 17. VIRTUALIZAÇÃO
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("17. INFORMAÇÕES DE VIRTUALIZAÇÃO\n")
-            f.write("=" * 80 + "\n")
-            try:
-                vm_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     '$isVM = (Get-CimInstance Win32_ComputerSystem).HypervisorPresent; if ($isVM) { Write-Host "Máquina Virtual: SIM" } else { Write-Host "Máquina Virtual: NÃO (Físico)" }; Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer, Model, SystemType | Format-List'],
-                    timeout=30
-                )
-                if vm_info and vm_info.stdout:
-                    f.write(vm_info.stdout)
-            except Exception as e:
-                f.write(f"Erro ao coletar informações de virtualização: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # 18. INFORMAÇÕES ADICIONAIS DE HARDWARE
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("18. INFORMAÇÕES ADICIONAIS DE HARDWARE\n")
-            f.write("=" * 80 + "\n")
-            try:
-                # Sistema de som
-                sound_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_SoundDevice | Select-Object Name, Manufacturer, Status | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if sound_info and sound_info.stdout:
-                    f.write(f"Dispositivos de Som:\n{sound_info.stdout}\n")
-                
-                # Teclado
-                keyboard_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_Keyboard | Select-Object Name, Description, Status | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if keyboard_info and keyboard_info.stdout:
-                    f.write(f"\nTeclados:\n{keyboard_info.stdout}\n")
-                
-                # Mouse
-                mouse_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_PointingDevice | Select-Object Name, Manufacturer, DeviceType, Status | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if mouse_info and mouse_info.stdout:
-                    f.write(f"\nDispositivos de Pontuação (Mouse):\n{mouse_info.stdout}\n")
-                
-                # Porta paralela e serial
-                port_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_ParallelPort, Win32_SerialPort | Select-Object Name, DeviceID, Status | Format-Table -AutoSize'],
-                    timeout=30
-                )
-                if port_info and port_info.stdout:
-                    f.write(f"\nPortas (Paralela/Serial):\n{port_info.stdout}\n")
-                
-            except Exception as e:
-                f.write(f"Erro ao coletar informações adicionais: {e}\n")
-            f.write("\n")
-            
-            # ============================================================
-            # RODAPÉ
-            # ============================================================
-            f.write("=" * 80 + "\n")
-            f.write("FIM DO RELATÓRIO\n")
-            f.write(f"Gerado em: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("FIM DO RELATÓRIO DE HARDWARE\n")
             f.write("=" * 80 + "\n")
         
-        # Validação de arquivo criado
-        if os.path.exists(log_path) and os.path.getsize(log_path) > 1000:
+        if os.path.exists(log_path) and os.path.getsize(log_path) > 500:
             file_size = os.path.getsize(log_path)
-            _log(f"✓ Snapshot completo gerado: {log_path} ({file_size} bytes)", "OK")
+            _log(f"✓ Snapshot de hardware gerado: {log_path} ({file_size} bytes)", "OK")
             return str(log_path)
         else:
-            _log(f"Snapshot não foi criado corretamente", "ERRO")
+            _log("Snapshot não foi criado corretamente", "ERRO")
             return None
-    except PermissionError:
-        _log(f"Sem permissão para escrever em: {log_path}", "ERRO")
-        return None
     except Exception as e:
         _log(f"Erro ao gerar snapshot: {e}", "ERRO")
-        _log(f"Stack trace: {traceback.format_exc()}", "ERRO")
         return None
 
 # ============================================================
@@ -848,19 +466,15 @@ def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
     _log("Aplicando políticas de segurança e LGPD...", "INFO")
     try:
         if disable_hello:
-            # Desativa Windows Hello/Biometria
             cmd_hello = ["reg", "add", r"HKLM\SOFTWARE\Policies\Microsoft\Biometrics", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"]
             _safe_subprocess_run(cmd_hello, timeout=10)
             
-            # Desativa tela de boas-vindas
             cmd_welcome = ["reg", "add", r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "/v", "DisableWelcomeScreen", "/t", "REG_DWORD", "/d", "1", "/f"]
             _safe_subprocess_run(cmd_welcome, timeout=10)
             
-            # Desativa atalho PrtSc nativo (chama a função completa do usuário)
             _apply_to_all_real_users()
             
         if apply_lgpd:
-            # Sincroniza NTP.br
             cmd_ntp = ["w32tm", "/config", "/syncfromflags:manual", "/manualpeerlist:a.st1.ntp.br,b.st1.ntp.br,c.st1.ntp.br,d.st1.ntp.br", "/update"]
             _safe_subprocess_run(cmd_ntp, timeout=15)
             _safe_subprocess_run(["w32tm", "/resync"], timeout=10)
@@ -875,7 +489,6 @@ def apply_firewall_rules():
     """Restringe SMB/RPC à rede local"""
     _log("Configurando regras de firewall...", "INFO")
     try:
-        # Bloqueia SMB (445) de fora da sub-rede local (exemplo simplificado)
         cmd_smb = ['powershell', '-NoProfile', '-Command', 'New-NetFirewallRule -DisplayName "CP Fani - Bloquear SMB Externo" -Direction Inbound -Protocol TCP -LocalPort 445 -Action Block -Enabled True -ErrorAction SilentlyContinue']
         _safe_subprocess_run(cmd_smb, timeout=15)
         _log("✓ Regras de firewall aplicadas", "OK")
@@ -949,7 +562,6 @@ def setup_self_healing():
     """Configura watchdog de auto-cura"""
     _log("Configurando self-healing (watchdog)...", "INFO")
     try:
-        # Cria tarefa que verifica a integridade do sistema a cada hora
         cmd = ['schtasks', '/create', '/tn', 'CP_Fani_Self_Healing', '/tr', 'powershell -NoProfile -Command "Get-Service | Where-Object {$_.Status -ne \'Running\' -and $_.StartType -eq \'Automatic\'} | Start-Service"', '/sc', 'hourly', '/rl', 'highest', '/f']
         res = _safe_subprocess_run(cmd, timeout=15)
         if res and res.returncode == 0:
@@ -967,11 +579,9 @@ def set_apps_to_startup_all_users():
         startup_dir = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
         os.makedirs(startup_dir, exist_ok=True)
         
-        # Exemplo: Criar atalho para o Flameshot se instalado
         flameshot_exe = r"C:\Program Files\Flameshot\flameshot.exe"
         if os.path.exists(flameshot_exe):
             shortcut_path = os.path.join(startup_dir, "Flameshot.lnk")
-            # Criação simplificada de atalho via PowerShell
             ps_cmd = f'$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut("{shortcut_path}"); $Shortcut.TargetPath = "{flameshot_exe}"; $Shortcut.Save()'
             _safe_subprocess_run(['powershell', '-NoProfile', '-Command', ps_cmd], timeout=10)
             
