@@ -11,6 +11,13 @@
       "range_validation": true,
       "format_validation": true,
       "cross_validation": true
+    },
+    "bloatware_remove_docs": {
+      "description": "Lista de aplicativos UWP/bloatware para remoção",
+      "validation": {
+        "format": "Formato: Publisher.ApplicationName ou nome parcial",
+        "examples": ["Microsoft.BingNews", "king.com.CandyCrushSaga"]
+      }
     }
   },
   
@@ -68,58 +75,49 @@
     ]
   },
   
-  "bloatware_remove": {
-    "_documentation": {
-      "description": "Lista de aplicativos UWP/bloatware para remoção",
-      "validation": {
-        "format": "Formato: Publisher.ApplicationName ou nome parcial",
-        "examples": ["Microsoft.BingNews", "king.com.CandyCrushSaga"]
-      }
-    },
-    "list": [
-      "Microsoft.BingNews",
-      "Microsoft.BingWeather",
-      "Microsoft.GamingApp",
-      "Microsoft.GetHelp",
-      "Microsoft.Getstarted",
-      "Microsoft.Microsoft3DViewer",
-      "Microsoft.MicrosoftOfficeHub",
-      "Microsoft.MicrosoftSolitaireCollection",
-      "Microsoft.MixedReality.Portal",
-      "Microsoft.People",
-      "Microsoft.SkypeApp",
-      "Microsoft.WindowsMaps",
-      "Microsoft.Xbox.TCUI",
-      "Microsoft.XboxApp",
-      "Microsoft.XboxGameOverlay",
-      "Microsoft.XboxGamingOverlay",
-      "Microsoft.XboxIdentityProvider",
-      "Microsoft.XboxSpeechToTextOverlay",
-      "Microsoft.ZuneVideo",
-      "Microsoft.ZuneMusic",
-      "Microsoft.YourPhone",
-      "king.com.CandyCrushSaga",
-      "king.com.CandyCrushSodaSaga",
-      "SpotifyAB.SpotifyMusic",
-      "Clipchamp.Clipchamp",
-      "McAfee",
-      "TikTok",
-      "Microsoft.549981C3F5F10",
-      "Disney.37853FC22B2CE",
-      "AmazonVideo.PrimeVideo",
-      "Facebook.Facebook",
-      "Facebook.InstagramBeta",
-      "Twitter.Twitter",
-      "Bytedance.P23970D6E466A",
-      "Microsoft.Teams",
-      "Microsoft.OneDriveSync",
-      "Microsoft.WindowsCamera",
-      "Microsoft.WindowsSoundRecorder",
-      "Microsoft.WindowsAlarms",
-      "Microsoft.WindowsCalculator",
-      "Microsoft.WindowsStore"
-    ]
-  },
+  "bloatware_remove": [
+    "Microsoft.BingNews",
+    "Microsoft.BingWeather",
+    "Microsoft.GamingApp",
+    "Microsoft.GetHelp",
+    "Microsoft.Getstarted",
+    "Microsoft.Microsoft3DViewer",
+    "Microsoft.MicrosoftOfficeHub",
+    "Microsoft.MicrosoftSolitaireCollection",
+    "Microsoft.MixedReality.Portal",
+    "Microsoft.People",
+    "Microsoft.SkypeApp",
+    "Microsoft.WindowsMaps",
+    "Microsoft.Xbox.TCUI",
+    "Microsoft.XboxApp",
+    "Microsoft.XboxGameOverlay",
+    "Microsoft.XboxGamingOverlay",
+    "Microsoft.XboxIdentityProvider",
+    "Microsoft.XboxSpeechToTextOverlay",
+    "Microsoft.ZuneVideo",
+    "Microsoft.ZuneMusic",
+    "Microsoft.YourPhone",
+    "king.com.CandyCrushSaga",
+    "king.com.CandyCrushSodaSaga",
+    "SpotifyAB.SpotifyMusic",
+    "Clipchamp.Clipchamp",
+    "McAfee",
+    "TikTok",
+    "Microsoft.549981C3F5F10",
+    "Disney.37853FC22B2CE",
+    "AmazonVideo.PrimeVideo",
+    "Facebook.Facebook",
+    "Facebook.InstagramBeta",
+    "Twitter.Twitter",
+    "Bytedance.P23970D6E466A",
+    "Microsoft.Teams",
+    "Microsoft.OneDriveSync",
+    "Microsoft.WindowsCamera",
+    "Microsoft.WindowsSoundRecorder",
+    "Microsoft.WindowsAlarms",
+    "Microsoft.WindowsCalculator",
+    "Microsoft.WindowsStore"
+  ],
   
   "drivers": {
     "_documentation": {
