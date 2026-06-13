@@ -399,38 +399,6 @@ def generate_full_snapshot():
             f.write("\n")
             
             f.write("=" * 80 + "\n")
-            f.write("9. PERIFÉRICOS USB\n")
-            f.write("=" * 80 + "\n")
-            try:
-                usb_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_USBHub | Select-Object Name, DeviceID | Format-Table -AutoSize'],
-                    timeout=15
-                )
-                if usb_info and usb_info.stdout:
-                    f.write(usb_info.stdout)
-            except Exception as e:
-                f.write(f"Erro ao coletar USB: {e}\n")
-            f.write("\n")
-            
-            f.write("=" * 80 + "\n")
-            f.write("10. BATERIA (Se Notebook)\n")
-            f.write("=" * 80 + "\n")
-            try:
-                battery_info = _safe_subprocess_run(
-                    ['powershell', '-NoProfile', '-Command', 
-                     'Get-CimInstance Win32_Battery | Select-Object Name, Status, EstimatedChargeRemaining, BatteryStatus | Format-List'],
-                    timeout=15
-                )
-                if battery_info and battery_info.stdout and "NULL" not in battery_info.stdout:
-                    f.write(battery_info.stdout)
-                else:
-                    f.write("Nenhuma bateria detectada (Desktop).\n")
-            except Exception as e:
-                f.write(f"Erro ao coletar Bateria: {e}\n")
-            f.write("\n")
-            
-            f.write("=" * 80 + "\n")
             f.write("FIM DO RELATÓRIO DE HARDWARE\n")
             f.write("=" * 80 + "\n")
         
