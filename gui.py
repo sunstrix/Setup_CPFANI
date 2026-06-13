@@ -163,6 +163,17 @@ def validate_prerequisites():
         if not os.path.exists(os.path.join(script_dir, module)):
             errors.append(f"Módulo obrigatório não encontrado: {module}")
     
+    # 6. Verifica integridade dos módulos (NOVO)
+    for module in required_modules:
+        module_path = os.path.join(script_dir, module)
+        if os.path.exists(module_path):
+            try:
+                size = os.path.getsize(module_path)
+                if size < 100:
+                    errors.append(f"Módulo {module} parece corrompido ({size} bytes)")
+            except Exception as e:
+                warnings.append(f"Falha ao verificar integridade de {module}: {e}")
+    
     return errors, warnings
 
 # ============================================================

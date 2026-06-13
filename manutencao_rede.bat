@@ -1,286 +1,107 @@
 @echo off
 setlocal EnableDelayedExpansion
+title Manutencao de Rede - Forca DHCP (V7.1)
+color 0B
 
-:: ============================================================
-:: VALIDACAO DE PERMISSOES DE ESCRITA E CRIACAO DE DIRETORIOS
-:: ============================================================
-if not exist "C:\Scripts\Logs" (
-    mkdir "C:\Scripts\Logs" 2>nul
-    if !errorLevel! NEQ 0 (
-        echo [ERRO] Falha ao criar diretorio de logs. Verifique permissoes.
-        pause
-        exit /b 1
-    )
-)
+:: ==================================================
+:: CONFIGURACAO DO LOG
+:: ==================================================
+set "LOG_DIR=C:\Scripts\Logs"
+set "LOG_FILE=%LOG_DIR%\manutencao_rede.log"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" 2>nul
 
-:: ============================================================
-:: FORMATO DE DATA/HORA ROBUSTO (INDEPENDENTE DE LOCALE)
-:: ============================================================
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set "dt=%%I"
-set "YEAR=%dt:~0,4%"
-set "MONTH=%dt:~4,2%"
-set "DAY=%dt:~6,2%"
-set "HOUR=%dt:~8,2%"
-set "MIN=%dt:~10,2%"
-set "SEC=%dt:~12,2%"
-
-set "LOG_FILE=C:\Scripts\Logs\DEPLOY_%YEAR%%MONTH%%DAY%_%HOUR%%MIN%%SEC%.log"
-
-:: ============================================================
-:: INICIALIZACAO DO LOG
-:: ============================================================
-echo ======================================== > "!LOG_FILE!"
-echo SETUP CP FANI V5.9.5.2 - DEBUG MODE >> "!LOG_FILE!"
-echo Data: %YEAR%-%MONTH%-%DAY% %HOUR%:%MIN%:%SEC% >> "!LOG_FILE!"
-echo ======================================== >> "!LOG_FILE!"
-
-:: ============================================================
-:: LOG DE VARIAVEIS DE AMBIENTE IMPORTANTES
-:: ============================================================
-echo [INFO] Variaveis de ambiente: >> "!LOG_FILE!"
-echo [DEBUG] USERPROFILE: %USERPROFILE% >> "!LOG_FILE!"
-echo [DEBUG] TEMP: %TEMP% >> "!LOG_FILE!"
-echo [DEBUG] ALLUSERSPROFILE: %ALLUSERSPROFILE% >> "!LOG_FILE!"
-echo [DEBUG] PROCESSOR_ARCHITECTURE: %PROCESSOR_ARCHITECTURE% >> "!LOG_FILE!"
-echo [DEBUG] OS: %OS% >> "!LOG_FILE!"
-echo [DEBUG] COMPUTERNAME: %COMPUTERNAME% >> "!LOG_FILE!"
-echo [DEBUG] USERNAME: %USERNAME% >> "!LOG_FILE!"
-echo ======================================== >> "!LOG_FILE!"
-
-echo [START] Script iniciado. >> "!LOG_FILE!"
-echo [INFO] Verificando Administrador... >> "!LOG_FILE!"
-
-:: ============================================================
-:: VERIFICACAO DE ADMINISTRADOR
-:: ============================================================
-whoami /groups | findstr /i "S-1-5-32-544" >nul 2>&1
+:: Testa permissao de escrita no diretorio de logs
+echo test > "%LOG_DIR%\write_test.tmp" 2>nul
 if !errorLevel! NEQ 0 (
-    echo [ERRO] NAO E ADMINISTRADOR! >> "!LOG_FILE!"
-    echo [ERRO] Este script requer privilegios administrativos. >> "!LOG_FILE!"
+    echo [ERRO] Sem permissao de escrita em %LOG_DIR%
     pause
     exit /b 1
 )
-echo [OK] Admin confirmado. >> "!LOG_FILE!"
+del "%LOG_DIR%\write_test.tmp" 2>nul
 
-:: ============================================================
-:: VALIDACAO DE PERMISSOES DE ESCRITA NO DIRETORIO DE LOGS
-:: ============================================================
-echo [INFO] Validando permissoes de escrita... >> "!LOG_FILE!"
-echo test > "C:\Scripts\Logs\write_test.tmp" 2>nul
-if !errorLevel! NEQ 0 (
-    echo [ERRO] Sem permissao de escrita em C:\Scripts\Logs >> "!LOG_FILE!"
+goto :INICIO
+
+:: ==================================================
+:: FUNCAO DE LOG
+:: ==================================================
+:log
+echo [%date% %time%] %~1
+echo [%date% %time%] %~1 >> "%LOG_FILE%"
+exit /b
+
+:: ==================================================
+:: INICIO DO SCRIPT
+:: ==================================================
+:INICIO
+
+call :log "=========================================="
+call :log " INICIO DA MANUTENCAO DE REDE V7.1"
+call :log " Correcao: Forca IP Manual -> DHCP"
+call :log " Modo: Log Detalhado (Raw Output)"
+call :log "=========================================="
+
+net session >nul 2>&1
+if !errorLevel! neq 0 (
+    call :log "ERRO: Execute como administrador!"
     pause
     exit /b 1
 )
-del "C:\Scripts\Logs\write_test.tmp" 2>nul
-echo [OK] Permissoes de escrita validadas. >> "!LOG_FILE!"
+call :log "[OK] Privilegios administrativos confirmados."
 
-:: ============================================================
-:: VALIDACAO REAL DE ESPACO EM DISCO
-:: ============================================================
-echo [STEP 1] Verificando espaco em disco... >> "!LOG_FILE!"
-
-for /f "tokens=3" %%A in ('dir C:\ 2^>nul ^| findstr /i "bytes livres"') do (
-    set "FREE_SPACE=%%A"
-    set "FREE_SPACE=!FREE_SPACE:.=!"
-)
-
-if not defined FREE_SPACE (
-    for /f "tokens=3" %%A in ('dir C:\ 2^>nul ^| findstr /i "bytes free"') do (
-        set "FREE_SPACE=%%A"
-        set "FREE_SPACE=!FREE_SPACE:.=!"
-    )
-)
-
-if defined FREE_SPACE (
-    if !FREE_SPACE! LSS 524288000 (
-        echo [ERRO] Espaco em disco insuficiente! >> "!LOG_FILE!"
-        echo [ERRO] Necessario: 500MB, Disponivel: !FREE_SPACE! bytes >> "!LOG_FILE!"
-        pause
-        exit /b 1
-    )
-    echo [OK] Espaco em disco suficiente: !FREE_SPACE! bytes >> "!LOG_FILE!"
+call :log "[1/8] Verificando conectividade atual..."
+ping -n 1 -w 1000 8.8.8.8 >> "%LOG_FILE%" 2>&1
+if !errorlevel! equ 0 (
+    call :log "[OK] Internet detectada."
 ) else (
-    echo [AVISO] Nao foi possivel validar espaco em disco. Continuando... >> "!LOG_FILE!"
+    call :log "[AVISO] Sem internet. Iniciando rotina de correcao..."
 )
 
-:: ============================================================
-:: VERIFICACAO DE PYTHON (SIMPLIFICADA E ROBUSTA)
-:: ============================================================
-echo [STEP 2] Verificando Python... >> "!LOG_FILE!"
+call :log "[2/8] Forcando IP e DNS para Automatico (DHCP)..."
+powershell -NoProfile -Command "Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { Set-NetIPInterface -InterfaceIndex $_.ifIndex -Dhcp Enabled; Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses }" >> "%LOG_FILE%" 2>&1
+if !errorlevel! neq 0 (
+    call :log "[AVISO] Possivel erro ao configurar DHCP. Verifique o log."
+)
 
-:: Teste direto de execucao do Python (ignora aliases da Windows Store)
-echo [DEBUG] Testando execucao direta do Python... >> "!LOG_FILE!"
-python -c "print('OK')" >nul 2>&1
-set "PYTHON_OK=!errorLevel!"
+call :log "[3/8] Limpando cache DNS e renovando IP..."
+ipconfig /flushdns >> "%LOG_FILE%" 2>&1
+ipconfig /release * >> "%LOG_FILE%" 2>&1
+timeout /t 3 /nobreak >nul
+ipconfig /renew * >> "%LOG_FILE%" 2>&1
 
-if !PYTHON_OK! NEQ 0 (
-    echo [INFO] Python nao encontrado ou invalido. Baixando e instalando... >> "!LOG_FILE!"
-    
-    set "PYTHON_URL=https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
-    set "PYTHON_INSTALLER=%TEMP%\python_installer.exe"
-    
-    set "DOWNLOAD_SUCCESS=0"
-    for /L %%i in (1,1,3) do (
-        if !DOWNLOAD_SUCCESS! EQU 0 (
-            echo [INFO] Tentativa de download %%i/3... >> "!LOG_FILE!"
-            curl -L --max-time 300 --retry 3 --retry-delay 5 -o "!PYTHON_INSTALLER!" "!PYTHON_URL!" 2>> "!LOG_FILE!"
-            if !errorLevel! EQU 0 (
-                set "DOWNLOAD_SUCCESS=1"
-            ) else (
-                echo [AVISO] Tentativa %%i falhou. Aguardando 5 segundos... >> "!LOG_FILE!"
-                timeout /t 5 /nobreak >nul
-            )
-        )
-    )
-    
-    if !DOWNLOAD_SUCCESS! EQU 0 (
-        echo [ERRO] Falha ao baixar o Python apos 3 tentativas. >> "!LOG_FILE!"
-        pause
-        exit /b 1
-    )
-    
-    if not exist "!PYTHON_INSTALLER!" (
-        echo [ERRO] Arquivo nao foi criado. >> "!LOG_FILE!"
-        pause
-        exit /b 1
-    )
-    
-    for %%F in ("!PYTHON_INSTALLER!") do set "FILE_SIZE=%%~zF"
-    if !FILE_SIZE! LSS 10485760 (
-        echo [ERRO] Arquivo muito pequeno (!FILE_SIZE! bytes). Download corrompido? >> "!LOG_FILE!"
-        del "!PYTHON_INSTALLER!" 2>nul
-        pause
-        exit /b 1
-    )
-    
-    echo [INFO] Validando integridade do instalador... >> "!LOG_FILE!"
-    for /f "skip=1 tokens=* delims=" %%i in ('certutil -hashfile "!PYTHON_INSTALLER!" SHA256 ^| findstr /v /c:"hash"') do (
-        set "FILE_HASH=%%i"
-        set "FILE_HASH=!FILE_HASH: =!"
-    )
-    
-    :: ATENCAO: Hash placeholder - atualizar com hash real do Python 3.12.7
-    set "EXPECTED_HASH=5DD574A4F7D3E4B1C7A8E9F0D1C2B3A4E5F6D7C8B9A0E1F2D3C4B5A6E7F8D9C0"
-    
-    if "!FILE_HASH!" NEQ "!EXPECTED_HASH!" (
-        echo [ERRO] Hash SHA256 NAO corresponde ao esperado! >> "!LOG_FILE!"
-        echo [DEBUG] Hash obtido: !FILE_HASH! >> "!LOG_FILE!"
-        echo [DEBUG] Hash esperado: !EXPECTED_HASH! >> "!LOG_FILE!"
-        del "!PYTHON_INSTALLER!" 2>nul
-        pause
-        exit /b 1
-    ) else (
-        echo [OK] Integridade do arquivo validada via SHA256. >> "!LOG_FILE!"
-    )
-    
-    echo [INFO] Instalando Python... >> "!LOG_FILE!"
-    "!PYTHON_INSTALLER!" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 >> "!LOG_FILE!" 2>&1
-    
-    if !errorLevel! NEQ 0 (
-        echo [ERRO] Instalacao do Python falhou com codigo: !errorLevel! >> "!LOG_FILE!"
-        pause
-        exit /b 1
-    )
-    
-    echo [OK] Python instalado. Atualizando PATH... >> "!LOG_FILE!"
-    set "PATH=!PATH!;C:\Program Files\Python312\;C:\Program Files\Python312\Scripts\"
-    del "!PYTHON_INSTALLER!" 2>nul
+call :log "[4/8] Configurando DNS padrao (ER605: 20.191.1.1)..."
+powershell -NoProfile -Command "Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ('20.191.1.1') -ErrorAction SilentlyContinue }" >> "%LOG_FILE%" 2>&1
+call :log "[OK] DNS configurado: 20.191.1.1"
+
+call :log "[5/8] Verificando integridade..."
+ipconfig | findstr /i "IPv4" >> "%LOG_FILE%" 2>&1
+if !errorlevel! neq 0 (
+    call :log "[AVISO] Nenhum endereco IPv4 encontrado. Verifique a conexao."
+)
+
+call :log "[6/8] Testando conectividade final..."
+ping -n 2 -w 1000 20.191.1.1 >> "%LOG_FILE%" 2>&1
+if !errorlevel! equ 0 (
+    call :log "[OK] Gateway (ER605) alcancavel."
 ) else (
-    echo [OK] Python detectado e funcional. >> "!LOG_FILE!"
+    call :log "[ERRO] Falha de comunicacao com o Gateway."
 )
 
-:: ============================================================
-:: VERIFICACAO DE CHOCOLATEY
-:: ============================================================
-echo [STEP 3] Verificando Chocolatey... >> "!LOG_FILE!"
-where choco >nul 2>&1
-if !errorLevel! NEQ 0 (
-    echo [INFO] Chocolatey nao encontrado. Instalando... >> "!LOG_FILE!"
-    
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))" >> "!LOG_FILE!" 2>&1
-    
-    if !errorLevel! NEQ 0 (
-        echo [ERRO] Falha na instalacao do Chocolatey. >> "!LOG_FILE!"
-    ) else (
-        set "PATH=!PATH!;%ALLUSERSPROFILE%\chocolatey\bin"
-        echo [OK] Chocolatey instalado e validado. >> "!LOG_FILE!"
-    )
+call :log "[7/8] Testando DNS..."
+ping -n 1 -w 1000 www.google.com >> "%LOG_FILE%" 2>&1
+if !errorlevel! equ 0 (
+    call :log "[OK] Resolucao DNS funcionando."
 ) else (
-    echo [OK] Chocolatey ja instalado. >> "!LOG_FILE!"
+    call :log "[ERRO] Falha na resolucao DNS."
 )
 
-:: ============================================================
-:: INSTALACAO DE DEPENDENCIAS PIP
-:: ============================================================
-echo [STEP 4] Instalando dependencias... >> "!LOG_FILE!"
+call :log "[8/8] Exibindo configuracao final..."
+ipconfig /all >> "%LOG_FILE%" 2>&1
 
-echo [INFO] Atualizando pip... >> "!LOG_FILE!"
-python -m pip install --upgrade pip >> "!LOG_FILE!" 2>&1
+call :log "=========================================="
+call :log " MANUTENCAO CONCLUIDA."
+call :log " Log completo: %LOG_FILE%"
+call :log "=========================================="
 
-echo [INFO] Instalando customtkinter... >> "!LOG_FILE!"
-python -m pip install customtkinter >> "!LOG_FILE!" 2>&1
-if !errorLevel! NEQ 0 (
-    echo [ERRO] Falha ao instalar customtkinter. >> "!LOG_FILE!"
-    pause
-    exit /b 1
-)
-
-echo [INFO] Instalando psutil... >> "!LOG_FILE!"
-python -m pip install psutil >> "!LOG_FILE!" 2>&1
-if !errorLevel! NEQ 0 (
-    echo [ERRO] Falha ao instalar psutil. >> "!LOG_FILE!"
-    pause
-    exit /b 1
-)
-
-echo [INFO] Instalando pillow... >> "!LOG_FILE!"
-python -m pip install pillow >> "!LOG_FILE!" 2>&1
-if !errorLevel! NEQ 0 (
-    echo [ERRO] Falha ao instalar pillow. >> "!LOG_FILE!"
-    pause
-    exit /b 1
-)
-
-echo [OK] Dependencias PIP validadas! >> "!LOG_FILE!"
-
-:: ============================================================
-:: INICIALIZACAO DA GUI
-:: ============================================================
-echo [STEP 5] Iniciando GUI Python... >> "!LOG_FILE!"
-cd /d "%~dp0"
-
-if not exist "%~dp0gui.py" (
-    echo [ERRO] gui.py NAO ENCONTRADO! >> "!LOG_FILE!"
-    echo [ERRO] Caminho esperado: %~dp0gui.py >> "!LOG_FILE!"
-    pause
-    exit /b 1
-)
-
-echo [INFO] Validando integridade do gui.py... >> "!LOG_FILE!"
-for %%F in ("%~dp0gui.py") do set "GUI_SIZE=%%~zF"
-if !GUI_SIZE! LSS 100 (
-    echo [ERRO] gui.py parece estar corrompido ou vazio (!GUI_SIZE! bytes). >> "!LOG_FILE!"
-    pause
-    exit /b 1
-)
-echo [OK] gui.py validado (!GUI_SIZE! bytes). >> "!LOG_FILE!"
-
-echo [INFO] Executando: python -u gui.py >> "!LOG_FILE!"
-echo [INFO] Diretorio de trabalho: %CD% >> "!LOG_FILE!"
-
-python -u "%~dp0gui.py" >> "!LOG_FILE!" 2>&1
-set "GUI_CODE=!errorLevel!"
-
-echo [INFO] Python encerrou com codigo: !GUI_CODE! >> "!LOG_FILE!"
-
-if !GUI_CODE! NEQ 0 (
-    echo [ERRO] A GUI falhou com codigo de saida: !GUI_CODE! >> "!LOG_FILE!"
-    echo [ERRO] Verifique o log para mais detalhes: !LOG_FILE! >> "!LOG_FILE!"
-    pause
-) else (
-    echo [OK] Deploy concluido com sucesso! >> "!LOG_FILE!"
-    echo [OK] Log completo disponivel em: !LOG_FILE! >> "!LOG_FILE!"
-)
-
-exit /b !GUI_CODE!
+echo.
+echo Manutencão concluida. Log salvo em: %LOG_FILE%
+pause
