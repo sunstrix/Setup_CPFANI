@@ -1,10 +1,10 @@
 # =======================================================
 # INSTALADOR / ATUALIZADOR CHOCOLATEY (CP FANI)
-# Versão Leve para Startup - V5.9.5.2
-# Otimizado para execução automática no boot do Windows
+# Versao Leve para Startup - V5.9.5.2
+# Otimizado para execucao automatica no boot do Windows
 # =======================================================
 
-# Configurações básicas
+# Configuracoes basicas
 $PastaLog       = "C:\Scripts\Logs"
 $ArquivoLog     = "$PastaLog\instalar_tudo.log"
 $ArquivoErros   = "$PastaLog\instalar_tudo_erros.log"
@@ -51,13 +51,13 @@ function Write-Erro {
 }
 
 # ============================================================
-# VALIDAÇÃO DE CONECTIVIDADE (NOVO)
+# VALIDACAO DE CONECTIVIDADE (NOVO)
 # ============================================================
 function Test-InternetConnection {
     try {
         $testHosts = @("8.8.8.8", "1.1.1.1", "www.google.com")
-        foreach ($host in $testHosts) {
-            if (Test-Connection -ComputerName $host -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+        foreach ($testHost in $testHosts) {
+            if (Test-Connection -ComputerName $testHost -Count 1 -Quiet -ErrorAction SilentlyContinue) {
                 return $true
             }
         }
@@ -70,7 +70,7 @@ function Test-InternetConnection {
 }
 
 # ============================================================
-# VALIDAÇÃO DE ESPAÇO EM DISCO (NOVO)
+# VALIDACAO DE ESPACO EM DISCO (NOVO)
 # ============================================================
 function Test-DiskSpace {
     param([int]$MinMB = 500)
@@ -84,38 +84,62 @@ function Test-DiskSpace {
 }
 
 # ============================================================
-# INÍCIO DA EXECUÇÃO
+# HEALTH CHECK POS-INSTALACAO (NOVO)
 # ============================================================
-Write-Log "=== INÍCIO DA ATUALIZAÇÃO V5.9.5.2 (STARTUP) ==="
+function Test-AppInstalled {
+    param([string]$AppName)
+    try {
+        # Verifica se executavel existe no PATH
+        $whereResult = where.exe $AppName 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+        
+        # Verifica se pacote esta listado no Chocolatey
+        $chocoList = & choco list --local-only --limit-output 2>&1
+        if ($chocoList -match $AppName) {
+            return $true
+        }
+        
+        return $false
+    } catch {
+        return $false
+    }
+}
 
-# Validação rápida de privilégios administrativos
+# ============================================================
+# INICIO DA EXECUCAO
+# ============================================================
+Write-Log "=== INICIO DA ATUALIZACAO V5.9.5.2 (STARTUP) ==="
+
+# Validacao rapida de privilegios administrativos
 if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Erro "Script requer privilégios administrativos"
+    Write-Erro "Script requer privilegios administrativos"
     exit 1
 }
 
-# Validação de conectividade com internet (NOVO)
+# Validacao de conectividade com internet (NOVO)
 Write-Log "Verificando conectividade com internet..."
 if (!(Test-InternetConnection)) {
-    Write-Erro "Sem conectividade com internet. Abortando atualização."
+    Write-Erro "Sem conectividade com internet. Abortando atualizacao."
     exit 1
 }
-Write-Log "✓ Conectividade confirmada"
+Write-Log "[OK] Conectividade confirmada"
 
-# Validação de espaço em disco (NOVO)
-Write-Log "Verificando espaço em disco..."
+# Validacao de espaco em disco (NOVO)
+Write-Log "Verificando espaco em disco..."
 if (!(Test-DiskSpace -MinMB 500)) {
-    Write-Erro "Espaço em disco insuficiente (mínimo 500MB necessário)"
+    Write-Erro "Espaco em disco insuficiente (minimo 500MB necessario)"
     exit 1
 }
-Write-Log "✓ Espaço em disco suficiente"
+Write-Log "[OK] Espaco em disco suficiente"
 
 # ============================================================
-# VERIFICAÇÃO RÁPIDA DO CHOCOLATEY
+# VERIFICACAO RAPIDA DO CHOCOLATEY
 # ============================================================
 $chocoExe = "C:\ProgramData\chocolatey\bin\choco.exe"
 if (!(Test-Path $chocoExe)) {
-    Write-Log "Chocolatey não encontrado. Instalando..."
+    Write-Log "Chocolatey nao encontrado. Instalando..."
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = 3072
         Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
@@ -128,7 +152,7 @@ if (!(Test-Path $chocoExe)) {
 }
 
 # ============================================================
-# LOOP DE INSTALAÇÃO COM RETRY SIMPLIFICADO
+# LOOP DE INSTALACAO COM RETRY SIMPLIFICADO
 # ============================================================
 Write-Log "Atualizando $TotalPrograma programas..."
 
@@ -136,29 +160,39 @@ foreach ($prog in $Programas) {
     $ProgAtual++
     Write-Log "[$ProgAtual/$TotalPrograma] $prog"
     
-    # Tenta até 2 vezes
+    # Tenta ate 2 vezes
     $instalado = $false
     for ($tentativa = 1; $tentativa -le 2; $tentativa++) {
         try {
             $output = & $chocoExe upgrade $prog -y --no-progress --limit-output 2>&1
             
             if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 3010 -or $LASTEXITCODE -eq 1641 -or $LASTEXITCODE -eq 1638) {
-                Write-Log "  ✓ $prog OK"
+                Write-Log "  [OK] $prog instalado"
+                
+                # ============================================================
+                # HEALTH CHECK POS-INSTALACAO (NOVO)
+                # ============================================================
+                if (Test-AppInstalled -AppName $prog) {
+                    Write-Log "  [OK] $prog health check passou"
+                } else {
+                    Write-Log "  [AVISO] $prog instalado mas health check inconclusivo"
+                }
+                
                 $SucessoCount++
                 $instalado = $true
                 break
             } else {
-                Write-Log "  ⚠ $prog falhou (código $LASTEXITCODE) - Tentativa $tentativa"
+                Write-Log "  [AVISO] $prog falhou (codigo $LASTEXITCODE) - Tentativa $tentativa"
             }
         } catch {
-            Write-Log "  ⚠ $prog exceção: $_"
+            Write-Log "  [AVISO] $prog excecao: $_"
         }
         
         if ($tentativa -lt 2) { Start-Sleep -Seconds 3 }
     }
     
     if (!$instalado) {
-        Write-Erro "$prog falhou após 2 tentativas"
+        Write-Erro "$prog falhou apos 2 tentativas"
         $FalhaCount++
     }
 }
@@ -166,7 +200,7 @@ foreach ($prog in $Programas) {
 # ============================================================
 # RESUMO FINAL
 # ============================================================
-Write-Log "Concluído: $SucessoCount/$TotalPrograma sucessos, $FalhaCount falhas"
-Write-Log "=== FIM DA ATUALIZAÇÃO ==="
+Write-Log "Concluido: $SucessoCount/$TotalPrograma sucessos, $FalhaCount falhas"
+Write-Log "=== FIM DA ATUALIZACAO ==="
 
 exit $(if ($FalhaCount -gt 0) { 1 } else { 0 })
