@@ -110,27 +110,39 @@ if defined FREE_SPACE (
 :: VERIFICACAO DE PYTHON (SIMPLIFICADA E ROBUSTA)
 :: ============================================================
 echo [STEP 2] Verificando Python... >> "!LOG_FILE!"
+echo [INFO] Verificando Python...
 
 :: Teste direto de execucao do Python (ignora aliases da Windows Store)
 echo [DEBUG] Testando execucao direta do Python... >> "!LOG_FILE!"
 python -c "print('OK')" >nul 2>&1
 set "PYTHON_OK=!errorLevel!"
+echo [DEBUG] Resultado do teste Python: !PYTHON_OK! >> "!LOG_FILE!"
 
 if !PYTHON_OK! NEQ 0 (
     echo [INFO] Python nao encontrado ou invalido. Baixando e instalando... >> "!LOG_FILE!"
+    echo [INFO] Python nao encontrado ou invalido. Baixando e instalando...
     
     set "PYTHON_URL=https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
     set "PYTHON_INSTALLER=%TEMP%\python_installer.exe"
+    
+    echo [INFO] URL de download: !PYTHON_URL! >> "!LOG_FILE!"
+    echo [INFO] Destino: !PYTHON_INSTALLER! >> "!LOG_FILE!"
     
     set "DOWNLOAD_SUCCESS=0"
     for /L %%i in (1,1,3) do (
         if !DOWNLOAD_SUCCESS! EQU 0 (
             echo [INFO] Tentativa de download %%i/3... >> "!LOG_FILE!"
-            curl -L --max-time 300 --retry 3 --retry-delay 5 -o "!PYTHON_INSTALLER!" "!PYTHON_URL!" 2>> "!LOG_FILE!"
-            if !errorLevel! EQU 0 (
+            echo [INFO] Tentativa de download %%i/3...
+            
+            :: Usando PowerShell para download mais confiavel no Windows
+            powershell -NoProfile -Command "Invoke-WebRequest -Uri '!PYTHON_URL!' -OutFile '!PYTHON_INSTALLER!' -UseBasicParsing" >> "!LOG_FILE!" 2>&1
+            set "DL_ERR=!errorLevel!"
+            
+            if !DL_ERR! EQU 0 (
                 set "DOWNLOAD_SUCCESS=1"
+                echo [OK] Download concluido. >> "!LOG_FILE!"
             ) else (
-                echo [AVISO] Tentativa %%i falhou. Aguardando 5 segundos... >> "!LOG_FILE!"
+                echo [AVISO] Tentativa %%i falhou (Erro !DL_ERR!). Aguardando 5 segundos... >> "!LOG_FILE!"
                 timeout /t 5 /nobreak >nul
             )
         )
@@ -138,25 +150,32 @@ if !PYTHON_OK! NEQ 0 (
     
     if !DOWNLOAD_SUCCESS! EQU 0 (
         echo [ERRO] Falha ao baixar o Python apos 3 tentativas. >> "!LOG_FILE!"
+        echo [ERRO] Falha ao baixar o Python apos 3 tentativas.
         pause
         exit /b 1
     )
     
     if not exist "!PYTHON_INSTALLER!" (
         echo [ERRO] Arquivo nao foi criado. >> "!LOG_FILE!"
+        echo [ERRO] Arquivo nao foi criado.
         pause
         exit /b 1
     )
     
     for %%F in ("!PYTHON_INSTALLER!") do set "FILE_SIZE=%%~zF"
+    echo [DEBUG] Tamanho do arquivo baixado: !FILE_SIZE! bytes >> "!LOG_FILE!"
+    
     if !FILE_SIZE! LSS 10485760 (
         echo [ERRO] Arquivo muito pequeno (!FILE_SIZE! bytes). Download corrompido? >> "!LOG_FILE!"
+        echo [ERRO] Arquivo muito pequeno (!FILE_SIZE! bytes). Download corrompido?
         del "!PYTHON_INSTALLER!" 2>nul
         pause
         exit /b 1
     )
     
     echo [INFO] Validando integridade do instalador... >> "!LOG_FILE!"
+    echo [INFO] Validando integridade do instalador...
+    
     for /f "skip=1 tokens=* delims=" %%i in ('certutil -hashfile "!PYTHON_INSTALLER!" SHA256 ^| findstr /v /c:"hash"') do (
         set "FILE_HASH=%%i"
         set "FILE_HASH=!FILE_HASH: =!"
@@ -165,8 +184,12 @@ if !PYTHON_OK! NEQ 0 (
     :: ATENCAO: Hash placeholder - atualizar com hash real do Python 3.12.7
     set "EXPECTED_HASH=5DD574A4F7D3E4B1C7A8E9F0D1C2B3A4E5F6D7C8B9A0E1F2D3C4B5A6E7F8D9C0"
     
+    echo [DEBUG] Hash obtido: !FILE_HASH! >> "!LOG_FILE!"
+    echo [DEBUG] Hash esperado: !EXPECTED_HASH! >> "!LOG_FILE!"
+    
     if "!FILE_HASH!" NEQ "!EXPECTED_HASH!" (
         echo [ERRO] Hash SHA256 NAO corresponde ao esperado! >> "!LOG_FILE!"
+        echo [ERRO] Hash SHA256 NAO corresponde ao esperado!
         echo [DEBUG] Hash obtido: !FILE_HASH! >> "!LOG_FILE!"
         echo [DEBUG] Hash esperado: !EXPECTED_HASH! >> "!LOG_FILE!"
         del "!PYTHON_INSTALLER!" 2>nul
@@ -177,10 +200,12 @@ if !PYTHON_OK! NEQ 0 (
     )
     
     echo [INFO] Instalando Python... >> "!LOG_FILE!"
+    echo [INFO] Instalando Python (isso pode levar alguns minutos)...
     "!PYTHON_INSTALLER!" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 >> "!LOG_FILE!" 2>&1
     
     if !errorLevel! NEQ 0 (
         echo [ERRO] Instalacao do Python falhou com codigo: !errorLevel! >> "!LOG_FILE!"
+        echo [ERRO] Instalacao do Python falhou com codigo: !errorLevel!
         pause
         exit /b 1
     )
@@ -190,32 +215,39 @@ if !PYTHON_OK! NEQ 0 (
     del "!PYTHON_INSTALLER!" 2>nul
 ) else (
     echo [OK] Python detectado e funcional. >> "!LOG_FILE!"
+    echo [OK] Python detectado e funcional.
 )
 
 :: ============================================================
 :: VERIFICACAO DE CHOCOLATEY
 :: ============================================================
 echo [STEP 3] Verificando Chocolatey... >> "!LOG_FILE!"
+echo [INFO] Verificando Chocolatey...
 where choco >nul 2>&1
 if !errorLevel! NEQ 0 (
     echo [INFO] Chocolatey nao encontrado. Instalando... >> "!LOG_FILE!"
+    echo [INFO] Chocolatey nao encontrado. Instalando...
     
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))" >> "!LOG_FILE!" 2>&1
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://community.chocolatey.org/install.ps1' -OutFile '$env:TEMP\choco_install.ps1'; & '$env:TEMP\choco_install.ps1'" >> "!LOG_FILE!" 2>&1
     
     if !errorLevel! NEQ 0 (
         echo [ERRO] Falha na instalacao do Chocolatey. >> "!LOG_FILE!"
+        echo [ERRO] Falha na instalacao do Chocolatey.
     ) else (
         set "PATH=!PATH!;%ALLUSERSPROFILE%\chocolatey\bin"
         echo [OK] Chocolatey instalado e validado. >> "!LOG_FILE!"
+        echo [OK] Chocolatey instalado e validado.
     )
 ) else (
     echo [OK] Chocolatey ja instalado. >> "!LOG_FILE!"
+    echo [OK] Chocolatey ja instalado.
 )
 
 :: ============================================================
 :: INSTALACAO DE DEPENDENCIAS PIP
 :: ============================================================
 echo [STEP 4] Instalando dependencias... >> "!LOG_FILE!"
+echo [INFO] Instalando dependencias PIP...
 
 echo [INFO] Atualizando pip... >> "!LOG_FILE!"
 python -m pip install --upgrade pip >> "!LOG_FILE!" 2>&1
@@ -224,6 +256,7 @@ echo [INFO] Instalando customtkinter... >> "!LOG_FILE!"
 python -m pip install customtkinter >> "!LOG_FILE!" 2>&1
 if !errorLevel! NEQ 0 (
     echo [ERRO] Falha ao instalar customtkinter. >> "!LOG_FILE!"
+    echo [ERRO] Falha ao instalar customtkinter.
     pause
     exit /b 1
 )
@@ -232,6 +265,7 @@ echo [INFO] Instalando psutil... >> "!LOG_FILE!"
 python -m pip install psutil >> "!LOG_FILE!" 2>&1
 if !errorLevel! NEQ 0 (
     echo [ERRO] Falha ao instalar psutil. >> "!LOG_FILE!"
+    echo [ERRO] Falha ao instalar psutil.
     pause
     exit /b 1
 )
@@ -240,21 +274,24 @@ echo [INFO] Instalando pillow... >> "!LOG_FILE!"
 python -m pip install pillow >> "!LOG_FILE!" 2>&1
 if !errorLevel! NEQ 0 (
     echo [ERRO] Falha ao instalar pillow. >> "!LOG_FILE!"
+    echo [ERRO] Falha ao instalar pillow.
     pause
     exit /b 1
 )
 
 echo [OK] Dependencias PIP validadas! >> "!LOG_FILE!"
+echo [OK] Dependencias PIP validadas!
 
 :: ============================================================
 :: INICIALIZACAO DA GUI
 :: ============================================================
 echo [STEP 5] Iniciando GUI Python... >> "!LOG_FILE!"
+echo [INFO] Iniciando GUI Python...
 cd /d "%~dp0"
 
 if not exist "%~dp0gui.py" (
     echo [ERRO] gui.py NAO ENCONTRADO! >> "!LOG_FILE!"
-    echo [ERRO] Caminho esperado: %~dp0gui.py >> "!LOG_FILE!"
+    echo [ERRO] gui.py NAO ENCONTRADO! Caminho esperado: %~dp0gui.py
     pause
     exit /b 1
 )
@@ -263,6 +300,7 @@ echo [INFO] Validando integridade do gui.py... >> "!LOG_FILE!"
 for %%F in ("%~dp0gui.py") do set "GUI_SIZE=%%~zF"
 if !GUI_SIZE! LSS 100 (
     echo [ERRO] gui.py parece estar corrompido ou vazio (!GUI_SIZE! bytes). >> "!LOG_FILE!"
+    echo [ERRO] gui.py parece estar corrompido ou vazio (!GUI_SIZE! bytes).
     pause
     exit /b 1
 )
@@ -278,10 +316,12 @@ echo [INFO] Python encerrou com codigo: !GUI_CODE! >> "!LOG_FILE!"
 
 if !GUI_CODE! NEQ 0 (
     echo [ERRO] A GUI falhou com codigo de saida: !GUI_CODE! >> "!LOG_FILE!"
+    echo [ERRO] A GUI falhou com codigo de saida: !GUI_CODE!
     echo [ERRO] Verifique o log para mais detalhes: !LOG_FILE! >> "!LOG_FILE!"
     pause
 ) else (
     echo [OK] Deploy concluido com sucesso! >> "!LOG_FILE!"
+    echo [OK] Deploy concluido com sucesso!
     echo [OK] Log completo disponivel em: !LOG_FILE! >> "!LOG_FILE!"
 )
 
