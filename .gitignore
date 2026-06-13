@@ -14,6 +14,7 @@
 # BACKUPS AUTOMÁTICOS
 # ============================================================
 backups/
+settings_backup_*.json
 *.backup
 *.bak
 *.old
