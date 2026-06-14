@@ -154,7 +154,7 @@ def _apply_to_all_real_users():
                         if result and result.returncode == 0:
                             _log(f"✓ PrintScreen desativado para SID {sid}", "OK")
                         else:
-                            _log(f"⚠ Falha ao desativar PrintScreen para SID {sid}", "AVISO")
+                            _log(f" Falha ao desativar PrintScreen para SID {sid}", "AVISO")
                         
                         cmd_sync = ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"]
                         _safe_subprocess_run(cmd_sync, timeout=10)
@@ -227,7 +227,7 @@ def _apply_to_all_real_users():
     return True
 
 def generate_full_snapshot():
-    """Gera snapshot FOCADO EM HARDWARE e versão do SO (Ultra-rápido)"""
+    """Gera snapshot FOCADO EM HARDWARE, versão do SO e IDs de acesso remoto"""
     _log("Gerando snapshot de hardware...", "INFO")
     
     if not _validate_admin_privileges():
@@ -252,6 +252,89 @@ def generate_full_snapshot():
             f.write(f"Computador: {pc_name}\n")
             f.write("=" * 80 + "\n\n")
             
+            # ============================================================
+            # 0. IDs DE ACESSO REMOTO (NOVO)
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("0. ACESSO REMOTO (AnyDesk/TeamViewer)\n")
+            f.write("=" * 80 + "\n")
+            
+            # AnyDesk ID - Tenta múltiplos métodos
+            anydesk_id_encontrado = False
+            try:
+                # Método 1: Via registro do Windows
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\AnyDesk", 0, winreg.KEY_READ) as ad_key:
+                        ad_id, _ = winreg.QueryValueEx(ad_key, "AdvertisedId")
+                        f.write(f"AnyDesk ID: {ad_id}\n")
+                        anydesk_id_encontrado = True
+                except Exception:
+                    pass
+                
+                # Método 2: Via arquivo de configuração
+                if not anydesk_id_encontrado:
+                    anydesk_config_paths = [
+                        Path("C:/ProgramData/AnyDesk/service.conf"),
+                        Path("C:/Users/" + os.getenv("USERNAME") + "/AppData/Roaming/AnyDesk/service.conf"),
+                    ]
+                    for config_path in anydesk_config_paths:
+                        if config_path.exists():
+                            with open(config_path, 'r', encoding='utf-8', errors='replace') as cfg:
+                                for line in cfg:
+                                    if 'ad.anynet.id' in line:
+                                        ad_id = line.split('=')[1].strip()
+                                        f.write(f"AnyDesk ID: {ad_id}\n")
+                                        anydesk_id_encontrado = True
+                                        break
+                            if anydesk_id_encontrado:
+                                break
+                
+                if not anydesk_id_encontrado:
+                    f.write("AnyDesk ID: Nao instalado ou nao configurado\n")
+            except Exception as e:
+                f.write(f"AnyDesk ID: Erro ao ler ({e})\n")
+            
+            # TeamViewer ID - Tenta múltiplos métodos
+            teamviewer_id_encontrado = False
+            try:
+                # Método 1: Via registro do Windows
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\TeamViewer", 0, winreg.KEY_READ) as tv_key:
+                        tv_id, _ = winreg.QueryValueEx(tv_key, "ClientID")
+                        f.write(f"TeamViewer ID: {tv_id}\n")
+                        teamviewer_id_encontrado = True
+                except Exception:
+                    pass
+                
+                # Método 2: Via arquivo de configuração
+                if not teamviewer_id_encontrado:
+                    tv_config_paths = [
+                        Path("C:/Program Files/TeamViewer/TeamViewer15_Settings.ini"),
+                        Path("C:/Program Files/TeamViewer/TeamViewer_Settings.ini"),
+                        Path("C:/Program Files (x86)/TeamViewer/TeamViewer15_Settings.ini"),
+                    ]
+                    for config_path in tv_config_paths:
+                        if config_path.exists():
+                            with open(config_path, 'r', encoding='utf-8', errors='replace') as cfg:
+                                for line in cfg:
+                                    if 'PermanentID=' in line or 'ClientID=' in line:
+                                        tv_id = line.split('=')[1].strip()
+                                        f.write(f"TeamViewer ID: {tv_id}\n")
+                                        teamviewer_id_encontrado = True
+                                        break
+                            if teamviewer_id_encontrado:
+                                break
+                
+                if not teamviewer_id_encontrado:
+                    f.write("TeamViewer ID: Nao instalado ou nao configurado\n")
+            except Exception as e:
+                f.write(f"TeamViewer ID: Erro ao ler ({e})\n")
+            
+            f.write("\n")
+            
+            # ============================================================
+            # 1. SISTEMA OPERACIONAL
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("1. SISTEMA OPERACIONAL\n")
             f.write("=" * 80 + "\n")
@@ -269,6 +352,9 @@ def generate_full_snapshot():
                 f.write(f"Versão: {hw.get('Sistema_Operacional', 'N/A')} {hw.get('Versao_SO', 'N/A')}\n")
             f.write("\n")
             
+            # ============================================================
+            # 2. PROCESSADOR (CPU)
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("2. PROCESSADOR (CPU)\n")
             f.write("=" * 80 + "\n")
@@ -284,6 +370,9 @@ def generate_full_snapshot():
                 f.write(f"Erro ao coletar CPU: {e}\n")
             f.write("\n")
             
+            # ============================================================
+            # 3. MEMÓRIA RAM
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("3. MEMÓRIA RAM\n")
             f.write("=" * 80 + "\n")
@@ -307,6 +396,9 @@ def generate_full_snapshot():
                 f.write(f"Erro ao coletar RAM: {e}\n")
             f.write("\n")
             
+            # ============================================================
+            # 4. DISCOS E ARMAZENAMENTO
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("4. DISCOS E ARMAZENAMENTO\n")
             f.write("=" * 80 + "\n")
@@ -330,6 +422,9 @@ def generate_full_snapshot():
                 f.write(f"Erro ao coletar Discos: {e}\n")
             f.write("\n")
             
+            # ============================================================
+            # 5. PLACA DE VÍDEO (GPU)
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("5. PLACA DE VÍDEO (GPU)\n")
             f.write("=" * 80 + "\n")
@@ -345,6 +440,9 @@ def generate_full_snapshot():
                 f.write(f"Erro ao coletar GPU: {e}\n")
             f.write("\n")
             
+            # ============================================================
+            # 6. PLACA-MÃE E BIOS
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("6. PLACA-MÃE E BIOS\n")
             f.write("=" * 80 + "\n")
@@ -368,6 +466,9 @@ def generate_full_snapshot():
                 f.write(f"Erro ao coletar Placa-mãe/BIOS: {e}\n")
             f.write("\n")
             
+            # ============================================================
+            # 7. REDE (ADAPTADORES FÍSICOS)
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("7. REDE (ADAPTADORES FÍSICOS)\n")
             f.write("=" * 80 + "\n")
@@ -383,6 +484,9 @@ def generate_full_snapshot():
                 f.write(f"Erro ao coletar Rede: {e}\n")
             f.write("\n")
             
+            # ============================================================
+            # 8. MONITORES
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("8. MONITORES\n")
             f.write("=" * 80 + "\n")
@@ -398,6 +502,9 @@ def generate_full_snapshot():
                 f.write(f"Erro ao coletar Monitores: {e}\n")
             f.write("\n")
             
+            # ============================================================
+            # RODAPÉ
+            # ============================================================
             f.write("=" * 80 + "\n")
             f.write("FIM DO RELATÓRIO DE HARDWARE\n")
             f.write("=" * 80 + "\n")
