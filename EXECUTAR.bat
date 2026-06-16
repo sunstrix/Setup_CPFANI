@@ -3,7 +3,7 @@ setlocal EnableDelayedExpansion
 title Setup Automatizado CP Fani
 
 REM ============================================================
-REM CONFIGURAÇÃO INICIAL E VALIDAÇÕES
+REM CONFIGURACAO INICIAL E VALIDACOES
 REM ============================================================
 
 set "SCRIPT_DIR=%~dp0"
@@ -15,14 +15,13 @@ set "PYTHON_TIMEOUT=300"
 set "MAX_RETRIES=2"
 
 REM ============================================================
-REM FUNÇÃO: LOG COM TIMESTAMP
+REM FUNCAO: LOG COM TIMESTAMP
 REM ============================================================
-setlocal EnableDelayedExpansion
 for /f "tokens=2-4 delims=/ " %%a in ('date /t') do (set "mydate=%%c-%%a-%%b")
 for /f "tokens=1-2 delims=/:" %%a in ('time /t') do (set "mytime=%%a:%%b")
 
 REM ============================================================
-REM CRIAR DIRETÓRIO DE LOGS COM VALIDAÇÃO
+REM CRIAR DIRETORIO DE LOGS COM VALIDACAO
 REM ============================================================
 if not exist "%LOG_DIR%" (
     mkdir "%LOG_DIR%" 2>nul
@@ -34,7 +33,7 @@ if not exist "%LOG_DIR%" (
     )
 )
 
-REM Teste de escrita no diretório de logs
+REM Teste de escrita no diretorio de logs
 echo. > "%LOG_DIR%\write_test.tmp" 2>nul
 if not exist "%LOG_DIR%\write_test.tmp" (
     echo [ERRO CRITICO] Sem permissao de escrita em %LOG_DIR%.
@@ -55,7 +54,7 @@ echo Versao Batch: Windows %OS% >> "%LOG_FILE%"
 echo ======================================== >> "%LOG_FILE%"
 
 REM ============================================================
-REM VERIFICAR PRIVILÉGIOS ADMINISTRATIVOS
+REM VERIFICAR PRIVILEGIOS ADMINISTRATIVOS
 REM ============================================================
 echo [INFO] Verificando privilegios administrativos...
 echo [INFO] Verificando privilegios administrativos... >> "%LOG_FILE%"
@@ -72,7 +71,7 @@ echo [OK] Administrador confirmado. >> "%LOG_FILE%"
 echo [OK] Administrador confirmado.
 
 REM ============================================================
-REM VERIFICAR SE PYTHON ESTÁ INSTALADO
+REM VERIFICAR SE PYTHON ESTA INSTALADO
 REM ============================================================
 echo [INFO] Verificando instalacao do Python... >> "%LOG_FILE%"
 python --version >nul 2>&1
@@ -134,7 +133,7 @@ echo [OK] Arquivos essenciais validados (gui.py: !GUI_SIZE! bytes). >> "%LOG_FIL
 echo [OK] Arquivos essenciais validados.
 
 REM ============================================================
-REM VERIFICAR/INSTALAR PRÉ-REQUISITOS
+REM VERIFICAR/INSTALAR PRE-REQUISITOS
 REM ============================================================
 echo [INFO] Verificando/Instalando pre-requisitos... >> "%LOG_FILE%"
 echo [INFO] Verificando/Instalando pre-requisitos...
@@ -154,7 +153,7 @@ echo [OK] Pre-requisitos validados com sucesso. >> "%LOG_FILE%"
 echo [OK] Pre-requisitos validados com sucesso.
 
 REM ============================================================
-REM INICIAR INTERFACE GRÁFICA COM RETRY E TIMEOUT
+REM INICIAR INTERFACE GRAFICA COM RETRY E TIMEOUT
 REM ============================================================
 echo [INFO] Iniciando interface grafica... >> "%LOG_FILE%"
 echo [INFO] Iniciando interface grafica...
