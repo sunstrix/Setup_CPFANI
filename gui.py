@@ -8,11 +8,13 @@ import sys
 import shutil
 import subprocess
 import urllib.request
+import ssl
 import re
 import time
 import traceback
 import socket
 import hashlib
+import atexit
 from datetime import datetime
 from pathlib import Path
 
@@ -37,40 +39,55 @@ except ImportError:
 # SISTEMA DE LOCK PARA PREVENIR EXECUÇÃO MÚLTIPLA
 # ============================================================
 LOCK_FILE = os.path.join(os.path.dirname(__file__), ".setup_lock")
+LOCK_MAX_AGE_SECONDS = 300  # 5 minutos — lock órfão é considerado stale
 
 def acquire_lock():
-    """Adquire lock para prevenir execução múltipla"""
+    """Adquire lock para prevenir execução múltipla. Detecta lock órfão por timestamp."""
     try:
         if os.path.exists(LOCK_FILE):
-            # Verifica se o processo ainda está ativo
             try:
-                with open(LOCK_FILE, 'r') as f:
-                    pid = int(f.read().strip())
-                # Verifica se processo existe (Windows)
-                if sys.platform == "win32":
-                    result = subprocess.run(
-                        ['tasklist', '/FI', f'PID eq {pid}'],
-                        capture_output=True, text=True, timeout=5,
-                        encoding='utf-8', errors='replace'
-                    )
-                    if str(pid) in result.stdout:
-                        return False, pid
+                with open(LOCK_FILE, 'r', encoding='utf-8', errors='replace') as f:
+                    content = f.read().strip().split('|')
+                    pid = int(content[0])
+                    lock_time = float(content[1]) if len(content) > 1 else 0
             except Exception:
-                pass
-        
-        # Cria lock file
-        with open(LOCK_FILE, 'w') as f:
-            f.write(str(os.getpid()))
+                pid = 0
+                lock_time = 0
+
+            # Se o lock tem mais de 5 minutos, considera órfão
+            if lock_time > 0 and (time.time() - lock_time) > LOCK_MAX_AGE_SECONDS:
+                print(f"[AVISO] Lock órfão detectado (idade: {time.time() - lock_time:.0f}s). Substituindo.", flush=True)
+            else:
+                # Verifica se o processo ainda está ativo
+                if sys.platform == "win32" and pid > 0:
+                    try:
+                        result = subprocess.run(
+                            ['tasklist', '/FI', f'PID eq {pid}', '/NH'],
+                            capture_output=True, text=True, timeout=5,
+                            encoding='utf-8', errors='replace',
+                            creationflags=0x08000000
+                        )
+                        if str(pid) in result.stdout:
+                            return False, pid
+                    except Exception:
+                        pass
+
+        # Cria lock file com PID e timestamp
+        with open(LOCK_FILE, 'w', encoding='utf-8') as f:
+            f.write(f"{os.getpid()}|{time.time()}")
+        atexit.register(release_lock)
         return True, os.getpid()
     except Exception as e:
         print(f"[AVISO] Falha ao adquirir lock: {e}", flush=True)
         return True, os.getpid()  # Continua mesmo se falhar
 
 def release_lock():
-    """Libera lock do arquivo"""
+    """Libera lock do arquivo com tratamento de permissão"""
     try:
         if os.path.exists(LOCK_FILE):
             os.remove(LOCK_FILE)
+    except PermissionError:
+        print("[AVISO] Sem permissão para remover lock file.", flush=True)
     except Exception:
         pass
 
@@ -78,10 +95,13 @@ def release_lock():
 # SISTEMA DE NOTIFICAÇÃO WINDOWS (MANTIDO COM MELHORIAS)
 # ============================================================
 def show_windows_toast(title, message):
-    """Exibe notificação nativa do Windows"""
-    # Escapa caracteres especiais para evitar erros no PowerShell
-    title_escaped = title.replace('"', '`"').replace("'", "`'")
-    message_escaped = message.replace('"', '`"').replace("'", "`'")
+    """Exibe notificação nativa do Windows com escape XML completo"""
+    # Escapa caracteres especiais para PowerShell E XML
+    def _xml_escape(text):
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    
+    title_escaped = _xml_escape(title)
+    message_escaped = _xml_escape(message)
     
     ps_script = f"""
     [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
@@ -131,19 +151,21 @@ def validate_prerequisites():
     except Exception as e:
         warnings.append(f"Falha ao verificar admin: {e}")
     
-    # 2. Verifica conectividade com internet
+    # 2. Verifica conectividade com internet (HTTPS)
     try:
         socket.create_connection(("8.8.8.8", 53), timeout=5)
     except Exception:
         try:
-            urllib.request.urlopen("http://www.google.com", timeout=10)
+            ctx = ssl.create_default_context()
+            req = urllib.request.Request("https://www.google.com", method="HEAD")
+            urllib.request.urlopen(req, timeout=10, context=ctx)
         except Exception:
             errors.append("Sem conectividade com a internet")
     
-    # 3. Verifica espaço em disco (mínimo 500MB)
+    # 3. Verifica espaço em disco (mínimo 500MB) no disco C:
     try:
-        free_space = shutil.disk_usage("/").free
-        if free_space < 500 * 1024 * 1024:  # 500MB
+        free_space = shutil.disk_usage("C:\\").free
+        if free_space < 500 * 1024 * 1024:
             errors.append(f"Espaço em disco insuficiente: {free_space / (1024*1024):.0f}MB disponíveis")
     except Exception as e:
         warnings.append(f"Falha ao verificar espaço em disco: {e}")
@@ -419,7 +441,7 @@ class CPFani_GUI(ctk.CTk):
         self.driver_var = ctk.StringVar(value="nenhum")
         ctk.CTkRadioButton(driver_frame, text="Ignorar", variable=self.driver_var, value="nenhum").pack(anchor="w", padx=10, pady=2)
         ctk.CTkRadioButton(driver_frame, text="Fabricante (Dell/HP/Lenovo)", variable=self.driver_var, value="fabricante").pack(anchor="w", padx=10, pady=2)
-        ctk.CTkRadioButton(driver_frame, text="Windows Update (Forçar Instalação)", variable=self.driver_var, value="wu").pack(anchor="w", padx=10, pady=2)
+        ctk.CTkRadioButton(driver_frame, text="Windows Update (Forçar Instalação)", variable=self.driver_var, value="wu").pack(anchor="w", padx=10, pady=2")
 
         # STATUS E PROGRESSO
         status_frame = ctk.CTkFrame(self.main_scroll, fg_color="transparent")
@@ -497,8 +519,10 @@ class CPFani_GUI(ctk.CTk):
         except Exception as e:
             self.log(f"Erro ao atualizar status: {e}", "ERRO")
 
-    def _download_with_validation(self, url, dest_path, min_size_mb=1, max_retries=3, timeout=300):
-        """Download robusto com validação de tamanho e retry logic"""
+    def _download_with_validation(self, url, dest_path, min_size_mb=1, max_retries=3, timeout=300, expected_checksum=None):
+        """Download robusto com validação de tamanho, retry logic e SSL"""
+        ssl_context = ssl.create_default_context()
+        
         for attempt in range(1, max_retries + 1):
             try:
                 self.log(f"Tentativa {attempt}/{max_retries}: Baixando {os.path.basename(dest_path)}...")
@@ -506,9 +530,10 @@ class CPFani_GUI(ctk.CTk):
                 # Cria diretório se não existir
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                 
-                # Download com timeout (CORRIGIDO)
+                # Download com timeout separado: connection=30s, read=timeout
                 start_time = time.time()
-                with urllib.request.urlopen(url, timeout=timeout) as response:
+                req = urllib.request.Request(url, method='GET')
+                with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
                     with open(dest_path, 'wb') as out_file:
                         shutil.copyfileobj(response, out_file)
                 elapsed = time.time() - start_time
@@ -526,17 +551,24 @@ class CPFani_GUI(ctk.CTk):
                     else:
                         return False
                 
-                # ============================================================
-                # CÁLCULO DE CHECKSUM (NOVO)
-                # ============================================================
+                # CÁLCULO E VALIDAÇÃO DE CHECKSUM
                 self.log(f"Calculando checksum SHA256...")
                 sha256_hash = hashlib.sha256()
                 with open(dest_path, "rb") as f:
                     for byte_block in iter(lambda: f.read(4096), b""):
                         sha256_hash.update(byte_block)
                 checksum = sha256_hash.hexdigest()
-                self.log(f"SHA256: {checksum[:16]}...", "INFO")
                 
+                if expected_checksum and checksum.lower() != expected_checksum.lower():
+                    self.log(f"Checksum SHA256 NÃO corresponde! Esperado: {expected_checksum[:16]}... Obtido: {checksum[:16]}...", "ERRO")
+                    os.remove(dest_path)
+                    if attempt < max_retries:
+                        time.sleep(2)
+                        continue
+                    else:
+                        return False
+                
+                self.log(f"SHA256: {checksum[:16]}...", "INFO")
                 self.log(f"✓ Download concluído: {file_size / (1024*1024):.2f} MB em {elapsed:.1f}s", "OK")
                 return True
                 
@@ -632,9 +664,7 @@ class CPFani_GUI(ctk.CTk):
 
     def start_deploy(self):
         """Inicia o processo de deploy com confirmação"""
-        # ============================================================
-        # VALIDAÇÃO DE PRÉ-REQUISITOS (NOVO)
-        # ============================================================
+        # VALIDAÇÃO DE PRÉ-REQUISITOS
         self.log("Validando pré-requisitos...")
         errors, warnings = validate_prerequisites()
         
@@ -650,9 +680,7 @@ class CPFani_GUI(ctk.CTk):
         
         self.log("✓ Todos os pré-requisitos atendidos", "OK")
         
-        # ============================================================
-        # BACKUP DE CONFIGURAÇÕES (NOVO)
-        # ============================================================
+        # BACKUP DE CONFIGURAÇÕES
         self.log("Criando backup de configurações...")
         backup_file = backup_configurations()
         if backup_file:
@@ -924,9 +952,7 @@ class CPFani_GUI(ctk.CTk):
             self.log(f"Erro ao finalizar: {e}", "ERRO")
             self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
         finally:
-            # ============================================================
-            # LIBERA LOCK AO FINALIZAR (NOVO)
-            # ============================================================
+            # LIBERA LOCK AO FINALIZAR
             release_lock()
 
 if __name__ == "__main__":
@@ -939,3 +965,6 @@ if __name__ == "__main__":
         print(traceback.format_exc(), flush=True)
         input("Pressione ENTER para sair...")
         sys.exit(1)
+    finally:
+        # Garante liberação do lock mesmo em crash não tratado
+        release_lock()
