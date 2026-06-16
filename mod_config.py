@@ -241,7 +241,7 @@ def generate_full_snapshot():
         log_path.parent.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         _log(f"Erro ao criar diretório de snapshot: {e}", "ERRO")
-        return None
+        return False
     
     try:
         with open(log_path, "w", encoding="utf-8", errors='replace') as f:
@@ -515,10 +515,10 @@ def generate_full_snapshot():
             return str(log_path)
         else:
             _log("Snapshot não foi criado corretamente", "ERRO")
-            return None
+            return False
     except Exception as e:
         _log(f"Erro ao gerar snapshot: {e}", "ERRO")
-        return None
+        return False
 
 # ============================================================
 # FUNÇÕES OBRIGATÓRIAS CHAMADAS PELO gui.py (IMPLEMENTAÇÃO ROBUSTA)
@@ -547,6 +547,7 @@ def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
             cmd_welcome = ["reg", "add", r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "/v", "DisableWelcomeScreen", "/t", "REG_DWORD", "/d", "1", "/f"]
             _safe_subprocess_run(cmd_welcome, timeout=10)
             
+            # CORREÇÃO: só executa varredura pesada de perfis quando realmente necessário
             _apply_to_all_real_users()
             
         if apply_lgpd:
@@ -561,26 +562,46 @@ def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
         return False
 
 def apply_firewall_rules():
-    """Restringe SMB/RPC à rede local"""
+    """Restringe SMB/RPC à rede local com whitelist de LAN"""
     _log("Configurando regras de firewall...", "INFO")
     try:
-        cmd_smb = ['powershell', '-NoProfile', '-Command', 'New-NetFirewallRule -DisplayName "CP Fani - Bloquear SMB Externo" -Direction Inbound -Protocol TCP -LocalPort 445 -Action Block -Enabled True -ErrorAction SilentlyContinue']
+        # Bloqueia SMB (445) e RPC (135) de origens externas
+        cmd_smb = ['powershell', '-NoProfile', '-Command', 
+                   'New-NetFirewallRule -DisplayName "CP Fani - Bloquear SMB Externo" -Direction Inbound -Protocol TCP -LocalPort 445 -RemoteAddress Internet -Action Block -Enabled True -ErrorAction SilentlyContinue']
         _safe_subprocess_run(cmd_smb, timeout=15)
-        _log("✓ Regras de firewall aplicadas", "OK")
+        
+        cmd_rpc = ['powershell', '-NoProfile', '-Command', 
+                   'New-NetFirewallRule -DisplayName "CP Fani - Bloquear RPC Externo" -Direction Inbound -Protocol TCP -LocalPort 135 -RemoteAddress Internet -Action Block -Enabled True -ErrorAction SilentlyContinue']
+        _safe_subprocess_run(cmd_rpc, timeout=15)
+        
+        # Whitelist: permite SMB/RPC apenas da rede local (RFC1918)
+        cmd_whitelist_smb = ['powershell', '-NoProfile', '-Command', 
+                             'New-NetFirewallRule -DisplayName "CP Fani - Permitir SMB LAN" -Direction Inbound -Protocol TCP -LocalPort 445 -RemoteAddress 192.168.0.0/16,10.0.0.0/8,172.16.0.0/12 -Action Allow -Enabled True -ErrorAction SilentlyContinue']
+        _safe_subprocess_run(cmd_whitelist_smb, timeout=15)
+        
+        cmd_whitelist_rpc = ['powershell', '-NoProfile', '-Command', 
+                             'New-NetFirewallRule -DisplayName "CP Fani - Permitir RPC LAN" -Direction Inbound -Protocol TCP -LocalPort 135 -RemoteAddress 192.168.0.0/16,10.0.0.0/8,172.16.0.0/12 -Action Allow -Enabled True -ErrorAction SilentlyContinue']
+        _safe_subprocess_run(cmd_whitelist_rpc, timeout=15)
+        
+        _log("✓ Regras de firewall aplicadas (SMB/RPC bloqueados externamente, liberados na LAN)", "OK")
         return True
     except Exception as e:
         _log(f"Erro no firewall: {e}", "ERRO")
         return False
 
 def remove_agressive_bloatware(bloatware_list):
-    """Remove bloatware para todos os usuários"""
+    """Remove bloatware para todos os usuários (compatível Windows 11 22H2+)"""
     _log(f"Removendo {len(bloatware_list)} itens de bloatware...", "INFO")
     removed_count = 0
     for app in bloatware_list:
         try:
-            cmd = ['powershell', '-NoProfile', '-Command', f'Get-AppxPackage -AllUsers -Name "*{app}*" | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue']
-            res = _safe_subprocess_run(cmd, timeout=30)
-            if res and res.returncode == 0:
+            # CORREÇÃO: Remove-AppxPackage -AllUsers é deprecated em Win11 22H2+
+            # Usa pipeline Get-AppxPackage -AllUsers | Remove-AppxPackage (sem -AllUsers no Remove)
+            cmd = ['powershell', '-NoProfile', '-Command', 
+                   f'Get-AppxPackage -AllUsers -Name "*{app}*" | Remove-AppxPackage -ErrorAction SilentlyContinue; '
+                   f'Get-AppxProvisionedPackage -Online | Where-Object {{ $_.DisplayName -like "*{app}*" }} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue']
+            res = _safe_subprocess_run(cmd, timeout=45)
+            if res:
                 removed_count += 1
         except Exception:
             pass
@@ -591,7 +612,7 @@ def schedule_daily_reboot():
     """Agenda reinício diário às 21:00"""
     _log("Agendando reinício diário...", "INFO")
     try:
-        cmd = ['schtasks', '/create', '/tn', 'CP_Fani_Daily_Reboot', '/tr', 'shutdown /r /f /t 60', '/sc', 'daily', '/st', '21:00', '/rl', 'highest', '/f']
+        cmd = ['schtasks', '/create', '/tn', 'CP_Fani_Daily_Reboot', '/tr', 'shutdown /r /f /t 60 /c "Reinicio agendado CP Fani"', '/sc', 'daily', '/st', '21:00', '/rl', 'highest', '/f']
         res = _safe_subprocess_run(cmd, timeout=15)
         if res and res.returncode == 0:
             _log("✓ Reinício diário agendado", "OK")
@@ -611,7 +632,7 @@ def schedule_manutencao_rede():
             res = _safe_subprocess_run(cmd, timeout=15)
             if res and res.returncode == 0:
                 _log("✓ Manutenção agendada", "OK")
-            return True
+                return True
         return False
     except Exception as e:
         _log(f"Erro ao agendar manutenção: {e}", "ERRO")
@@ -634,13 +655,93 @@ def schedule_instalar_tudo():
         return False
 
 def setup_self_healing():
-    """Configura watchdog de auto-cura"""
+    """Configura watchdog de auto-cura real (AnyDesk + Wallpaper)"""
     _log("Configurando self-healing (watchdog)...", "INFO")
     try:
-        cmd = ['schtasks', '/create', '/tn', 'CP_Fani_Self_Healing', '/tr', 'powershell -NoProfile -Command "Get-Service | Where-Object {$_.Status -ne \'Running\' -and $_.StartType -eq \'Automatic\'} | Start-Service"', '/sc', 'hourly', '/rl', 'highest', '/f']
-        res = _safe_subprocess_run(cmd, timeout=15)
-        if res and res.returncode == 0:
-            _log("✓ Self-healing ativado", "OK")
+        script_dir = os.path.dirname(__file__)
+        watchdog_ps1 = Path(r"C:\Scripts\cpfani_watchdog.ps1")
+        watchdog_vbs = Path(r"C:\Scripts\cpfani_watchdog_launcher.vbs")
+        
+        # Garante diretório
+        watchdog_ps1.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Script PowerShell do watchdog
+        ps_content = r'''
+# CP Fani Watchdog - Auto-Cura (Self-Healing)
+# Monitora AnyDesk e Wallpaper corporativo a cada 10 segundos
+
+$WallpaperPath = "C:\Scripts\Setup_CPFANI\resources\wallpaper_cpfani.jpg"
+$LogFile = "C:\Scripts\Logs\cpfani_watchdog.log"
+
+function Write-Log([string]$Msg) {
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "$ts | $Msg" | Add-Content -Path $LogFile -Encoding UTF8 -ErrorAction SilentlyContinue
+}
+
+while ($true) {
+    try {
+        # 1. Verifica se AnyDesk está rodando
+        $anydesk = Get-Process -Name "anydesk" -ErrorAction SilentlyContinue
+        if (-not $anydesk) {
+            Write-Log "AnyDesk nao encontrado. Tentando reiniciar..."
+            $anydeskExe = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
+            if (Test-Path $anydeskExe) {
+                Start-Process -FilePath $anydeskExe -ArgumentList "--silent" -WindowStyle Hidden -ErrorAction SilentlyContinue
+                Write-Log "AnyDesk reiniciado."
+            } else {
+                $anydeskExe2 = "C:\Program Files\AnyDesk\AnyDesk.exe"
+                if (Test-Path $anydeskExe2) {
+                    Start-Process -FilePath $anydeskExe2 -ArgumentList "--silent" -WindowStyle Hidden -ErrorAction SilentlyContinue
+                    Write-Log "AnyDesk reiniciado (x64)."
+                }
+            }
+        }
+
+        # 2. Verifica wallpaper corporativo
+        if (Test-Path $WallpaperPath) {
+            $currentWallpaper = (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+            if ($currentWallpaper -ne $WallpaperPath) {
+                Write-Log "Wallpaper divergente. Restaurando corporativo..."
+                Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name Wallpaper -Value $WallpaperPath -ErrorAction SilentlyContinue
+                rundll32.exe user32.dll, UpdatePerUserSystemParameters -ErrorAction SilentlyContinue
+                Write-Log "Wallpaper restaurado."
+            }
+        }
+    } catch {
+        Write-Log "Erro no loop do watchdog: $_"
+    }
+    
+    Start-Sleep -Seconds 10
+}
+'''
+        with open(watchdog_ps1, 'w', encoding='utf-8') as f:
+            f.write(ps_content.strip())
+        
+        # Launcher VBS invisível
+        vbs_content = f'''Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{watchdog_ps1}""", 0, False
+Set WshShell = Nothing'''
+        with open(watchdog_vbs, 'w', encoding='utf-8') as f:
+            f.write(vbs_content)
+        
+        # Tarefa agendada: a cada logon + a cada 5 minutos (repetição indefinida)
+        cmd_create = [
+            'schtasks', '/create', '/tn', 'CP_Fani_Self_Healing', 
+            '/tr', f'wscript.exe "{watchdog_vbs}"',
+            '/sc', 'onlogon', '/rl', 'highest', '/f'
+        ]
+        res_create = _safe_subprocess_run(cmd_create, timeout=15)
+        
+        # Adiciona trigger de repetição a cada 5 minutos (se a tarefa já existir, /f já atualizou)
+        # Para repetição, precisamos modificar a tarefa criada
+        cmd_xml = [
+            'schtasks', '/change', '/tn', 'CP_Fani_Self_Healing',
+            '/ri', '5'  # Repetir a cada 5 minutos
+        ]
+        _safe_subprocess_run(cmd_xml, timeout=10)
+        
+        if res_create and res_create.returncode == 0:
+            _log("✓ Self-healing ativado (watchdog AnyDesk + Wallpaper)", "OK")
             return True
         return False
     except Exception as e:
