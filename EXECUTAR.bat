@@ -15,10 +15,11 @@ set "PYTHON_TIMEOUT=300"
 set "MAX_RETRIES=2"
 
 REM ============================================================
-REM FUNCAO: LOG COM TIMESTAMP
+REM FUNCAO: OBTER DATA/HORA NO FORMATO ISO (USANDO POWERSHELL)
 REM ============================================================
-for /f "tokens=2-4 delims=/ " %%a in ('date /t') do (set "mydate=%%c-%%a-%%b")
-for /f "tokens=1-2 delims=/:" %%a in ('time /t') do (set "mytime=%%a:%%b")
+for /f "usebackq delims=" %%a in (`powershell -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"`) do set "CURRENT_DATETIME=%%a"
+set "mydate=%CURRENT_DATETIME:~0,10%"
+set "mytime=%CURRENT_DATETIME:~11,8%"
 
 REM ============================================================
 REM CRIAR DIRETORIO DE LOGS COM VALIDACAO
@@ -48,7 +49,7 @@ REM INICIALIZAR LOG FILE
 REM ============================================================
 echo ======================================== > "%LOG_FILE%"
 echo EXECUCAO PRINCIPAL - SETUP CP FANI %VERSION% >> "%LOG_FILE%"
-echo Data: %mydate% %mytime% >> "%LOG_FILE%"
+echo Data/Hora: %mydate% %mytime% >> "%LOG_FILE%"
 echo Diretorio do Script: %SCRIPT_DIR% >> "%LOG_FILE%"
 echo Versao Batch: Windows %OS% >> "%LOG_FILE%"
 echo ======================================== >> "%LOG_FILE%"
@@ -71,7 +72,7 @@ echo [OK] Administrador confirmado. >> "%LOG_FILE%"
 echo [OK] Administrador confirmado.
 
 REM ============================================================
-REM VERIFICAR SE PYTHON ESTA INSTALADO
+REM VERIFICAR SE PYTHON ESTA INSTALADO E VALIDAR VERSAO >= 3.8
 REM ============================================================
 echo [INFO] Verificando instalacao do Python... >> "%LOG_FILE%"
 python --version >nul 2>&1
@@ -83,9 +84,22 @@ if !errorLevel! NEQ 0 (
     pause
     exit /b 1
 )
+
+REM Capturar versão e verificar se >= 3.8
 for /f "tokens=*" %%i in ('python --version 2^>^&1') do set "PYTHON_VERSION=%%i"
 echo [OK] Python encontrado: %PYTHON_VERSION% >> "%LOG_FILE%"
 echo [OK] Python encontrado: %PYTHON_VERSION%
+
+REM Validar versão minima (3.8)
+python -c "import sys; exit(0 if sys.version_info >= (3,8) else 1)" >nul 2>&1
+if !errorLevel! NEQ 0 (
+    echo [ERRO] Versao do Python e inferior a 3.8 (encontrado: %PYTHON_VERSION%). >> "%LOG_FILE%"
+    echo [ERRO] Versao do Python e inferior a 3.8 (encontrado: %PYTHON_VERSION%).
+    echo [DICA] Atualize o Python para a versao 3.8 ou superior.
+    pause
+    exit /b 1
+)
+echo [OK] Versao do Python >= 3.8 confirmada. >> "%LOG_FILE%"
 
 REM ============================================================
 REM VALIDAR ARQUIVOS ESSENCIAIS DO PROJETO
@@ -110,6 +124,20 @@ if not exist "%SCRIPT_DIR%\instalar_pre_requisitos.bat" (
 if not exist "%SCRIPT_DIR%\mod_config.py" (
     echo [ERRO] Arquivo mod_config.py nao encontrado em %SCRIPT_DIR% >> "%LOG_FILE%"
     echo [ERRO] Arquivo mod_config.py nao encontrado.
+    set "VALIDATION_FAILED=1"
+)
+
+REM Nova validação: mod_instalar.py
+if not exist "%SCRIPT_DIR%\mod_instalar.py" (
+    echo [ERRO] Arquivo mod_instalar.py nao encontrado em %SCRIPT_DIR% >> "%LOG_FILE%"
+    echo [ERRO] Arquivo mod_instalar.py nao encontrado.
+    set "VALIDATION_FAILED=1"
+)
+
+REM Nova validação: settings.json
+if not exist "%SCRIPT_DIR%\settings.json" (
+    echo [ERRO] Arquivo settings.json nao encontrado em %SCRIPT_DIR% >> "%LOG_FILE%"
+    echo [ERRO] Arquivo settings.json nao encontrado.
     set "VALIDATION_FAILED=1"
 )
 
@@ -173,11 +201,18 @@ if !RETRY_COUNT! GEQ !MAX_RETRIES! (
 set /a "RETRY_COUNT+=1"
 echo [INFO] Tentativa !RETRY_COUNT! de !MAX_RETRIES! para iniciar a GUI... >> "%LOG_FILE%"
 
+REM Mantendo a linha original de execução, mas adicionando também a saída no console via type (opcional)
 echo [INFO] Executando: python -u "%SCRIPT_DIR%\gui.py" >> "%LOG_FILE%"
 python -u "%SCRIPT_DIR%\gui.py" >> "%LOG_FILE%" 2>&1
 set "GUI_CODE=!errorLevel!"
 
+REM Exibe a última linha do log para acompanhamento em tempo real (não substitui o redirecionamento)
+if exist "%LOG_FILE%" (
+    for /f "delims=" %%L in ('type "%LOG_FILE%" ^| findstr /c:"GUI encerrada"') do echo %%L
+)
+
 echo [INFO] GUI encerrada com codigo de saida: !GUI_CODE! >> "%LOG_FILE%"
+echo [INFO] GUI encerrada com codigo de saida: !GUI_CODE!
 
 if !GUI_CODE! NEQ 0 (
     if !RETRY_COUNT! LSS !MAX_RETRIES! (
