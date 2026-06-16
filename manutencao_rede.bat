@@ -2,7 +2,6 @@
 setlocal EnableDelayedExpansion
 title Manutencao de Rede - Forca DHCP (V7.1)
 color 0B
-chcp 65001 >nul 2>&1
 
 :: ==================================================
 :: CONFIGURACAO DO LOG
@@ -58,7 +57,6 @@ if !errorlevel! equ 0 (
 )
 
 call :log "[2/8] Verificando adaptadores de rede ativos..."
-:: CORRECAO: PowerShell agora retorna exit code explicito via $LASTEXITCODE
 powershell -NoProfile -Command "$adapters = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' }; if ($adapters) { Write-Host ('OK|' + ($adapters | Measure-Object).Count) } else { Write-Host 'NONE'; exit 1 }" > "%TEMP%\net_check.tmp" 2>&1
 set "NET_CHECK=!errorLevel!"
 type "%TEMP%\net_check.tmp" >> "%LOG_FILE%" 2>&1
@@ -69,7 +67,6 @@ if !NET_CHECK! neq 0 (
 )
 
 call :log "[3/8] Forcando IP e DNS para Automatico (DHCP)..."
-:: CORRECAO: Propaga exit code do PowerShell para o batch via exit $LASTEXITCODE
 powershell -NoProfile -Command "try { $adapters = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' }; if (-not $adapters) { Write-Host 'Nenhum adaptador ativo'; exit 0 } ; $adapters | ForEach-Object { Set-NetIPInterface -InterfaceIndex $_.ifIndex -Dhcp Enabled -ErrorAction Stop; Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses -ErrorAction Stop }; Write-Host 'DHCP_OK'; exit 0 } catch { Write-Host ('ERRO: ' + $_.Exception.Message); exit 1 }" > "%TEMP%\dhcp_out.tmp" 2>&1
 set "DHCP_CODE=!errorLevel!"
 type "%TEMP%\dhcp_out.tmp" >> "%LOG_FILE%" 2>&1
@@ -83,7 +80,6 @@ if !DHCP_CODE! neq 0 (
 
 call :log "[4/8] Limpando cache DNS e renovando IP..."
 ipconfig /flushdns >> "%LOG_FILE%" 2>&1
-:: CORRECAO: Remove wildcard '*' de /release e /renew para maior compatibilidade
 call :log "    -> Liberando IP atual..."
 ipconfig /release >> "%LOG_FILE%" 2>&1
 timeout /t 2 /nobreak >nul
@@ -91,7 +87,6 @@ call :log "    -> Renovando IP via DHCP..."
 ipconfig /renew >> "%LOG_FILE%" 2>&1
 
 call :log "[5/8] Configurando DNS padrao (Gateway ER605: 20.191.1.1)..."
-:: CORRECAO: Propaga exit code e verifica se existem adaptadores antes de configurar
 powershell -NoProfile -Command "try { $adapters = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' }; if (-not $adapters) { exit 0 } ; $adapters | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ('20.191.1.1') -ErrorAction Stop }; exit 0 } catch { exit 1 }" > "%TEMP%\dns_out.tmp" 2>&1
 set "DNS_CODE=!errorLevel!"
 type "%TEMP%\dns_out.tmp" >> "%LOG_FILE%" 2>&1
