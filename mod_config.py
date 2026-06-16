@@ -154,7 +154,7 @@ def _apply_to_all_real_users():
                         if result and result.returncode == 0:
                             _log(f"✓ PrintScreen desativado para SID {sid}", "OK")
                         else:
-                            _log(f" Falha ao desativar PrintScreen para SID {sid}", "AVISO")
+                            _log(f"⚠ Falha ao desativar PrintScreen para SID {sid}", "AVISO")
                         
                         cmd_sync = ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"]
                         _safe_subprocess_run(cmd_sync, timeout=10)
@@ -565,20 +565,22 @@ def apply_firewall_rules():
     """Restringe SMB/RPC à rede local com whitelist de LAN"""
     _log("Configurando regras de firewall...", "INFO")
     try:
-        # Bloqueia SMB (445) e RPC (135) de origens externas
+        # Bloqueia SMB (445) de origens externas
         cmd_smb = ['powershell', '-NoProfile', '-Command', 
                    'New-NetFirewallRule -DisplayName "CP Fani - Bloquear SMB Externo" -Direction Inbound -Protocol TCP -LocalPort 445 -RemoteAddress Internet -Action Block -Enabled True -ErrorAction SilentlyContinue']
         _safe_subprocess_run(cmd_smb, timeout=15)
         
+        # Bloqueia RPC (135) de origens externas
         cmd_rpc = ['powershell', '-NoProfile', '-Command', 
                    'New-NetFirewallRule -DisplayName "CP Fani - Bloquear RPC Externo" -Direction Inbound -Protocol TCP -LocalPort 135 -RemoteAddress Internet -Action Block -Enabled True -ErrorAction SilentlyContinue']
         _safe_subprocess_run(cmd_rpc, timeout=15)
         
-        # Whitelist: permite SMB/RPC apenas da rede local (RFC1918)
+        # Whitelist: permite SMB (445) apenas da rede local (RFC1918)
         cmd_whitelist_smb = ['powershell', '-NoProfile', '-Command', 
                              'New-NetFirewallRule -DisplayName "CP Fani - Permitir SMB LAN" -Direction Inbound -Protocol TCP -LocalPort 445 -RemoteAddress 192.168.0.0/16,10.0.0.0/8,172.16.0.0/12 -Action Allow -Enabled True -ErrorAction SilentlyContinue']
         _safe_subprocess_run(cmd_whitelist_smb, timeout=15)
         
+        # Whitelist: permite RPC (135) apenas da rede local (RFC1918)
         cmd_whitelist_rpc = ['powershell', '-NoProfile', '-Command', 
                              'New-NetFirewallRule -DisplayName "CP Fani - Permitir RPC LAN" -Direction Inbound -Protocol TCP -LocalPort 135 -RemoteAddress 192.168.0.0/16,10.0.0.0/8,172.16.0.0/12 -Action Allow -Enabled True -ErrorAction SilentlyContinue']
         _safe_subprocess_run(cmd_whitelist_rpc, timeout=15)
