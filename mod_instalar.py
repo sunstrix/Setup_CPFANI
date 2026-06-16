@@ -8,6 +8,8 @@ import time
 import socket
 import hashlib
 import ctypes
+import ssl
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -81,8 +83,9 @@ def _validate_internet_connectivity():
         return True
     except Exception:
         try:
-            import urllib.request
-            urllib.request.urlopen("http://www.google.com", timeout=10)
+            ctx = ssl.create_default_context()
+            req = urllib.request.Request("https://www.google.com", method="HEAD")
+            urllib.request.urlopen(req, timeout=10, context=ctx)
             return True
         except Exception:
             _log("Sem conectividade com a internet", "ERRO")
@@ -151,13 +154,46 @@ def _validate_file_integrity(file_path, min_size=MIN_EXECUTABLE_SIZE, calculate_
 def _post_install_health_check(app_name, executable_paths=None):
     _log(f"Executando health check pós-instalação: {app_name}", "INFO")
     
-    if executable_paths:
-        for exe_path in executable_paths:
-            if os.path.exists(exe_path):
-                is_valid, _ = _validate_file_integrity(exe_path, min_size=MIN_EXECUTABLE_SIZE)
-                if is_valid:
-                    _log(f"✓ Executável encontrado e válido: {exe_path}", "OK")
-                    return True
+    # Mapeamento de nomes de pacote Chocolatey para executáveis comuns
+    exe_aliases = {
+        "googlechrome": ["chrome.exe"],
+        "firefox": ["firefox.exe"],
+        "anydesk": ["anydesk.exe"],
+        "teamviewer": ["teamviewer.exe"],
+        "vlc": ["vlc.exe"],
+        "7zip": ["7z.exe", "7zFM.exe"],
+        "winrar": ["winrar.exe", "rar.exe"],
+        "notepadplusplus": ["notepad++.exe"],
+        "powertoys": ["PowerToys.exe"],
+        "adobereader": ["acrord32.exe", "AcroRd32.exe"],
+        "paint.net": ["paintdotnet.exe"],
+        "sharex": ["sharex.exe"],
+        "flameshot": ["flameshot.exe"],
+        "ditto": ["ditto.exe"],
+        "onlyoffice-desktopeditors": ["desktopeditors.exe"]
+    }
+    
+    # Usa caminhos fornecidos ou tenta mapear por alias
+    check_paths = list(executable_paths) if executable_paths else []
+    
+    if app_name in exe_aliases:
+        for alias in exe_aliases[app_name]:
+            # Tenta encontrar no PATH via where.exe
+            try:
+                result = _safe_subprocess_run(["where", alias], timeout=10)
+                if result and result.returncode == 0 and result.stdout.strip():
+                    exe_full = result.stdout.strip().splitlines()[0]
+                    if os.path.exists(exe_full):
+                        check_paths.append(exe_full)
+            except Exception:
+                pass
+    
+    for exe_path in check_paths:
+        if os.path.exists(exe_path):
+            is_valid, _ = _validate_file_integrity(exe_path, min_size=MIN_EXECUTABLE_SIZE)
+            if is_valid:
+                _log(f"✓ Executável encontrado e válido: {exe_path}", "OK")
+                return True
     
     try:
         result = _safe_subprocess_run(["where", app_name], timeout=10)
@@ -194,6 +230,8 @@ def _choco_install(app, timeout=300, max_retries=2):
     if not _validate_internet_connectivity():
         return False
     
+    reboot_required = False
+    
     for attempt in range(1, max_retries + 1):
         _log(f"Tentativa {attempt}/{max_retries} para {app}", "INFO")
         
@@ -203,8 +241,13 @@ def _choco_install(app, timeout=300, max_retries=2):
                 timeout=timeout
             )
             
-            if r and r.returncode in (0, 1641, 3010, 1638):
+            if r and r.returncode in (0, 1641, 1638):
                 _log(f"✓ Pacote {app} instalado/verificado com sucesso", "OK")
+                _post_install_health_check(app)
+                return True
+            elif r and r.returncode == 3010:
+                _log(f"✓ Pacote {app} instalado com sucesso. REINÍCIO NECESSÁRIO (3010).", "OK")
+                reboot_required = True
                 _post_install_health_check(app)
                 return True
             else:
@@ -265,7 +308,7 @@ def install_manufacturer_drivers(settings_dict):
     elif "hp" in manuf or "hewlett" in manuf:
         _log("Detectado HP, aplicando estratégia de instalação inteligente...", "INFO")
         target_pkg = driver_pkgs.get("hp", "hp-support-assistant")
-        fallback_pkg = "hp-client-management-script-library"  # Alternativa CLI oficial e mais estável da HP
+        fallback_pkg = "hpia"  # HP Image Assistant — pacote real e estável no Chocolatey
         
         # 1. Tenta o pacote principal
         if _choco_install(target_pkg, timeout=600):
@@ -287,10 +330,10 @@ def install_manufacturer_drivers(settings_dict):
         return True  # Não é erro, apenas não há pacote específico
 
 def _get_motherboard_manufacturer():
+    """Detecta fabricante da placa-mãe via Win32_BaseBoard (mais preciso que Win32_ComputerSystem)"""
     try:
         result = _safe_subprocess_run(
-            ['powershell', '-Command', '(Get-CimInstance Win32_ComputerSystem).Manufacturer'],
-            shell=True,
+            ['powershell', '-NoProfile', '-Command', '(Get-CimInstance Win32_BaseBoard).Manufacturer'],
             timeout=15
         )
         if result and result.stdout:
@@ -342,6 +385,9 @@ def force_windows_update_drivers():
         if res and res.returncode == 0:
             _log("✓ Atualizações e Drivers instalados com sucesso via Microsoft", "OK")
             return True
+        elif res and res.returncode == 3010:
+            _log("✓ Atualizações instaladas. REINÍCIO NECESSÁRIO (3010).", "OK")
+            return True
         else:
             _log(f"Windows Update retornou código {res.returncode if res else 'None'}", "AVISO")
             return True  # Mesmo com código diferente de 0, pode ter instalado parcialmente
@@ -370,10 +416,19 @@ def install_office_suite(choice):
             _log("Arquivos de instalação do Office não encontrados", "ERRO")
             return False
         
+        # Valida integridade básica dos arquivos
+        exe_valid, _ = _validate_file_integrity(exe, min_size=10485760)  # 10MB mínimo
+        if not exe_valid:
+            _log("Arquivo setup.exe do Office parece corrompido ou incompleto", "ERRO")
+            return False
+        
         try:
             res = _safe_subprocess_run([exe, "/configure", xml], timeout=INSTALLATION_TIMEOUT)
             if res and res.returncode == 0:
                 _log("✓ Office 2021 instalado com sucesso", "OK")
+                return True
+            elif res and res.returncode == 3010:
+                _log("✓ Office 2021 instalado. REINÍCIO NECESSÁRIO (3010).", "OK")
                 return True
             else:
                 _log(f"Office retornou código {res.returncode if res else 'None'}", "ERRO")
