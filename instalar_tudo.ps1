@@ -4,6 +4,10 @@
 # Otimizado para execucao automatica no boot do Windows
 # =======================================================
 
+# Forca UTF-8 na saida do console
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$ErrorActionPreference = 'Stop'
+
 # Configuracoes basicas
 $PastaLog       = "C:\Scripts\Logs"
 $ArquivoLog     = "$PastaLog\instalar_tudo.log"
@@ -32,6 +36,19 @@ $TotalPrograma  = $Programas.Count
 $ProgAtual      = 0
 $SucessoCount   = 0
 $FalhaCount     = 0
+$RebootPending  = $false
+
+# ============================================================
+# PREPARACAO DO AMBIENTE DE LOG
+# ============================================================
+try {
+    if (!(Test-Path $PastaLog)) {
+        New-Item -ItemType Directory -Path $PastaLog -Force -ErrorAction Stop | Out-Null
+    }
+} catch {
+    Write-Host "[ERRO] Nao foi possivel criar diretorio de logs: $PastaLog" -ForegroundColor Red
+    exit 1
+}
 
 # ============================================================
 # SISTEMA DE LOG SIMPLIFICADO (LEVE)
@@ -39,30 +56,28 @@ $FalhaCount     = 0
 function Write-Log {
     param([string]$Mensagem)
     $timestamp = Get-Date -Format 'dd/MM/yyyy HH:mm:ss'
-    if (!(Test-Path $PastaLog)) { New-Item -ItemType Directory -Path $PastaLog -Force -ErrorAction SilentlyContinue | Out-Null }
     "$timestamp | $Mensagem" | Add-Content -Path $ArquivoLog -Encoding UTF8 -ErrorAction SilentlyContinue
 }
 
 function Write-Erro {
     param([string]$Mensagem)
     $timestamp = Get-Date -Format 'dd/MM/yyyy HH:mm:ss'
-    if (!(Test-Path $PastaLog)) { New-Item -ItemType Directory -Path $PastaLog -Force -ErrorAction SilentlyContinue | Out-Null }
     "$timestamp | ERRO: $Mensagem" | Add-Content -Path $ArquivoErros -Encoding UTF8 -ErrorAction SilentlyContinue
 }
 
 # ============================================================
-# VALIDACAO DE CONECTIVIDADE (NOVO)
+# VALIDACAO DE CONECTIVIDADE
 # ============================================================
 function Test-InternetConnection {
     try {
-        $testHosts = @("8.8.8.8", "1.1.1.1", "www.google.com")
+        $testHosts = @("8.8.8.8", "1.1.1.1")
         foreach ($testHost in $testHosts) {
             if (Test-Connection -ComputerName $testHost -Count 1 -Quiet -ErrorAction SilentlyContinue) {
                 return $true
             }
         }
-        # Fallback: tenta HTTP
-        $response = Invoke-WebRequest -Uri "http://www.google.com" -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue
+        # Fallback: tenta HTTPS
+        $response = Invoke-WebRequest -Uri "https://www.google.com" -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue
         return ($response.StatusCode -eq 200)
     } catch {
         return $false
@@ -70,34 +85,60 @@ function Test-InternetConnection {
 }
 
 # ============================================================
-# VALIDACAO DE ESPACO EM DISCO (NOVO)
+# VALIDACAO DE ESPACO EM DISCO
 # ============================================================
 function Test-DiskSpace {
     param([int]$MinMB = 500)
     try {
-        $drive = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'" -ErrorAction SilentlyContinue
-        $freeSpaceMB = [math]::Round($drive.FreeSpace / 1MB, 2)
-        return ($freeSpaceMB -ge $MinMB)
+        $drive = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='C:'" -ErrorAction SilentlyContinue
+        if ($drive) {
+            $freeSpaceMB = [math]::Round($drive.FreeSpace / 1MB, 2)
+            return ($freeSpaceMB -ge $MinMB)
+        }
+        return $true
     } catch {
-        return $true  # Continua mesmo se falhar
+        return $true
     }
 }
 
 # ============================================================
-# HEALTH CHECK POS-INSTALACAO (NOVO)
+# HEALTH CHECK POS-INSTALACAO
 # ============================================================
 function Test-AppInstalled {
     param([string]$AppName)
+    
+    # Mapeamento de pacotes Chocolatey para executaveis reais no PATH
+    $exeMap = @{
+        "googlechrome"         = "chrome.exe"
+        "firefox"              = "firefox.exe"
+        "anydesk"              = "anydesk.exe"
+        "teamviewer"           = "teamviewer.exe"
+        "vlc"                  = "vlc.exe"
+        "7zip"                 = "7z.exe"
+        "winrar"               = "winrar.exe"
+        "notepadplusplus"      = "notepad++.exe"
+        "powertoys"            = "PowerToys.exe"
+        "adobereader"          = "AcroRd32.exe"
+        "paint.net"            = "paintdotnet.exe"
+        "sharex"               = "sharex.exe"
+        "flameshot"            = "flameshot.exe"
+        "ditto"                = "ditto.exe"
+    }
+    
     try {
-        # Verifica se executavel existe no PATH
-        $whereResult = where.exe $AppName 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            return $true
+        # 1. Tenta encontrar executavel mapeado no PATH
+        $exeName = $exeMap[$AppName]
+        if ($exeName) {
+            $whereResult = & where.exe $exeName 2>$null
+            if ($LASTEXITCODE -eq 0 -and $whereResult) {
+                return $true
+            }
         }
         
-        # Verifica se pacote esta listado no Chocolatey
-        $chocoList = & choco list --local-only --limit-output 2>&1
-        if ($chocoList -match $AppName) {
+        # 2. Tenta verificar se pacote esta listado no Chocolatey
+        $chocoList = & choco list --local-only --limit-output 2>$null
+        $chocoExit = $LASTEXITCODE
+        if ($chocoExit -eq 0 -and $chocoList -match [regex]::Escape($AppName)) {
             return $true
         }
         
@@ -118,7 +159,7 @@ if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]:
     exit 1
 }
 
-# Validacao de conectividade com internet (NOVO)
+# Validacao de conectividade com internet
 Write-Log "Verificando conectividade com internet..."
 if (!(Test-InternetConnection)) {
     Write-Erro "Sem conectividade com internet. Abortando atualizacao."
@@ -126,7 +167,7 @@ if (!(Test-InternetConnection)) {
 }
 Write-Log "[OK] Conectividade confirmada"
 
-# Validacao de espaco em disco (NOVO)
+# Validacao de espaco em disco
 Write-Log "Verificando espaco em disco..."
 if (!(Test-DiskSpace -MinMB 500)) {
     Write-Erro "Espaco em disco insuficiente (minimo 500MB necessario)"
@@ -141,10 +182,13 @@ $chocoExe = "C:\ProgramData\chocolatey\bin\choco.exe"
 if (!(Test-Path $chocoExe)) {
     Write-Log "Chocolatey nao encontrado. Instalando..."
     try {
-        [System.Net.ServicePointManager]::SecurityProtocol = 3072
-        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        $installScript = "$env:TEMP\choco_install.ps1"
+        Invoke-WebRequest -Uri 'https://community.chocolatey.org/install.ps1' -OutFile $installScript -UseBasicParsing -ErrorAction Stop
+        & $installScript
+        Remove-Item $installScript -Force -ErrorAction SilentlyContinue
         $env:Path += ";$env:ProgramData\chocolatey\bin"
-        Write-Log "Chocolatey instalado"
+        Write-Log "Chocolatey instalado com sucesso"
     } catch {
         Write-Erro "Falha ao instalar Chocolatey: $_"
         exit 1
@@ -165,30 +209,36 @@ foreach ($prog in $Programas) {
     for ($tentativa = 1; $tentativa -le 2; $tentativa++) {
         try {
             $output = & $chocoExe upgrade $prog -y --no-progress --limit-output 2>&1
+            $chocoExitCode = $LASTEXITCODE  # SALVA IMEDIATAMENTE
             
-            if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 3010 -or $LASTEXITCODE -eq 1641 -or $LASTEXITCODE -eq 1638) {
-                Write-Log "  [OK] $prog instalado"
-                
-                # ============================================================
-                # HEALTH CHECK POS-INSTALACAO (NOVO)
-                # ============================================================
-                if (Test-AppInstalled -AppName $prog) {
-                    Write-Log "  [OK] $prog health check passou"
-                } else {
-                    Write-Log "  [AVISO] $prog instalado mas health check inconclusivo"
-                }
-                
+            if ($chocoExitCode -eq 0 -or $chocoExitCode -eq 1641 -or $chocoExitCode -eq 1638) {
+                Write-Log "  [OK] $prog instalado/atualizado"
+                $SucessoCount++
+                $instalado = $true
+                break
+            } elseif ($chocoExitCode -eq 3010) {
+                Write-Log "  [OK] $prog instalado/atualizado. REINICIO NECESSARIO (3010)."
+                $RebootPending = $true
                 $SucessoCount++
                 $instalado = $true
                 break
             } else {
-                Write-Log "  [AVISO] $prog falhou (codigo $LASTEXITCODE) - Tentativa $tentativa"
+                Write-Log "  [AVISO] $prog falhou (codigo $chocoExitCode) - Tentativa $tentativa"
             }
         } catch {
             Write-Log "  [AVISO] $prog excecao: $_"
         }
         
         if ($tentativa -lt 2) { Start-Sleep -Seconds 3 }
+    }
+    
+    # Health check POS-INSTALACAO (somente se instalou com sucesso)
+    if ($instalado) {
+        if (Test-AppInstalled -AppName $prog) {
+            Write-Log "  [OK] $prog health check passou"
+        } else {
+            Write-Log "  [AVISO] $prog instalado mas health check inconclusivo"
+        }
     }
     
     if (!$instalado) {
@@ -200,7 +250,11 @@ foreach ($prog in $Programas) {
 # ============================================================
 # RESUMO FINAL
 # ============================================================
-Write-Log "Concluido: $SucessoCount/$TotalPrograma sucessos, $FalhaCount falhas"
+if ($RebootPending) {
+    Write-Log "Concluido: $SucessoCount/$TotalPrograma sucessos, $FalhaCount falhas. REINICIO PENDENTE."
+} else {
+    Write-Log "Concluido: $SucessoCount/$TotalPrograma sucessos, $FalhaCount falhas"
+}
 Write-Log "=== FIM DA ATUALIZACAO ==="
 
 exit $(if ($FalhaCount -gt 0) { 1 } else { 0 })
