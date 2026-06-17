@@ -23,8 +23,18 @@ if (-not (Test-Connection -ComputerName 8.8.8.8 -Count 1 -Quiet)) {
 $ChocoExe = "C:\ProgramData\chocolatey\bin\choco.exe"
 if (Test-Path $ChocoExe) {
     Write-Log "Verificando atualizações do Chocolatey..."
-    & $ChocoExe upgrade all -y --no-progress --limit-output | Out-Null
-    Write-Log "Pacotes Chocolatey verificados."
+    try {
+        $output = & $ChocoExe upgrade all -y --no-progress --limit-output 2>&1
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0 -or $exitCode -in @(3010, 1641, 1638)) {
+            Write-Log "Pacotes Chocolatey verificados com sucesso (código $exitCode)."
+        } else {
+            Write-Log "Chocolatey retornou código $exitCode. Possível erro."
+            Write-Log "Saída: $output"
+        }
+    } catch {
+        Write-Log "Exceção ao executar Chocolatey: $_"
+    }
 } else {
     Write-Log "Chocolatey não encontrado. Pulando atualização de pacotes."
 }
@@ -32,8 +42,20 @@ if (Test-Path $ChocoExe) {
 # Atualiza drivers via Windows Update aos domingos
 if ((Get-Date).DayOfWeek -eq "Sunday") {
     Write-Log "Domingo: Verificando atualizações de drivers..."
-    Start-Process -FilePath "usoclient" -ArgumentList "StartInstall" -NoNewWindow -Wait
-    Write-Log "Windows Update executado."
+    try {
+        if (Get-Command "usoclient" -ErrorAction SilentlyContinue) {
+            $wuOutput = Start-Process -FilePath "usoclient" -ArgumentList "StartInstall" -NoNewWindow -Wait -PassThru
+            if ($wuOutput.ExitCode -eq 0) {
+                Write-Log "Windows Update executado com sucesso."
+            } else {
+                Write-Log "Windows Update retornou código $($wuOutput.ExitCode)."
+            }
+        } else {
+            Write-Log "usoclient não encontrado. Pulando Windows Update."
+        }
+    } catch {
+        Write-Log "Exceção ao executar Windows Update: $_"
+    }
 }
 
 Write-Log "=== Fim da verificação ==="
