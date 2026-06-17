@@ -1053,7 +1053,7 @@ def _get_all_user_sids():
     return sids
 
 def _ensure_wallpaper_image():
-    """Garante que a imagem do wallpaper/lockscreen exista em C:\Windows\Web\Wallpaper\Windows\"""
+    r"""Garante que a imagem do wallpaper/lockscreen exista em C:\Windows\Web\Wallpaper\Windows\"""
     target_path = r"C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
     if os.path.exists(target_path):
         return target_path
@@ -1285,12 +1285,12 @@ def get_kudu_service_optimizations():
 def run_kudu_cleanup(selected_actions=None):
     """
     Executa um conjunto de ações de limpeza do Kudu.
-    
+
     Parâmetros:
         selected_actions (list): Lista de strings com as ações desejadas.
             Valores possíveis: 'system', 'app', 'gaming', 'registry', 'network', 'debloat', 'drivers', 'services', 'all'
             Se None ou lista vazia, executa todas as ações (exceto 'debloat' e 'services' por padrão, pode ser adicionado).
-    
+
     Retorna:
         dict: {'success': bool, 'results': dict} com o resultado de cada ação.
     """
@@ -1309,11 +1309,11 @@ def run_kudu_cleanup(selected_actions=None):
         'drivers': kudu_driver_manager,
         'services': kudu_service_manager,
     }
-    
+
     # Se selected_actions for None ou vazio, executa todas (exceto debloat e services, que são opcionais)
     if selected_actions is None or not selected_actions:
         selected_actions = ['system', 'app', 'gaming', 'registry', 'network', 'drivers']
-    
+
     results = {}
     overall_success = True
     for action in selected_actions:
@@ -1334,5 +1334,5 @@ def run_kudu_cleanup(selected_actions=None):
             results[action] = func()
             if not results[action]:
                 overall_success = False
-    
+
     return {"success": overall_success, "results": results}
