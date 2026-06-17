@@ -578,13 +578,24 @@ def apply_cpfani_lockscreen_redundant():
         _log("Falha ao obter lockscreen", "ERRO")
         return False
     
+    # Copia para o diretório de wallpapers do Windows (se ainda não foi copiado)
+    try:
+        windows_wp_dir = r"C:\Windows\Web\Wallpaper\Windows"
+        os.makedirs(windows_wp_dir, exist_ok=True)
+        windows_wp_path = os.path.join(windows_wp_dir, "cpfani_wallpaper.jpg")
+        if not os.path.exists(windows_wp_path):
+            shutil.copy2(target_path, windows_wp_path)
+            _log(f"✓ Wallpaper copiado para {windows_wp_path} (lockscreen)", "OK")
+    except Exception as e:
+        _log(f"Erro ao copiar wallpaper para Windows (lockscreen): {e}", "AVISO")
+    
     # Configura a imagem via GPO (HKLM)
-    if set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", target_path, winreg.REG_SZ):
+    if set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", windows_wp_path, winreg.REG_SZ):
         _log("✓ Lockscreen configurado via GPO", "OK")
     else:
         _log("Falha ao configurar lockscreen via GPO", "AVISO")
     
-    # Força o bloqueio da tela de bloqueio (impede que o usuário mude)
+    # Força o bloqueio da tela de bloqueio (impede que o usuário mude) - somente depois de definir a imagem
     if set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "NoChangingLockScreen", 1, winreg.REG_DWORD):
         _log("✓ Bloqueio de alteração da tela de bloqueio ativado", "OK")
     else:
@@ -1041,6 +1052,35 @@ def _get_all_user_sids():
         _log(f"Erro ao obter SIDs: {e}", "AVISO")
     return sids
 
+def _ensure_wallpaper_image():
+    """Garante que a imagem do wallpaper/lockscreen exista em C:\Windows\Web\Wallpaper\Windows\"""
+    target_path = r"C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
+    if os.path.exists(target_path):
+        return target_path
+    
+    _log("Imagem do wallpaper não encontrada no diretório do Windows. Tentando obter...", "INFO")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
+    urls = [
+        "https://drive.google.com/uc?export=download&id=1K5SWWC1dJL0qETRKAVdJtc8-Wi39G83G",
+        "https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/wallpaper_cpfani.jpg"
+    ]
+    
+    # Tenta obter a imagem
+    img_path = _get_image_path(local_wp, urls, "cpfani_wallpaper.jpg")
+    if img_path:
+        try:
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            shutil.copy2(img_path, target_path)
+            _log(f"✓ Imagem copiada para {target_path}", "OK")
+            return target_path
+        except Exception as e:
+            _log(f"Erro ao copiar imagem: {e}", "ERRO")
+    else:
+        _log("Falha ao obter a imagem do wallpaper.", "ERRO")
+    
+    return None
+
 def _apply_dark_theme_to_all_users():
     """Aplica tema escuro para todos os usuários via GPO e HKCU"""
     _log("Aplicando tema escuro para todos os usuários...", "INFO")
@@ -1077,23 +1117,11 @@ def _apply_wallpaper_to_all_users():
     """Aplica wallpaper para todos os usuários via GPO e HKCU"""
     _log("Aplicando wallpaper para todos os usuários...", "INFO")
     
-    # Verifica se o wallpaper existe no local padrão
-    wallpaper_path = r"C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
-    if not os.path.exists(wallpaper_path):
-        _log(f"Wallpaper não encontrado em {wallpaper_path}. Tentando local alternativo...", "AVISO")
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
-        if os.path.exists(local_wp):
-            try:
-                os.makedirs(os.path.dirname(wallpaper_path), exist_ok=True)
-                shutil.copy2(local_wp, wallpaper_path)
-                _log(f"✓ Wallpaper copiado para {wallpaper_path}", "OK")
-            except Exception as e:
-                _log(f"Erro ao copiar wallpaper: {e}", "ERRO")
-                return
-        else:
-            _log("Wallpaper não encontrado. Pulando aplicação.", "ERRO")
-            return
+    # Garante que a imagem exista
+    wallpaper_path = _ensure_wallpaper_image()
+    if not wallpaper_path:
+        _log("Wallpaper não disponível. Pulando aplicação.", "ERRO")
+        return
     
     # 1. Via GPO (HKLM) – afeta todos os usuários
     try:
@@ -1124,24 +1152,37 @@ def _apply_wallpaper_to_all_users():
             _log(f"Erro ao aplicar wallpaper para SID {sid}: {e}", "AVISO")
 
 def _apply_lockscreen_to_all_users():
-    """Aplica lockscreen para todos os usuários via GPO e HKCU"""
+    """Aplica lockscreen para todos os usuários via GPO e HKCU (com bloqueio)"""
     _log("Aplicando lockscreen para todos os usuários...", "INFO")
     
-    # Verifica se a imagem existe
-    lockscreen_path = r"C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
-    if not os.path.exists(lockscreen_path):
-        _log(f"Imagem do lockscreen não encontrada em {lockscreen_path}. Pulando.", "AVISO")
+    # Garante que a imagem exista
+    lockscreen_path = _ensure_wallpaper_image()
+    if not lockscreen_path:
+        _log("Imagem do lockscreen não disponível. Pulando aplicação.", "ERRO")
         return
     
     # 1. Via GPO (HKLM) – afeta todos os usuários e bloqueia alterações
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", lockscreen_path, winreg.REG_SZ)
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "NoChangingLockScreen", 1, winreg.REG_DWORD)
-        _log("✓ Lockscreen configurado via GPO (HKLM) com bloqueio", "OK")
+        _log("✓ Lockscreen configurado via GPO (HKLM)", "OK")
     except Exception as e:
         _log(f"Erro ao configurar lockscreen via GPO: {e}", "AVISO")
     
-    # 2. Para cada SID de usuário real (fallback)
+    # 2. Forçar a atualização da política para aplicar imediatamente
+    try:
+        _safe_subprocess_run("gpupdate /force", shell=True, timeout=60)
+        _log("✓ Política de grupo atualizada (gpupdate /force)", "OK")
+    except Exception as e:
+        _log(f"Erro ao executar gpupdate: {e}", "AVISO")
+    
+    # 3. Só agora ativa o bloqueio de alteração (para evitar que o usuário mude)
+    try:
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "NoChangingLockScreen", 1, winreg.REG_DWORD)
+        _log("✓ Bloqueio de alteração da tela de bloqueio ativado", "OK")
+    except Exception as e:
+        _log(f"Erro ao ativar bloqueio de alteração: {e}", "AVISO")
+    
+    # 4. Aplica para cada SID (fallback para usuários já logados)
     sids = _get_all_user_sids()
     if not sids:
         _log("Nenhum SID de usuário encontrado para aplicar lockscreen.", "AVISO")
