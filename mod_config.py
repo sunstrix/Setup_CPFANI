@@ -994,11 +994,11 @@ def _get_teamviewer_id():
     return "N/A"
 
 # ============================================================
-# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UPLOAD GOOGLE DRIVE COM INSTALAÇÃO AUTOMÁTICA
+# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UPLOAD GOOGLE DRIVE COM OAuth2
 # ============================================================
 
 def generate_full_snapshot():
-    """Gera snapshot completo de hardware e envia para o Google Drive (com instalação automática)"""
+    """Gera snapshot completo de hardware e envia para o Google Drive usando OAuth2"""
     _log("Gerando snapshot de hardware...", "INFO")
 
     pc_name = os.environ.get("COMPUTERNAME", "UNKNOWN")
@@ -1046,46 +1046,42 @@ def generate_full_snapshot():
         _log(f"Erro ao gerar snapshot local: {e}", "ERRO")
         return None
 
-    # 2. Tenta enviar para o Google Drive (com instalação automática se necessário)
-    for attempt in range(2):  # primeira tentativa sem instalar, segunda com instalação
-        try:
-            from google.oauth2 import service_account
-            from googleapiclient.discovery import build
-            from googleapiclient.http import MediaFileUpload
-            from googleapiclient.errors import HttpError
-            # Se chegou aqui, a biblioteca está disponível
-            break
-        except ImportError:
-            if attempt == 0:
-                _log("Biblioteca Google Drive não encontrada. Tentando instalar automaticamente...", "INFO")
-                try:
-                    subprocess.run(
-                        [sys.executable, "-m", "pip", "install", "google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib"],
-                        capture_output=True,
-                        timeout=60,
-                        creationflags=0x08000000
-                    )
-                    _log("Instalação concluída. Tentando novamente...", "INFO")
-                    continue
-                except Exception as e:
-                    _log(f"Falha ao instalar dependência do Google Drive: {e}", "ERRO")
-                    break
-            else:
-                _log("Biblioteca Google Drive não disponível mesmo após tentativa de instalação. Pulando upload.", "AVISO")
-                return str(local_path)
-        except Exception as e:
-            _log(f"Erro ao importar bibliotecas do Google Drive: {e}", "ERRO")
-            return str(local_path)
-
-    # Se chegou aqui, as bibliotecas estão disponíveis
+    # 2. Tenta enviar para o Google Drive usando OAuth2
     try:
-        credentials_path = os.path.join(os.path.dirname(__file__), "credentials", "service_account.json")
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
+        from googleapiclient.errors import HttpError
+        import pickle
+
+        credentials_path = os.path.join(os.path.dirname(__file__), "credentials", "oauth2_credentials.json")
         if not os.path.exists(credentials_path):
-            _log("Arquivo de credenciais do Google Drive não encontrado. Pulando upload.", "AVISO")
+            _log("Arquivo de credenciais OAuth2 não encontrado. Pulando upload.", "AVISO")
             return str(local_path)
 
         SCOPES = ['https://www.googleapis.com/auth/drive.file']
-        creds = service_account.Credentials.from_service_account_file(credentials_path, scopes=SCOPES)
+        creds = None
+
+        # Tenta carregar token salvo
+        token_path = os.path.join(os.path.dirname(__file__), "credentials", "token.pickle")
+        if os.path.exists(token_path):
+            with open(token_path, 'rb') as token:
+                creds = pickle.load(token)
+
+        # Se não houver credenciais válidas, inicia o fluxo OAuth
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+                # run_local_server abre uma janela do navegador para autorização
+                creds = flow.run_local_server(port=0)
+            # Salva o token para a próxima execução
+            with open(token_path, 'wb') as token:
+                pickle.dump(creds, token)
+
         service = build('drive', 'v3', credentials=creds)
 
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
@@ -1110,6 +1106,10 @@ def generate_full_snapshot():
 
         return str(local_path)
 
+    except ImportError:
+        _log("Bibliotecas do Google Drive (OAuth2) não instaladas. Pulando upload.", "AVISO")
+        _log("Para ativar o upload, instale: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2", "INFO")
+        return str(local_path)
     except HttpError as e:
         _log(f"Erro na API do Google Drive: {e}", "ERRO")
     except Exception as e:
