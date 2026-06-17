@@ -1,6 +1,5 @@
 @echo off
 setlocal EnableDelayedExpansion
-
 chcp 65001 >nul
 
 set "SCRIPT_DIR=C:\Scripts"
@@ -116,6 +115,7 @@ echo [DEBUG] Linha 14 - Antes do PIP >> "!LOG_FILE!"
 echo [STEP 4] Instalando dependencias... >> "!LOG_FILE!"
 python -m pip install --upgrade pip >> "!LOG_FILE!" 2>&1
 python -m pip install customtkinter psutil pillow >> "!LOG_FILE!" 2>&1
+python -m pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib >> "!LOG_FILE!" 2>&1
 echo [OK] Dependencias PIP validadas! >> "!LOG_FILE!"
 
 echo [DEBUG] Linha 15 - Antes da GUI >> "!LOG_FILE!"
