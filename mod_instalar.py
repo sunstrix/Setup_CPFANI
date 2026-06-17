@@ -233,9 +233,9 @@ def _get_motherboard_manufacturer():
     """Obtém fabricante da placa-mãe via PowerShell"""
     _log("Detectando fabricante do hardware...", "INFO")
     try:
+        # CORREÇÃO: removido shell=True para usar lista de argumentos corretamente
         result = _safe_subprocess_run(
             ['powershell', '-Command', '(Get-CimInstance Win32_ComputerSystem).Manufacturer'],
-            shell=True,
             timeout=15
         )
         
