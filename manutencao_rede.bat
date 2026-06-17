@@ -56,7 +56,7 @@ ipconfig /release * >> "%LOG_FILE%" 2>&1
 timeout /t 3 /nobreak >nul
 ipconfig /renew * >> "%LOG_FILE%" 2>&1
 
-:: CORREÇÃO: DNS configurado para 1.1.1.1 e 8.8.8.8 (gateway da rede é 20.191.1.1)
+:: CORREÃ‡ÃƒO: DNS configurado para 1.1.1.1 e 8.8.8.8 (gateway da rede Ã© 20.191.1.1)
 call :log "[4/8] Configurando DNS primario (1.1.1.1) e secundario (8.8.8.8)..."
 powershell -NoProfile -Command "Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ('1.1.1.1','8.8.8.8') -ErrorAction SilentlyContinue }" >> "%LOG_FILE%" 2>&1
 call :log "[OK] DNS configurado: 1.1.1.1 e 8.8.8.8"
