@@ -1,5 +1,5 @@
 """mod_kudu.py — Integração com o utilitário Kudu (limpeza e otimização)
-   Versão: 1.0.1
+   Versão: 1.0.2
    Projeto: Setup_CPFANI
    Licença: MIT
 """
@@ -25,8 +25,9 @@ if sys.platform == "win32":
 # Constantes
 SCRIPT_DIR = r"C:\Scripts"
 KUDU_EXE = os.path.join(SCRIPT_DIR, "kudu.exe")
-KUDU_URL = "https://github.com/adventdevinc/kudu/releases/latest/download/kudu-win-x64.exe"
-# Fallback para caso o link direto mude: podemos tentar baixar via API do GitHub
+# URLs alternativas para download
+KUDU_URL_LATEST = "https://github.com/adventdevinc/kudu/releases/latest/download/kudu-win-x64.exe"
+KUDU_URL_V1 = "https://github.com/adventdevinc/kudu/releases/download/v1.0.0/kudu-win-x64.exe"
 KUDU_API_URL = "https://api.github.com/repos/adventdevinc/kudu/releases/latest"
 
 def _log(msg, level="INFO"):
@@ -66,7 +67,7 @@ def _safe_subprocess_run(cmd, timeout=300, shell=False, capture_output=True, **k
         return None
 
 def ensure_kudu():
-    """Garante que o executável do Kudu esteja disponível em C:\Scripts\kudu.exe"""
+    r"""Garante que o executável do Kudu esteja disponível em C:\Scripts\kudu.exe"""
     if os.path.exists(KUDU_EXE):
         _log("Kudu já está presente.", "INFO")
         return True
@@ -74,31 +75,44 @@ def ensure_kudu():
     _log("Kudu não encontrado. Iniciando download...", "INFO")
     os.makedirs(SCRIPT_DIR, exist_ok=True)
 
-    # Tenta baixar diretamente
-    try:
-        _log(f"Baixando de {KUDU_URL}...", "INFO")
-        urllib.request.urlretrieve(KUDU_URL, KUDU_EXE)
-        # Verifica se o arquivo é válido (tamanho > 1MB)
-        if os.path.getsize(KUDU_EXE) > 1024 * 1024:
-            _log("Kudu baixado com sucesso.", "OK")
-            # Torna executável (no Windows, apenas garantir permissões)
-            os.chmod(KUDU_EXE, 0o755)
-            return True
-        else:
-            _log("Arquivo baixado muito pequeno, removendo...", "ERRO")
-            os.remove(KUDU_EXE)
-    except Exception as e:
-        _log(f"Erro no download direto: {e}", "ERRO")
+    # Lista de URLs para tentar
+    urls_to_try = [
+        KUDU_URL_LATEST,
+        KUDU_URL_V1,
+    ]
+
+    for url in urls_to_try:
+        try:
+            _log(f"Tentando baixar de {url}...", "INFO")
+            urllib.request.urlretrieve(url, KUDU_EXE)
+            # Verifica se o arquivo é válido (tamanho > 1MB)
+            if os.path.getsize(KUDU_EXE) > 1024 * 1024:
+                _log("Kudu baixado com sucesso.", "OK")
+                os.chmod(KUDU_EXE, 0o755)
+                return True
+            else:
+                _log("Arquivo muito pequeno, removendo...", "ERRO")
+                os.remove(KUDU_EXE)
+        except Exception as e:
+            _log(f"Erro no download: {e}", "AVISO")
+            continue
 
     # Fallback: usar API do GitHub para obter URL do asset
     try:
         _log("Tentando obter URL via API do GitHub...", "INFO")
-        req = urllib.request.Request(KUDU_API_URL, headers={"Accept": "application/vnd.github.v3+json"})
+        req = urllib.request.Request(
+            KUDU_API_URL,
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "Setup_CPFANI/1.0"
+            }
+        )
         with urllib.request.urlopen(req, timeout=30) as response:
             data = json.loads(response.read().decode('utf-8'))
             assets = data.get("assets", [])
             for asset in assets:
-                if asset["name"].endswith(".exe") and "win" in asset["name"].lower():
+                # Procura por qualquer executável que contenha "win" ou "x64" no nome
+                if asset["name"].endswith(".exe") and ("win" in asset["name"].lower() or "x64" in asset["name"].lower()):
                     download_url = asset["browser_download_url"]
                     _log(f"Baixando de {download_url}...", "INFO")
                     urllib.request.urlretrieve(download_url, KUDU_EXE)
