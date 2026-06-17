@@ -220,6 +220,47 @@ class CPFani_GUI(ctk.CTk):
         ctk.CTkRadioButton(driver_frame, text="Fabricante (Dell/HP/Lenovo)", variable=self.driver_var, value="fabricante").pack(anchor="w", padx=10, pady=2)
         ctk.CTkRadioButton(driver_frame, text="Windows Update (Forçar Instalação)", variable=self.driver_var, value="wu").pack(anchor="w", padx=10, pady=2)
 
+        # ============================================================
+        # 6. MANUTENÇÃO E LIMPEZA (KUDU)
+        # ============================================================
+        kudu_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
+        kudu_frame.pack(padx=20, pady=5, fill="x")
+        
+        kudu_header = ctk.CTkFrame(kudu_frame, fg_color="transparent")
+        kudu_header.pack(fill="x", padx=10, pady=5)
+        ctk.CTkLabel(kudu_header, text="6. Manutenção e Limpeza (Kudu)", font=("", 12, "bold")).pack(side="left")
+        
+        btn_kudu_oneclick = ctk.CTkButton(
+            kudu_header, text="One‑Click Clean", font=("", 10), width=100, height=22,
+            fg_color="#2b2b2b", hover_color="#3a3a3a", command=self.select_all_kudu_actions
+        )
+        btn_kudu_oneclick.pack(side="right", padx=2)
+        
+        # Checkboxes para cada ação do Kudu
+        self.kudu_system = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(kudu_frame, text="System Cleaner (temporários, logs, caches)", variable=self.kudu_system).pack(anchor="w", padx=20, pady=2)
+        
+        self.kudu_app = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(kudu_frame, text="App Cleaner (resíduos de apps desinstalados)", variable=self.kudu_app).pack(anchor="w", padx=20, pady=2)
+        
+        self.kudu_gaming = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(kudu_frame, text="Gaming Cleaner (caches de jogos e shaders)", variable=self.kudu_gaming).pack(anchor="w", padx=20, pady=2)
+        
+        self.kudu_registry = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(kudu_frame, text="Registry Cleaner (entradas quebradas/órfãs)", variable=self.kudu_registry).pack(anchor="w", padx=20, pady=2)
+        
+        self.kudu_network = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(kudu_frame, text="Network Cleanup (DNS, Wi-Fi, ARP)", variable=self.kudu_network).pack(anchor="w", padx=20, pady=2)
+        
+        self.kudu_debloat = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(kudu_frame, text="Debloater (fallback – lista interna do Kudu)", variable=self.kudu_debloat).pack(anchor="w", padx=20, pady=2)
+        
+        self.kudu_drivers = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(kudu_frame, text="Driver Manager (limpeza de drivers obsoletos)", variable=self.kudu_drivers).pack(anchor="w", padx=20, pady=2)
+        
+        self.kudu_services = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(kudu_frame, text="Service Manager (otimização de serviços Windows)", variable=self.kudu_services).pack(anchor="w", padx=20, pady=2)
+
         # STATUS E PROGRESSO
         status_frame = ctk.CTkFrame(self.main_scroll, fg_color="transparent")
         status_frame.pack(padx=20, pady=(10, 0), fill="x")
@@ -253,6 +294,18 @@ class CPFani_GUI(ctk.CTk):
         for var in self.app_vars.values():
             var.set(False)
         self.log("Todos os softwares foram desmarcados.")
+
+    def select_all_kudu_actions(self):
+        """Marca todas as ações do Kudu (One‑Click Clean)"""
+        self.kudu_system.set(True)
+        self.kudu_app.set(True)
+        self.kudu_gaming.set(True)
+        self.kudu_registry.set(True)
+        self.kudu_network.set(True)
+        self.kudu_debloat.set(True)
+        self.kudu_drivers.set(True)
+        self.kudu_services.set(True)
+        self.log("Todas as ações de limpeza Kudu foram marcadas.", "INFO")
 
     def log(self, msg, level="INFO"):
         """Sistema de log robusto com timestamp e nível"""
@@ -454,12 +507,25 @@ class CPFani_GUI(ctk.CTk):
             selected_apps = [app for app, v in self.app_vars.items() if v.get()]
             self.log(f"Aplicativos selecionados para instalação: {len(selected_apps)}")
             
+            # Verifica quais ações do Kudu estão selecionadas
+            kudu_actions = []
+            if self.kudu_system.get(): kudu_actions.append('system')
+            if self.kudu_app.get(): kudu_actions.append('app')
+            if self.kudu_gaming.get(): kudu_actions.append('gaming')
+            if self.kudu_registry.get(): kudu_actions.append('registry')
+            if self.kudu_network.get(): kudu_actions.append('network')
+            if self.kudu_debloat.get(): kudu_actions.append('debloat')
+            if self.kudu_drivers.get(): kudu_actions.append('drivers')
+            if self.kudu_services.get(): kudu_actions.append('services')
+            has_kudu_actions = len(kudu_actions) > 0
+            
             # Cálculo de tarefas totais
             total_tasks = 4  # Interface, Segurança, Agendamentos, Startup
             total_tasks += len(selected_apps)
             if self.office_var.get() != "nenhum": total_tasks += 1
             if self.driver_var.get() != "nenhum": total_tasks += 1
             if self.task_watchdog.get(): total_tasks += 1
+            if has_kudu_actions: total_tasks += 1  # etapa de limpeza Kudu
             total_tasks += 1  # Snapshot
             
             completed = 0
@@ -605,7 +671,42 @@ class CPFani_GUI(ctk.CTk):
                     erros.append("Drivers")
                 completed += 1
 
-            # 9. SNAPSHOT
+            # ============================================================
+            # 9. MANUTENÇÃO E LIMPEZA KUDU
+            # ============================================================
+            if has_kudu_actions:
+                self.update_status(
+                    "► Executando limpeza Kudu...",
+                    (completed / total_tasks) * 100,
+                    "Kudu: " + ", ".join(kudu_actions)
+                )
+                try:
+                    self.log(f"Iniciando limpeza Kudu com ações: {', '.join(kudu_actions)}")
+                    # Tenta importar o mod_kudu via mod_config
+                    try:
+                        result = mod_config.run_kudu_cleanup(kudu_actions)
+                        if result.get("success", False):
+                            self.log("✓ Limpeza Kudu concluída com sucesso.", "OK")
+                        else:
+                            # Verifica resultados individuais
+                            failed_actions = [act for act, res in result.get("results", {}).items() if not res]
+                            if failed_actions:
+                                self.log(f"Ações Kudu com falha: {', '.join(failed_actions)}", "AVISO")
+                                erros.extend([f"Kudu-{act}" for act in failed_actions])
+                            else:
+                                self.log("Kudu concluído com sucesso parcial.", "AVISO")
+                    except AttributeError:
+                        self.log("Função run_kudu_cleanup não encontrada no mod_config. Verifique a integração.", "ERRO")
+                        erros.append("Kudu (função não encontrada)")
+                    except Exception as e:
+                        self.log(f"Erro ao executar Kudu: {e}", "ERRO")
+                        erros.append("Kudu")
+                except Exception as e:
+                    self.log(f"Erro crítico na etapa Kudu: {e}", "ERRO")
+                    erros.append("Kudu-Crítico")
+                completed += 1
+
+            # 10. SNAPSHOT
             self.update_status("► Gerando snapshot de hardware...", (completed / total_tasks) * 100, "")
             try:
                 self.log("Gerando snapshot de hardware...")
