@@ -1,5 +1,5 @@
 """mod_kudu.py — Integração com o utilitário Kudu (limpeza e otimização)
-   Versão: 1.0.0
+   Versão: 1.0.1
    Projeto: Setup_CPFANI
    Licença: MIT
 """
@@ -198,15 +198,67 @@ def kudu_debloat(use_defaults=True):
         _log("Debloat falhou.", "ERRO")
     return success
 
-def kudu_driver_manager():
-    """Limpa drivers obsoletos e pode ajudar a resolver conflitos"""
-    _log("Iniciando Driver Manager...", "INFO")
+# ============================================================
+# FUNÇÕES DE GERENCIAMENTO DE DRIVERS (COMPLETAS)
+# ============================================================
+
+def kudu_driver_scan():
+    """
+    Analisa drivers desatualizados e pacotes obsoletos.
+    Modo scan apenas — NÃO faz alterações no sistema.
+    Retorna (bool, dict) com resultados da análise.
+    """
+    _log("Iniciando análise de drivers (Kudu)...", "INFO")
+    success, output = _run_kudu(["--drivers", "--scan"])
+    if success:
+        _log("Análise de drivers concluída.", "OK")
+        # Tenta parsear o output se for JSON
+        try:
+            if output and output.strip().startswith('{'):
+                data = json.loads(output)
+                return True, data
+        except:
+            pass
+        return True, {"raw": output}
+    else:
+        _log("Análise de drivers falhou.", "ERRO")
+        return False, {"error": output}
+
+def kudu_driver_update():
+    """
+    Analisa, baixa e instala atualizações de drivers, removendo pacotes obsoletos.
+    Ação completa: scan + update + cleanup.
+    """
+    _log("Iniciando atualização de drivers (Kudu)...", "INFO")
+    _log("Esta operação pode demorar alguns minutos.", "INFO")
+    success, output = _run_kudu(["--drivers", "--update"])
+    if success:
+        _log("✓ Drivers atualizados com sucesso.", "OK")
+        return True
+    else:
+        _log("Falha ao atualizar drivers.", "ERRO")
+        return False
+
+def kudu_driver_cleanup():
+    """Remove apenas pacotes de drivers obsoletos (sem instalar novos)"""
+    _log("Iniciando limpeza de drivers obsoletos (Kudu)...", "INFO")
     success, output = _run_kudu(["--drivers", "--clean"])
     if success:
-        _log("Driver Manager concluído.", "OK")
+        _log("✓ Drivers obsoletos removidos.", "OK")
+        return True
     else:
-        _log("Driver Manager falhou.", "ERRO")
-    return success
+        _log("Falha ao remover drivers obsoletos.", "ERRO")
+        return False
+
+# Mantida para compatibilidade com código existente (apenas limpeza)
+def kudu_driver_manager():
+    """Limpa drivers obsoletos e pode ajudar a resolver conflitos (alias para kudu_driver_cleanup)"""
+    _log("Iniciando Driver Manager (limpeza)...", "INFO")
+    return kudu_driver_cleanup()
+
+# ============================================================
+# SERVIÇOS E OUTRAS FUNÇÕES
+# ============================================================
 
 def kudu_service_manager():
     """Otimiza serviços do Windows desativando os desnecessários.
@@ -225,8 +277,12 @@ def kudu_service_manager():
     return success
 
 def kudu_one_click_clean():
-    """Executa uma limpeza completa de todas as categorias (System, App, Gaming, Registry, Network, Debloat, Drivers, Services)"""
+    """
+    Executa uma limpeza completa de todas as categorias.
+    Inclui System, App, Gaming, Registry, Network, Debloat, Drivers (update) e Services.
+    """
     _log("Iniciando One‑Click Clean (todas as categorias)...", "INFO")
+    _log("Atualização de drivers incluída (pode demorar alguns minutos).", "INFO")
     success, output = _run_kudu(["--all", "--clean"])
     if success:
         _log("One‑Click Clean concluído.", "OK")
