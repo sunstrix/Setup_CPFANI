@@ -1053,7 +1053,7 @@ def _get_all_user_sids():
     return sids
 
 def _ensure_wallpaper_image():
-    r"""Garante que a imagem do wallpaper/lockscreen exista em C:\Windows\Web\Wallpaper\Windows\"""
+    r"""Garante que a imagem do wallpaper/lockscreen exista em C:\Windows\Web\Wallpaper\Windows"""
     target_path = r"C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
     if os.path.exists(target_path):
         return target_path
@@ -1213,8 +1213,8 @@ except ImportError as e:
     KUDU_AVAILABLE = False
     _log(f"Módulo mod_kudu não encontrado. Funcionalidades de limpeza Kudu indisponíveis. Erro: {e}", "AVISO")
 
+# Função _kudu_call: chama uma função do mod_kudu se disponível, com log
 def _kudu_call(func_name, *args, **kwargs):
-    """Chama uma função do mod_kudu se disponível, com log de início/fim"""
     if not KUDU_AVAILABLE:
         _log(f"Kudu não disponível. Não foi possível executar {func_name}.", "ERRO")
         return False
