@@ -1234,42 +1234,33 @@ def _kudu_call(func_name, *args, **kwargs):
         _log(f"Exceção ao executar {func_name}: {e}", "ERRO")
         return False
 
-# --- Wrappers para as funções aprovadas ---
+# --- Wrappers para as funções aprovadas (sem docstrings problemáticas) ---
 
 def kudu_system_clean():
-    """Limpa arquivos temporários, logs, caches do sistema via Kudu"""
     return _kudu_call("kudu_system_clean")
 
 def kudu_app_clean():
-    """Remove dados residuais de aplicativos desinstalados via Kudu"""
     return _kudu_call("kudu_app_clean")
 
 def kudu_gaming_clean():
-    """Limpa caches de launchers de jogos e shaders GPU via Kudu"""
     return _kudu_call("kudu_gaming_clean")
 
 def kudu_registry_clean():
-    """Remove entradas de registro quebradas/órfãs via Kudu"""
     return _kudu_call("kudu_registry_clean")
 
 def kudu_network_cleanup():
-    """Limpa DNS, perfis Wi-Fi, cache ARP via Kudu"""
     return _kudu_call("kudu_network_cleanup")
 
 def kudu_debloat():
-    """Remove bloatware do Windows usando a lista interna do Kudu (fallback)"""
     return _kudu_call("kudu_debloat")
 
 def kudu_driver_manager():
-    """Limpa drivers obsoletos e ajuda a resolver conflitos via Kudu"""
     return _kudu_call("kudu_driver_manager")
 
 def kudu_service_manager():
-    """Otimiza serviços do Windows desativando desnecessários via Kudu"""
     return _kudu_call("kudu_service_manager")
 
 def kudu_one_click_clean():
-    """Executa uma limpeza completa de todas as categorias via Kudu"""
     return _kudu_call("kudu_one_click_clean")
 
 # get_kudu_service_optimizations - retorna lista de otimizações de serviços
