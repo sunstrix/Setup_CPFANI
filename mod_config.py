@@ -427,7 +427,7 @@ def remove_agressive_bloatware(bloatware_list):
     return True
 
 def apply_cpfani_branding(bar_alignment):
-    """Aplica branding corporativo CP Fani"""
+    """Aplica branding corporativo CP Fani com redundância para todos os usuários"""
     _log("INICIANDO BRANDING CORPORATIVO...", "INFO")
     sync_time_ntp()
     path_theme = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
@@ -442,7 +442,7 @@ def apply_cpfani_branding(bar_alignment):
                 ["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"],
                 timeout=10
             )
-            _log("✓ Tema escuro aplicado", "OK")
+            _log("✓ Tema escuro aplicado para o usuário ativo", "OK")
     except Exception as e:
         _log(f"Erro ao aplicar tema: {e}", "AVISO")
     
@@ -465,6 +465,12 @@ def apply_cpfani_branding(bar_alignment):
             _log(f"Erro ao alinhar barra: {e}", "AVISO")
     
     apply_default_user_profile(bar_alignment)
+    
+    # ================== NOVAS FUNÇÕES DE REDUNDÂNCIA ==================
+    _log("Aplicando configurações de tema escuro, wallpaper e lockscreen para TODOS os usuários (redundância)...", "INFO")
+    _apply_dark_theme_to_all_users()
+    _apply_wallpaper_to_all_users()
+    _apply_lockscreen_to_all_users()
 
 def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
     """Aplica políticas de segurança e LGPD"""
@@ -523,7 +529,7 @@ def _get_image_path(local_path, urls, temp_name):
     return None
 
 def apply_cpfani_wallpaper_redundant():
-    """Aplica wallpaper CP Fani"""
+    """Aplica wallpaper CP Fani e copia para diretório de wallpapers do Windows"""
     _log("Aplicando wallpaper CP Fani...", "INFO")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
@@ -537,11 +543,21 @@ def apply_cpfani_wallpaper_redundant():
         _log("Falha ao obter wallpaper", "ERRO")
         return False
     
+    # Copia para o diretório de wallpapers do Windows (fallback para todos os usuários)
+    try:
+        windows_wp_dir = r"C:\Windows\Web\Wallpaper\Windows"
+        os.makedirs(windows_wp_dir, exist_ok=True)
+        windows_wp_path = os.path.join(windows_wp_dir, "cpfani_wallpaper.jpg")
+        shutil.copy2(target_path, windows_wp_path)
+        _log(f"✓ Wallpaper copiado para {windows_wp_path}", "OK")
+    except Exception as e:
+        _log(f"Erro ao copiar wallpaper para Windows: {e}", "AVISO")
+    
     try:
         # SPI_SETDESKWALLPAPER = 20, SPIF_UPDATEINIFILE = 3
         result = ctypes.windll.user32.SystemParametersInfoW(20, 0, target_path, 3)
         if result:
-            _log("✓ Wallpaper aplicado com sucesso", "OK")
+            _log("✓ Wallpaper aplicado com sucesso via API", "OK")
             return True
         else:
             _log("Falha ao aplicar wallpaper via API", "ERRO")
@@ -551,7 +567,7 @@ def apply_cpfani_wallpaper_redundant():
         return False
 
 def apply_cpfani_lockscreen_redundant():
-    """Aplica lockscreen CP Fani"""
+    """Aplica lockscreen CP Fani e força a imagem via GPO"""
     _log("Aplicando lockscreen CP Fani...", "INFO")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
@@ -562,12 +578,19 @@ def apply_cpfani_lockscreen_redundant():
         _log("Falha ao obter lockscreen", "ERRO")
         return False
     
+    # Configura a imagem via GPO (HKLM)
     if set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", target_path, winreg.REG_SZ):
-        _log("✓ Lockscreen configurado", "OK")
-        return True
+        _log("✓ Lockscreen configurado via GPO", "OK")
     else:
-        _log("Falha ao configurar lockscreen", "ERRO")
-        return False
+        _log("Falha ao configurar lockscreen via GPO", "AVISO")
+    
+    # Força o bloqueio da tela de bloqueio (impede que o usuário mude)
+    if set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "NoChangingLockScreen", 1, winreg.REG_DWORD):
+        _log("✓ Bloqueio de alteração da tela de bloqueio ativado", "OK")
+    else:
+        _log("Falha ao ativar bloqueio de alteração da tela de bloqueio", "AVISO")
+    
+    return True
 
 def disable_windows_hello_redundant():
     """Desativa Windows Hello e biometria"""
@@ -993,6 +1016,151 @@ def generate_full_snapshot():
     except Exception as e:
         _log(f"Erro ao gerar snapshot: {e}", "ERRO")
         return None
+
+# ============================================================
+# NOVAS FUNÇÕES DE REDUNDÂNCIA PARA TEMA ESCURO, WALLPAPER E LOCKSCREEN
+# ============================================================
+
+def _get_all_user_sids():
+    """Obtém todos os SIDs de usuários reais do sistema (exclui SIDs do sistema)"""
+    sids = []
+    try:
+        profiles_key = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, profiles_key) as root_key:
+            i = 0
+            while True:
+                try:
+                    sid = winreg.EnumKey(root_key, i)
+                    i += 1
+                    # Filtra apenas SIDs de usuários reais (começam com S-1-5-21-)
+                    if sid.startswith("S-1-5-21-"):
+                        sids.append(sid)
+                except OSError:
+                    break
+    except Exception as e:
+        _log(f"Erro ao obter SIDs: {e}", "AVISO")
+    return sids
+
+def _apply_dark_theme_to_all_users():
+    """Aplica tema escuro para todos os usuários via GPO e HKCU"""
+    _log("Aplicando tema escuro para todos os usuários...", "INFO")
+    
+    # 1. Via GPO (HKLM) – afeta todos os usuários
+    try:
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "SystemUsesLightTheme", 0, winreg.REG_DWORD)
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "AppsUseLightTheme", 0, winreg.REG_DWORD)
+        _log("✓ Tema escuro configurado via GPO (HKLM)", "OK")
+    except Exception as e:
+        _log(f"Erro ao configurar tema escuro via GPO: {e}", "AVISO")
+    
+    # 2. Para cada SID de usuário real
+    sids = _get_all_user_sids()
+    if not sids:
+        _log("Nenhum SID de usuário encontrado para aplicar tema escuro.", "AVISO")
+        return
+    
+    for sid in sids:
+        try:
+            _safe_subprocess_run(
+                ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"],
+                timeout=10
+            )
+            _safe_subprocess_run(
+                ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"],
+                timeout=10
+            )
+            _log(f"✓ Tema escuro aplicado para SID {sid}", "OK")
+        except Exception as e:
+            _log(f"Erro ao aplicar tema escuro para SID {sid}: {e}", "AVISO")
+
+def _apply_wallpaper_to_all_users():
+    """Aplica wallpaper para todos os usuários via GPO e HKCU"""
+    _log("Aplicando wallpaper para todos os usuários...", "INFO")
+    
+    # Verifica se o wallpaper existe no local padrão
+    wallpaper_path = r"C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
+    if not os.path.exists(wallpaper_path):
+        _log(f"Wallpaper não encontrado em {wallpaper_path}. Tentando local alternativo...", "AVISO")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
+        if os.path.exists(local_wp):
+            try:
+                os.makedirs(os.path.dirname(wallpaper_path), exist_ok=True)
+                shutil.copy2(local_wp, wallpaper_path)
+                _log(f"✓ Wallpaper copiado para {wallpaper_path}", "OK")
+            except Exception as e:
+                _log(f"Erro ao copiar wallpaper: {e}", "ERRO")
+                return
+        else:
+            _log("Wallpaper não encontrado. Pulando aplicação.", "ERRO")
+            return
+    
+    # 1. Via GPO (HKLM) – afeta todos os usuários
+    try:
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "Wallpaper", wallpaper_path, winreg.REG_SZ)
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "WallpaperStyle", "2", winreg.REG_SZ)  # 2 = Fill
+        _log("✓ Wallpaper configurado via GPO (HKLM)", "OK")
+    except Exception as e:
+        _log(f"Erro ao configurar wallpaper via GPO: {e}", "AVISO")
+    
+    # 2. Para cada SID de usuário real
+    sids = _get_all_user_sids()
+    if not sids:
+        _log("Nenhum SID de usuário encontrado para aplicar wallpaper.", "AVISO")
+        return
+    
+    for sid in sids:
+        try:
+            _safe_subprocess_run(
+                ["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "Wallpaper", "/t", "REG_SZ", "/d", wallpaper_path, "/f"],
+                timeout=10
+            )
+            _safe_subprocess_run(
+                ["reg", "add", f"HKU\\{sid}\\Control Panel\\Desktop", "/v", "WallpaperStyle", "/t", "REG_SZ", "/d", "2", "/f"],
+                timeout=10
+            )
+            _log(f"✓ Wallpaper aplicado para SID {sid}", "OK")
+        except Exception as e:
+            _log(f"Erro ao aplicar wallpaper para SID {sid}: {e}", "AVISO")
+
+def _apply_lockscreen_to_all_users():
+    """Aplica lockscreen para todos os usuários via GPO e HKCU"""
+    _log("Aplicando lockscreen para todos os usuários...", "INFO")
+    
+    # Verifica se a imagem existe
+    lockscreen_path = r"C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
+    if not os.path.exists(lockscreen_path):
+        _log(f"Imagem do lockscreen não encontrada em {lockscreen_path}. Pulando.", "AVISO")
+        return
+    
+    # 1. Via GPO (HKLM) – afeta todos os usuários e bloqueia alterações
+    try:
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", lockscreen_path, winreg.REG_SZ)
+        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "NoChangingLockScreen", 1, winreg.REG_DWORD)
+        _log("✓ Lockscreen configurado via GPO (HKLM) com bloqueio", "OK")
+    except Exception as e:
+        _log(f"Erro ao configurar lockscreen via GPO: {e}", "AVISO")
+    
+    # 2. Para cada SID de usuário real (fallback)
+    sids = _get_all_user_sids()
+    if not sids:
+        _log("Nenhum SID de usuário encontrado para aplicar lockscreen.", "AVISO")
+        return
+    
+    for sid in sids:
+        try:
+            # Windows 10/11 usa essa chave para tela de bloqueio
+            _safe_subprocess_run(
+                ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Lock Screen\\Creative", "/v", "LockScreenImagePath", "/t", "REG_SZ", "/d", lockscreen_path, "/f"],
+                timeout=10
+            )
+            _safe_subprocess_run(
+                ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Lock Screen\\Creative", "/v", "LockScreenImageId", "/t", "REG_SZ", "/d", "{00000000-0000-0000-0000-000000000000}", "/f"],
+                timeout=10
+            )
+            _log(f"✓ Lockscreen aplicado para SID {sid}", "OK")
+        except Exception as e:
+            _log(f"Erro ao aplicar lockscreen para SID {sid}: {e}", "AVISO")
 
 # ============================================================================
 # INTEGRAÇÃO COM O KUDU (LIMPEZA, OTIMIZAÇÃO E MANUTENÇÃO)
