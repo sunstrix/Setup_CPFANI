@@ -1,9 +1,13 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-if not exist "C:\Scripts\Logs" mkdir "C:\Scripts\Logs"
+chcp 65001 >nul
 
-set "LOG_FILE=C:\Scripts\Logs\DEPLOY_%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log"
+set "SCRIPT_DIR=C:\Scripts"
+
+if not exist "%SCRIPT_DIR%\Logs" mkdir "%SCRIPT_DIR%\Logs"
+
+set "LOG_FILE=%SCRIPT_DIR%\Logs\DEPLOY_%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log"
 set "LOG_FILE=!LOG_FILE: =0!"
 
 echo ======================================== > "!LOG_FILE!"
