@@ -767,42 +767,179 @@ def _get_bios_serial():
         pass
     return "Desconhecido"
 
+# ============================================================
+# FUNÇÕES MELHORADAS PARA OBTER IDs DO AnyDesk e TeamViewer
+# ============================================================
+
 def _get_anydesk_id():
-    """Obtém o ID do AnyDesk do registro"""
-    try:
-        # Tenta ler do registro do sistema (instalação AllUsers)
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\AnyDesk") as key:
-            value, _ = winreg.QueryValueEx(key, "AdvertisedID")
-            return value
-    except Exception:
+    """Obtém o ID do AnyDesk do registro (suporte a múltiplas versões e arquiteturas)"""
+    # Lista de caminhos de registro a verificar
+    registry_paths = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\AnyDesk"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\AnyDesk"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\AnyDesk"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\WOW6432Node\AnyDesk"),
+    ]
+    value_names = ["AdvertisedID", "ClientID"]
+    
+    for root, path in registry_paths:
         try:
-            # Fallback: perfil do usuário
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"SOFTWARE\AnyDesk") as key:
-                value, _ = winreg.QueryValueEx(key, "AdvertisedID")
-                return value
+            with winreg.OpenKey(root, path) as key:
+                for val_name in value_names:
+                    try:
+                        value, _ = winreg.QueryValueEx(key, val_name)
+                        if value:
+                            return str(value).strip()
+                    except FileNotFoundError:
+                        continue
+                    except Exception:
+                        continue
+        except FileNotFoundError:
+            continue
         except Exception:
-            return "N/A"
+            continue
+    
+    # Fallback: tentar obter via linha de comando do AnyDesk
+    try:
+        anydesk_paths = [
+            r"C:\Program Files\AnyDesk\AnyDesk.exe",
+            r"C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
+        ]
+        for exe in anydesk_paths:
+            if os.path.exists(exe):
+                result = _safe_subprocess_run([exe, "--get-id"], timeout=10)
+                if result and result.returncode == 0 and result.stdout:
+                    return result.stdout.strip()
+                break
+    except Exception:
+        pass
+    
+    # Fallback via PowerShell (consulta WMI ou arquivo de configuração)
+    try:
+        ps_script = """
+        $paths = @("$env:ProgramData\\AnyDesk\\ad.trace", "$env:ProgramData\\AnyDesk\\service.conf")
+        foreach ($p in $paths) {
+            if (Test-Path $p) {
+                $content = Get-Content $p -ErrorAction SilentlyContinue
+                if ($content) {
+                    $id = $content | Select-String -Pattern '^[0-9]+$'
+                    if ($id) { return $id.Matches.Value }
+                }
+            }
+        }
+        return $null
+        """
+        result = _safe_subprocess_run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            timeout=10
+        )
+        if result and result.returncode == 0 and result.stdout:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    
+    return "N/A"
 
 def _get_teamviewer_id():
-    """Obtém o ID do TeamViewer do registro"""
-    try:
-        # Tenta ler do registro (versão 15+)
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\TeamViewer\Version15") as key:
-            value, _ = winreg.QueryValueEx(key, "ClientID")
-            return str(value)
-    except Exception:
-        try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\TeamViewer\Version15") as key:
-                value, _ = winreg.QueryValueEx(key, "ClientID")
-                return str(value)
-        except Exception:
+    """Obtém o ID do TeamViewer do registro (suporte a múltiplas versões)"""
+    # Versões do TeamViewer a verificar
+    versions = ["15", "14", "13", "12", "11", "10"]
+    
+    # Caminhos comuns
+    registry_paths = [
+        (winreg.HKEY_CURRENT_USER, r"Software\TeamViewer\Version{}"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\TeamViewer\Version{}"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\TeamViewer\Version{}"),
+        (winreg.HKEY_CURRENT_USER, r"Software\TeamViewer"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\TeamViewer"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\TeamViewer"),
+    ]
+    
+    value_names = ["ClientID", "ClientID_64", "DeviceID", "DeviceID_64"]
+    
+    for root, path_template in registry_paths:
+        if "{}" in path_template:
+            for ver in versions:
+                path = path_template.format(ver)
+                try:
+                    with winreg.OpenKey(root, path) as key:
+                        for val_name in value_names:
+                            try:
+                                value, _ = winreg.QueryValueEx(key, val_name)
+                                if value:
+                                    return str(value).strip()
+                            except FileNotFoundError:
+                                continue
+                            except Exception:
+                                continue
+                except FileNotFoundError:
+                    continue
+                except Exception:
+                    continue
+        else:
+            # Caminho sem versão específica
             try:
-                # Fallback para versões mais antigas
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\TeamViewer") as key:
-                    value, _ = winreg.QueryValueEx(key, "ClientID")
-                    return str(value)
+                with winreg.OpenKey(root, path_template) as key:
+                    for val_name in value_names:
+                        try:
+                            value, _ = winreg.QueryValueEx(key, val_name)
+                            if value:
+                                return str(value).strip()
+                        except FileNotFoundError:
+                            continue
+                        except Exception:
+                            continue
+            except FileNotFoundError:
+                continue
             except Exception:
-                return "N/A"
+                continue
+    
+    # Fallback via PowerShell (consultar WMI ou arquivos de configuração)
+    try:
+        ps_script = """
+        $id = $null
+        # Tenta ler do arquivo de configuração do TeamViewer
+        $configPath = "$env:ProgramData\\TeamViewer\\TeamViewer15_Config\\TeamViewer.ini"
+        if (Test-Path $configPath) {
+            $lines = Get-Content $configPath -ErrorAction SilentlyContinue
+            foreach ($line in $lines) {
+                if ($line -match 'ClientID=(\\d+)') {
+                    $id = $matches[1]
+                    break
+                }
+            }
+        }
+        if (-not $id) {
+            $configPath2 = "$env:ProgramData\\TeamViewer\\TeamViewer.ini"
+            if (Test-Path $configPath2) {
+                $lines = Get-Content $configPath2 -ErrorAction SilentlyContinue
+                foreach ($line in $lines) {
+                    if ($line -match 'ClientID=(\\d+)') {
+                        $id = $matches[1]
+                        break
+                    }
+                }
+            }
+        }
+        if (-not $id) {
+            # Tenta via WMI
+            try {
+                $id = (Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -match 'TeamViewer' }).IdentifyingNumber
+                if ($id) { $id = $id -replace '.*(\\d+)$', '$1' }
+            } catch {}
+        }
+        if ($id) { return $id } else { return $null }
+        """
+        result = _safe_subprocess_run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            timeout=10
+        )
+        if result and result.returncode == 0 and result.stdout:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    
+    return "N/A"
 
 # ============================================================
 # SNAPSHOT COMPLETO (FORMATO SOLICITADO)
@@ -856,7 +993,6 @@ def generate_full_snapshot():
     except Exception as e:
         _log(f"Erro ao gerar snapshot: {e}", "ERRO")
         return None
-
 
 # ============================================================================
 # INTEGRAÇÃO COM O KUDU (LIMPEZA, OTIMIZAÇÃO E MANUTENÇÃO)
