@@ -64,6 +64,54 @@ def check_chocolatey():
     _log(f"Chocolatey OK: {version}", "OK")
     return True
 
+def _winget_install(app, timeout=300):
+    """Instala pacote via winget com fallback (usado quando Chocolatey falha)"""
+    _log(f"Tentando instalar {app} via winget (fallback)...", "INFO")
+    # Mapeamento de nomes de pacotes Chocolatey para winget IDs
+    winget_map = {
+        "googlechrome": "Google.Chrome",
+        "anydesk": "AnyDeskSoftwareGmbH.AnyDesk",
+        "7zip": "7zip.7zip",
+        "flameshot": "Flameshot.Flameshot",
+        "teamviewer": "TeamViewer.TeamViewer",
+        "vlc": "VideoLAN.VLC",
+        "winrar": "RARLab.WinRAR",
+        "vcredist-all": "Microsoft.VCRedist.2015+.x64",  # Pode não ser exato, mas tentamos
+        "ditto": "Ditto.Ditto",
+        "sharex": "ShareX.ShareX",
+        "notepadplusplus": "Notepad++.Notepad++",
+        "powertoys": "Microsoft.PowerToys",
+        "firefox": "Mozilla.Firefox",
+        "adobereader": "Adobe.Acrobat.Reader.64-bit",
+        "paint.net": "dotPDN.Paint.NET",
+        "dellcommandupdate": "Dell.CommandUpdate",
+        "lenovo-system-update": "Lenovo.SystemUpdate",
+        "hp-support-assistant": "HP.SupportAssistant",
+        "onlyoffice-desktopeditors": "ONLYOFFICE.DesktopEditors",
+    }
+    
+    winget_id = winget_map.get(app, app)  # Se não mapeado, usa o próprio nome
+    _log(f"Usando winget ID: {winget_id}", "INFO")
+    
+    # Verifica se winget está disponível
+    check = _safe_subprocess_run(["winget", "--version"], timeout=10)
+    if check is None or check.returncode != 0:
+        _log("winget não disponível. Pulando fallback.", "AVISO")
+        return False
+    
+    # Tenta instalar
+    result = _safe_subprocess_run(
+        ["winget", "install", "--id", winget_id, "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+        timeout=timeout
+    )
+    
+    if result and result.returncode == 0:
+        _log(f"✓ {app} instalado com sucesso via winget", "OK")
+        return True
+    else:
+        _log(f"winget falhou para {app} com código {result.returncode if result else 'None'}", "AVISO")
+        return False
+
 def _install_anydesk(timeout=300):
     """Instala AnyDesk com fallback para múltiplos métodos"""
     _log("A instalar AnyDesk com redundância...", "INFO")
@@ -141,7 +189,7 @@ def _install_anydesk(timeout=300):
     return False
 
 def _choco_install(app, timeout=300, max_retries=2):
-    """Instala pacote via Chocolatey com retry logic"""
+    """Instala pacote via Chocolatey com retry logic, com fallback para winget"""
     app = app.strip()
     if not app:
         _log("Nome de pacote vazio", "ERRO")
@@ -175,7 +223,12 @@ def _choco_install(app, timeout=300, max_retries=2):
                 _log(f"Aguardando 5 segundos antes de nova tentativa...", "INFO")
                 time.sleep(5)
     
-    _log(f"✗ Falha ao instalar {app} após {max_retries} tentativas", "ERRO")
+    # Se todas as tentativas falharam, tenta winget como fallback
+    _log(f"Todas as tentativas via Chocolatey falharam para {app}. Tentando winget...", "AVISO")
+    if _winget_install(app, timeout=timeout):
+        return True
+    
+    _log(f"✗ Falha ao instalar {app} (Chocolatey e winget)", "ERRO")
     return False
 
 def install_office_suite(choice):
