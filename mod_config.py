@@ -567,7 +567,7 @@ def apply_cpfani_wallpaper_redundant():
         return False
 
 def apply_cpfani_lockscreen_redundant():
-    """Aplica lockscreen CP Fani e força a imagem via GPO"""
+    """Aplica lockscreen CP Fani e força a imagem via GPO + PersonalizationCSP"""
     _log("Aplicando lockscreen CP Fani...", "INFO")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
@@ -589,13 +589,31 @@ def apply_cpfani_lockscreen_redundant():
     except Exception as e:
         _log(f"Erro ao copiar wallpaper para Windows (lockscreen): {e}", "AVISO")
     
-    # Configura a imagem via GPO (HKLM)
+    # 1. Configura a imagem via GPO (HKLM) – funciona em Enterprise/Education
     if set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", windows_wp_path, winreg.REG_SZ):
-        _log("✓ Lockscreen configurado via GPO", "OK")
+        _log("✓ Lockscreen configurado via GPO (HKLM)", "OK")
     else:
         _log("Falha ao configurar lockscreen via GPO", "AVISO")
     
-    # Força o bloqueio da tela de bloqueio (impede que o usuário mude) - somente depois de definir a imagem
+    # 2. Adiciona as chaves do PersonalizationCSP – funciona em Windows Pro
+    try:
+        csp_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP"
+        if set_reg(winreg.HKEY_LOCAL_MACHINE, csp_path, "LockScreenImageStatus", 1, winreg.REG_DWORD):
+            _log("✓ LockScreenImageStatus configurado via PersonalizationCSP", "OK")
+        else:
+            _log("Falha ao configurar LockScreenImageStatus via PersonalizationCSP", "AVISO")
+        if set_reg(winreg.HKEY_LOCAL_MACHINE, csp_path, "LockScreenImagePath", windows_wp_path, winreg.REG_SZ):
+            _log("✓ LockScreenImagePath configurado via PersonalizationCSP", "OK")
+        else:
+            _log("Falha ao configurar LockScreenImagePath via PersonalizationCSP", "AVISO")
+        if set_reg(winreg.HKEY_LOCAL_MACHINE, csp_path, "LockScreenImageUrl", windows_wp_path, winreg.REG_SZ):
+            _log("✓ LockScreenImageUrl configurado via PersonalizationCSP", "OK")
+        else:
+            _log("Falha ao configurar LockScreenImageUrl via PersonalizationCSP", "AVISO")
+    except Exception as e:
+        _log(f"Erro ao configurar PersonalizationCSP: {e}", "AVISO")
+    
+    # 3. Força o bloqueio da tela de bloqueio (impede que o usuário mude)
     if set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "NoChangingLockScreen", 1, winreg.REG_DWORD):
         _log("✓ Bloqueio de alteração da tela de bloqueio ativado", "OK")
     else:
@@ -1152,7 +1170,7 @@ def _apply_wallpaper_to_all_users():
             _log(f"Erro ao aplicar wallpaper para SID {sid}: {e}", "AVISO")
 
 def _apply_lockscreen_to_all_users():
-    """Aplica lockscreen para todos os usuários via GPO e HKCU (com bloqueio)"""
+    """Aplica lockscreen para todos os usuários via GPO + PersonalizationCSP (com bloqueio)"""
     _log("Aplicando lockscreen para todos os usuários...", "INFO")
     
     # Garante que a imagem exista
@@ -1161,47 +1179,48 @@ def _apply_lockscreen_to_all_users():
         _log("Imagem do lockscreen não disponível. Pulando aplicação.", "ERRO")
         return
     
-    # 1. Via GPO (HKLM) – afeta todos os usuários e bloqueia alterações
+    # 1. Via GPO (HKLM) – afeta todos os usuários em Enterprise/Education
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", lockscreen_path, winreg.REG_SZ)
         _log("✓ Lockscreen configurado via GPO (HKLM)", "OK")
     except Exception as e:
         _log(f"Erro ao configurar lockscreen via GPO: {e}", "AVISO")
     
-    # 2. Forçar a atualização da política para aplicar imediatamente
+    # 2. Adiciona as chaves do PersonalizationCSP – funciona em Windows Pro
+    try:
+        csp_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP"
+        if set_reg(winreg.HKEY_LOCAL_MACHINE, csp_path, "LockScreenImageStatus", 1, winreg.REG_DWORD):
+            _log("✓ LockScreenImageStatus configurado via PersonalizationCSP", "OK")
+        else:
+            _log("Falha ao configurar LockScreenImageStatus via PersonalizationCSP", "AVISO")
+        if set_reg(winreg.HKEY_LOCAL_MACHINE, csp_path, "LockScreenImagePath", lockscreen_path, winreg.REG_SZ):
+            _log("✓ LockScreenImagePath configurado via PersonalizationCSP", "OK")
+        else:
+            _log("Falha ao configurar LockScreenImagePath via PersonalizationCSP", "AVISO")
+        if set_reg(winreg.HKEY_LOCAL_MACHINE, csp_path, "LockScreenImageUrl", lockscreen_path, winreg.REG_SZ):
+            _log("✓ LockScreenImageUrl configurado via PersonalizationCSP", "OK")
+        else:
+            _log("Falha ao configurar LockScreenImageUrl via PersonalizationCSP", "AVISO")
+    except Exception as e:
+        _log(f"Erro ao configurar PersonalizationCSP: {e}", "AVISO")
+    
+    # 3. Forçar a atualização da política para aplicar imediatamente
     try:
         _safe_subprocess_run("gpupdate /force", shell=True, timeout=60)
         _log("✓ Política de grupo atualizada (gpupdate /force)", "OK")
     except Exception as e:
         _log(f"Erro ao executar gpupdate: {e}", "AVISO")
     
-    # 3. Só agora ativa o bloqueio de alteração (para evitar que o usuário mude)
+    # 4. Só agora ativa o bloqueio de alteração (para evitar que o usuário mude)
     try:
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "NoChangingLockScreen", 1, winreg.REG_DWORD)
         _log("✓ Bloqueio de alteração da tela de bloqueio ativado", "OK")
     except Exception as e:
         _log(f"Erro ao ativar bloqueio de alteração: {e}", "AVISO")
     
-    # 4. Aplica para cada SID (fallback para usuários já logados)
-    sids = _get_all_user_sids()
-    if not sids:
-        _log("Nenhum SID de usuário encontrado para aplicar lockscreen.", "AVISO")
-        return
-    
-    for sid in sids:
-        try:
-            # Windows 10/11 usa essa chave para tela de bloqueio
-            _safe_subprocess_run(
-                ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Lock Screen\\Creative", "/v", "LockScreenImagePath", "/t", "REG_SZ", "/d", lockscreen_path, "/f"],
-                timeout=10
-            )
-            _safe_subprocess_run(
-                ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Lock Screen\\Creative", "/v", "LockScreenImageId", "/t", "REG_SZ", "/d", "{00000000-0000-0000-0000-000000000000}", "/f"],
-                timeout=10
-            )
-            _log(f"✓ Lockscreen aplicado para SID {sid}", "OK")
-        except Exception as e:
-            _log(f"Erro ao aplicar lockscreen para SID {sid}: {e}", "AVISO")
+    # Observação: o bloco de fallback por SID (HKU\{sid}\...\Lock Screen\Creative) foi removido
+    # porque essa chave não tem efeito real na imagem de lockscreen no Windows 10/11.
+    # Em seu lugar, usamos PersonalizationCSP (HKLM) que funciona em todas as edições.
 
 # ============================================================================
 # INTEGRAÇÃO COM O KUDU (LIMPEZA, OTIMIZAÇÃO E MANUTENÇÃO)
