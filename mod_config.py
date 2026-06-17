@@ -688,7 +688,7 @@ def schedule_instalar_tudo():
     return True
 
 def _get_hardware_info():
-    """Obtém informações básicas de hardware"""
+    """Obtém informações básicas de hardware (legado)"""
     return {
         "Nome_Computador": os.environ.get("COMPUTERNAME", platform.node()),
         "Sistema_Operacional": platform.system(),
@@ -697,26 +697,160 @@ def _get_hardware_info():
         "Processador": platform.processor()
     }
 
+# ============================================================
+# FUNÇÕES AUXILIARES PARA O SNAPSHOT DETALHADO
+# ============================================================
+
+def _get_system_model():
+    """Obtém o modelo do sistema via WMI"""
+    try:
+        result = _safe_subprocess_run(
+            ['powershell', '-Command', '(Get-CimInstance Win32_ComputerSystem).Model'],
+            timeout=10
+        )
+        if result and result.stdout:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "Desconhecido"
+
+def _get_processor_name():
+    """Obtém o nome do processador via WMI"""
+    try:
+        result = _safe_subprocess_run(
+            ['powershell', '-Command', '(Get-CimInstance Win32_Processor).Name'],
+            timeout=10
+        )
+        if result and result.stdout:
+            # Limpa espaços extras
+            return ' '.join(result.stdout.strip().split())
+    except Exception:
+        pass
+    return "Desconhecido"
+
+def _get_total_ram():
+    """Obtém a memória RAM total em GB"""
+    try:
+        result = _safe_subprocess_run(
+            ['powershell', '-Command', '[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1)'],
+            timeout=10
+        )
+        if result and result.stdout:
+            return result.stdout.strip() + " GB"
+    except Exception:
+        pass
+    return "Desconhecido"
+
+def _get_windows_version():
+    """Obtém a versão e edição do Windows"""
+    try:
+        result = _safe_subprocess_run(
+            ['powershell', '-Command', '(Get-CimInstance Win32_OperatingSystem).Caption'],
+            timeout=10
+        )
+        if result and result.stdout:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return platform.system() + " " + platform.release()
+
+def _get_bios_serial():
+    """Obtém o número de série da BIOS"""
+    try:
+        result = _safe_subprocess_run(
+            ['powershell', '-Command', '(Get-CimInstance Win32_BIOS).SerialNumber'],
+            timeout=10
+        )
+        if result and result.stdout:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "Desconhecido"
+
+def _get_anydesk_id():
+    """Obtém o ID do AnyDesk do registro"""
+    try:
+        # Tenta ler do registro do sistema (instalação AllUsers)
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\AnyDesk") as key:
+            value, _ = winreg.QueryValueEx(key, "AdvertisedID")
+            return value
+    except Exception:
+        try:
+            # Fallback: perfil do usuário
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"SOFTWARE\AnyDesk") as key:
+                value, _ = winreg.QueryValueEx(key, "AdvertisedID")
+                return value
+        except Exception:
+            return "N/A"
+
+def _get_teamviewer_id():
+    """Obtém o ID do TeamViewer do registro"""
+    try:
+        # Tenta ler do registro (versão 15+)
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\TeamViewer\Version15") as key:
+            value, _ = winreg.QueryValueEx(key, "ClientID")
+            return str(value)
+    except Exception:
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\TeamViewer\Version15") as key:
+                value, _ = winreg.QueryValueEx(key, "ClientID")
+                return str(value)
+        except Exception:
+            try:
+                # Fallback para versões mais antigas
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\TeamViewer") as key:
+                    value, _ = winreg.QueryValueEx(key, "ClientID")
+                    return str(value)
+            except Exception:
+                return "N/A"
+
+# ============================================================
+# SNAPSHOT COMPLETO (FORMATO SOLICITADO)
+# ============================================================
+
 def generate_full_snapshot():
-    """Gera snapshot completo de hardware"""
+    """Gera snapshot completo de hardware com formato personalizado"""
     _log("Gerando snapshot de hardware...", "INFO")
-    hw = _get_hardware_info()
-    pc_name = hw.get("Nome_Computador", "UNKNOWN")
+
+    pc_name = os.environ.get("COMPUTERNAME", "UNKNOWN")
     log_path = Path(f"{SCRIPT_DIR}/CPFANI_Hardware_Snapshot_{pc_name}.txt")
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
+    # Coleta de informações
+    modelo = _get_system_model()
+    processador = _get_processor_name()
+    memoria = _get_total_ram()
+    windows = _get_windows_version()
+    bios_serial = _get_bios_serial()
+    anydesk_id = _get_anydesk_id()
+    teamviewer_id = _get_teamviewer_id()
+
+    # Monta o conteúdo do snapshot
+    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    content = f"""
+============================================================
+   SNAPSHOT CP FANI V5.9.3 (Edição Infiltrado + Self-Healing)
+   Gerado em: {now}
+============================================================
+
+[HARDWARE]
+  Nome_Computador     : {pc_name}
+  Modelo_Sistema      : {modelo}
+  Processador         : {processador}
+  Memoria_RAM         : {memoria}
+  Windows             : {windows}
+  Serial_BIOS         : {bios_serial}
+
+[SUPORTE]
+  AnyDesk    : {anydesk_id}
+  TeamViewer : {teamviewer_id}
+
+============================================================
+"""
+
     try:
-        with open(log_path, "w", encoding="utf-8", errors='replace') as f:
-            f.write("=" * 60 + "\n")
-            f.write("SNAPSHOT COMPLETO CP FANI\n")
-            f.write("=" * 60 + "\n")
-            f.write(f"Data/Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"PC: {pc_name}\n")
-            f.write(f"Sistema: {hw.get('Sistema_Operacional', 'N/A')} {hw.get('Versao_SO', 'N/A')}\n")
-            f.write(f"Arquitetura: {hw.get('Arquitetura', 'N/A')}\n")
-            f.write(f"Processador: {hw.get('Processador', 'N/A')}\n")
-            f.write("=" * 60 + "\n")
-        
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write(content.strip() + "\n")
         _log(f"✓ Snapshot gerado: {log_path}", "OK")
         return str(log_path)
     except Exception as e:
