@@ -1282,23 +1282,18 @@ def get_kudu_service_optimizations():
         _log(f"Erro ao obter lista de otimizações: {e}", "ERRO")
         return ["Erro ao obter lista."]
 
+# ============================================================
+# FUNÇÃO CORRIGIDA SEM DOCSTRING
+# ============================================================
+
+# Função run_kudu_cleanup: executa ações de limpeza do Kudu.
+# Parâmetros: selected_actions (list) - opções: system, app, gaming, registry, network, debloat, drivers, services, all.
+# Retorna: dict com success e results.
 def run_kudu_cleanup(selected_actions=None):
-    """
-    Executa um conjunto de ações de limpeza do Kudu.
-
-    Parâmetros:
-        selected_actions (list): Lista de strings com as ações desejadas.
-            Valores possíveis: 'system', 'app', 'gaming', 'registry', 'network', 'debloat', 'drivers', 'services', 'all'
-            Se None ou lista vazia, executa todas as ações (exceto 'debloat' e 'services' por padrão, pode ser adicionado).
-
-    Retorna:
-        dict: {'success': bool, 'results': dict} com o resultado de cada ação.
-    """
     if not KUDU_AVAILABLE:
         _log("Kudu não disponível. Nenhuma ação executada.", "ERRO")
         return {"success": False, "results": {}}
 
-    # Mapeamento de ações para funções
     action_map = {
         'system': kudu_system_clean,
         'app': kudu_app_clean,
@@ -1310,7 +1305,6 @@ def run_kudu_cleanup(selected_actions=None):
         'services': kudu_service_manager,
     }
 
-    # Se selected_actions for None ou vazio, executa todas (exceto debloat e services, que são opcionais)
     if selected_actions is None or not selected_actions:
         selected_actions = ['system', 'app', 'gaming', 'registry', 'network', 'drivers']
 
@@ -1318,7 +1312,6 @@ def run_kudu_cleanup(selected_actions=None):
     overall_success = True
     for action in selected_actions:
         if action == 'all':
-            # Executa todas as ações, incluindo debloat e services
             for key in action_map:
                 if key not in results:
                     results[key] = action_map[key]()
