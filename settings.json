@@ -1,23 +1,13 @@
 {
-  "_schema_version": "2.0.1",
-  
   "metadata": {
-    "version": "5.9.5.2",
-    "schema_version": "2.0.1",
+    "version": "5.9.5.5",
     "project": "Setup Automatizado CP Fani",
     "company": "CP Fani",
     "author": "Alex Paulo",
-    "updated": "2026-06-16",
+    "updated": "2026-05",
     "min_windows_version": "10.0.19041",
-    "supported_architectures": ["x64", "ARM64"],
-    "python_version_required": "3.8.0",
-    "choco_version_required": "1.0.0",
-    "supported_os": ["Windows 10", "Windows 11"],
-    "license": "Proprietary",
-    "repository": "https://github.com/sunstrix/Setup_CPFANI",
-    "documentation": "https://github.com/sunstrix/Setup_CPFANI/wiki"
+    "supported_architectures": ["x64", "ARM64"]
   },
-  
   "apps": {
     "choco": [
       "googlechrome",
@@ -42,7 +32,6 @@
       "Microsoft.WindowsTerminal"
     ]
   },
-  
   "bloatware_remove": [
     "Microsoft.BingNews",
     "Microsoft.BingWeather",
@@ -79,9 +68,13 @@
     "Twitter.Twitter",
     "Bytedance.P23970D6E466A",
     "Microsoft.Teams",
-    "Microsoft.OneDriveSync"
+    "Microsoft.OneDriveSync",
+    "Microsoft.WindowsCamera",
+    "Microsoft.WindowsSoundRecorder",
+    "Microsoft.WindowsAlarms",
+    "Microsoft.WindowsCalculator",
+    "Microsoft.WindowsStore"
   ],
-  
   "drivers": {
     "dell": "dellcommandupdate",
     "lenovo": "lenovo-system-update",
@@ -89,7 +82,16 @@
     "asus": "myasus",
     "acer": "acer-care-center"
   },
-  
+  "features": {
+    "self_healing": true,
+    "auto_restart": true,
+    "silent_install": true,
+    "create_restore_point": true,
+    "disable_cortana": true,
+    "disable_telemetry": true,
+    "enable_dark_mode": true,
+    "optimize_services": true
+  },
   "paths": {
     "logo": "C:\\Scripts\\Setup_CPFANI\\resources\\logo_cpfani.png",
     "wallpaper": "C:\\Scripts\\Setup_CPFANI\\resources\\wallpaper_cpfani.jpg",
@@ -98,10 +100,85 @@
     "snapshot_output": "C:\\Scripts\\CPFANI_Hardware_Snapshot_{PC_NAME}.txt",
     "logs": "C:\\Scripts\\Logs",
     "temp_downloads": "C:\\Users\\Public\\Downloads",
-    "scripts": "C:\\Scripts",
-    "backups": "C:\\Scripts\\Backups",
-    "registry_backups": "C:\\Scripts\\RegistryBackups",
-    "watchdog_script": "C:\\Scripts\\cpfani_watchdog.ps1",
-    "watchdog_launcher": "C:\\Scripts\\cpfani_watchdog_launcher.vbs"
+    "scripts": "C:\\Scripts"
+  },
+  "network": {
+    "ntp_servers": [
+      "a.ntp.br",
+      "b.ntp.br",
+      "c.ntp.br",
+      "time.windows.com"
+    ],
+    "dns_servers": [
+      "8.8.8.8",
+      "8.8.4.4",
+      "1.1.1.1",
+      "1.0.0.1"
+    ],
+    "firewall_rules": {
+      "enable_file_sharing": true,
+      "enable_network_discovery": true,
+      "allow_remote_desktop": true,
+      "restrict_smb_to_lan": true
+    }
+  },
+  "security": {
+    "disable_windows_hello": true,
+    "disable_biometrics": true,
+    "enable_firewall": true,
+    "enable_defender": true,
+    "disable_uac_prompts": false,
+    "enable_smart_screen": true,
+    "lgpd_compliance": true,
+    "disable_cortana": true,
+    "disable_advertising_id": true,
+    "disable_activity_history": true
+  },
+  "updates": {
+    "windows_update": {
+      "enabled": true,
+      "auto_download": true,
+      "defer_feature_updates_days": 0,
+      "defer_quality_updates_days": 0
+    },
+    "driver_updates": {
+      "via_windows_update": true,
+      "via_manufacturer": true,
+      "auto_restart_if_needed": false
+    }
+  },
+  "logging": {
+    "enabled": true,
+    "level": "INFO",
+    "max_file_size_mb": 10,
+    "max_files": 5,
+    "include_timestamps": true,
+    "include_stack_traces": true,
+    "output_path": "C:\\Scripts\\Logs"
+  },
+  "timeouts": {
+    "choco_install_seconds": 300,
+    "winget_install_seconds": 300,
+    "office_install_seconds": 1800,
+    "windows_update_seconds": 1800,
+    "download_file_seconds": 300,
+    "subprocess_default_seconds": 30
+  },
+  "validation": {
+    "min_file_size_bytes": {
+      "installer": 1048576,
+      "image": 10240,
+      "config": 100
+    },
+    "max_retries": 3,
+    "retry_delay_seconds": 5,
+    "verify_checksums": false
+  },
+  "backup": {
+    "create_before_changes": true,
+    "backup_registry": true,
+    "backup_path": "C:\\Scripts\\Backups",
+    "max_backups": 3,
+    "compress_backups": true
   }
 }

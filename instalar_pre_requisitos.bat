@@ -53,7 +53,7 @@ if defined FREE_SPACE (
 )
 
 :: ============================================================
-:: 1. VERIFICACAO E INSTALACAO DO PYTHON (LOGICA A PROVA DE FALHAS)
+:: 1. VERIFICACAO E INSTALACAO DO PYTHON
 :: ============================================================
 echo [STEP 1] Verificando Python...
 echo [STEP 1] Verificando Python... >> "!LOG_FILE!"
@@ -62,7 +62,7 @@ set "PYTHON_OK=0"
 set "PYTHON_EXE="
 
 :: 1.1 Verifica caminhos de instalacao padrao primeiro (evita o alias da Store)
-:: Versoes suportadas: 3.8 ate 3.13 (conforme settings.json)
+:: Versoes suportadas: 3.8 ate 3.13
 for %%V in (313 312 311 310 39 38) do (
     for %%P in (
         "C:\Program Files\Python%%V\python.exe"
@@ -82,7 +82,7 @@ for %%V in (313 312 311 310 39 38) do (
     )
 )
 
-:: 1.2 Tenta o Python Launcher oficial (nao sofre do bug da Windows Store)
+:: 1.2 Tenta o Python Launcher oficial
 if !PYTHON_OK! EQU 0 (
     py -c "print('OK')" >nul 2>&1
     if !errorLevel! EQU 0 (
@@ -124,7 +124,7 @@ if !PYTHON_OK! EQU 1 (
 echo [INFO] Python nao encontrado ou invalido. Iniciando download...
 echo [INFO] Python nao encontrado ou invalido. Iniciando download... >> "!LOG_FILE!"
 
-:: Remove forcadamente os aliases da Windows Store que causam travamento (HKCU e HKLM)
+:: Remove forcadamente os aliases da Windows Store
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\AppExecutionAliases\python.exe" /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\AppExecutionAliases\python3.exe" /f >nul 2>&1
 reg delete "HKLM\Software\Microsoft\Windows\CurrentVersion\AppExecutionAliases\python.exe" /f >nul 2>&1
@@ -190,10 +190,8 @@ echo [OK] Python instalado com sucesso.
 echo [INFO] Validando instalacao do Python...
 echo [INFO] Validando instalacao do Python... >> "!LOG_FILE!"
 
-:: Aguarda brevemente para o PATH ser registrado
 timeout /t 2 /nobreak >nul
 
-:: Tenta o launcher py primeiro (instalado pelo installer oficial)
 py -c "print('OK')" >nul 2>&1
 if !errorLevel! EQU 0 (
     set "PYTHON_OK=1"
@@ -203,7 +201,7 @@ if !errorLevel! EQU 0 (
     goto :CHECK_CHOCO
 )
 
-:: Fallback: tenta encontrar o python.exe recém-instalado
+:: Fallback: tenta encontrar o python.exe recem-instalado
 for %%V in (312 311 310 39 38) do (
     if exist "C:\Program Files\Python%%V\python.exe" (
         "C:\Program Files\Python%%V\python.exe" -c "print('OK')" >nul 2>&1
@@ -244,10 +242,8 @@ if !errorLevel! NEQ 0 (
         exit /b 1
     )
     
-    :: Atualiza PATH na sessao atual
     set "PATH=!PATH!;%ALLUSERSPROFILE%\chocolatey\bin"
     
-    :: Valida se choco realmente funciona agora
     where choco >nul 2>&1
     if !errorLevel! NEQ 0 (
         echo [ERRO] Chocolatey instalado mas nao encontrado no PATH. >> "!LOG_FILE!"

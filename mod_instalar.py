@@ -1,21 +1,13 @@
-"""mod_instalar.py — V5.9.5.2 (CP Fani)"""
+"""mod_instalar.py — V5.9.3 (CP Fani)"""
 import subprocess
 import os
 import shutil
 import sys
 import platform
 import time
-import socket
-import hashlib
-import ctypes
-import ssl
-import urllib.request
 from datetime import datetime
-from pathlib import Path
 
-# ============================================================
-# CONFIGURAÇÃO DE ENCODING PARA EVITAR CRASHES
-# ============================================================
+# Configuração de encoding para evitar crashes em caracteres especiais
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors='replace')
@@ -23,89 +15,14 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# ============================================================
-# CONSTANTES GLOBAIS
-# ============================================================
-LOG_DIR = Path(r"C:\Scripts\Logs")
-MIN_EXECUTABLE_SIZE = 1048576  # 1MB mínimo para executáveis
-MIN_DOWNLOAD_SIZE = 5242880    # 5MB mínimo para downloads
-INSTALLATION_TIMEOUT = 1800    # 30 minutos para instalações
-DOWNLOAD_TIMEOUT = 300         # 5 minutos para downloads
-
-# ============================================================
-# SISTEMA DE LOG APRIMORADO
-# ============================================================
-def _log(msg, level="INFO", context=None):
-    """Sistema de log com timestamp, nível e contexto opcional"""
+def _log(msg, level="INFO"):
+    """Sistema de log com timestamp e nível"""
     ts = datetime.now().strftime("%H:%M:%S")
-    if context:
-        log_msg = f"[{ts}] [{level}] [{context}] {msg}"
-    else:
-        log_msg = f"[{ts}] [{level}] {msg}"
+    log_msg = f"[{ts}] [{level}] {msg}"
     print(log_msg, flush=True)
-    
-    try:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        log_file = LOG_DIR / f"mod_instalar_{datetime.now().strftime('%Y%m%d')}.log"
-        with open(log_file, 'a', encoding="utf-8", errors='replace') as f:
-            f.write(f"{log_msg}\n")
-    except Exception:
-        pass
 
-# ============================================================
-# VALIDAÇÃO DE PRÉ-REQUISITOS
-# ============================================================
-def _validate_admin_privileges():
-    try:
-        is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
-        if not is_admin:
-            _log("Privilégios administrativos não detectados!", "ERRO")
-            return False
-        return True
-    except Exception as e:
-        _log(f"Falha ao verificar privilégios: {e}", "AVISO")
-        return True
-
-def _validate_disk_space(min_mb=500):
-    try:
-        free_space = shutil.disk_usage("C:\\").free
-        if free_space < min_mb * 1024 * 1024:
-            _log(f"Espaço em disco insuficiente: {free_space / (1024*1024):.0f}MB disponíveis", "ERRO")
-            return False
-        return True
-    except Exception as e:
-        _log(f"Falha ao verificar espaço em disco: {e}", "AVISO")
-        return True
-
-def _validate_internet_connectivity():
-    try:
-        socket.create_connection(("8.8.8.8", 53), timeout=5)
-        return True
-    except Exception:
-        try:
-            ctx = ssl.create_default_context()
-            req = urllib.request.Request("https://www.google.com", method="HEAD")
-            urllib.request.urlopen(req, timeout=10, context=ctx)
-            return True
-        except Exception:
-            _log("Sem conectividade com a internet", "ERRO")
-            return False
-
-def _validate_system_architecture():
-    try:
-        arch = platform.machine().lower()
-        if arch in ['amd64', 'x86_64']:
-            return 'x64'
-        elif arch in ['arm64', 'aarch64']:
-            return 'arm64'
-        return 'unknown'
-    except Exception:
-        return 'unknown'
-
-# ============================================================
-# EXECUÇÃO SEGURA DE SUBPROCESSOS
-# ============================================================
 def _safe_subprocess_run(cmd, timeout=300, shell=False, capture_output=True, **kwargs):
+    """Execução segura de subprocessos com timeout e tratamento de erros"""
     try:
         result = subprocess.run(
             cmd,
@@ -125,112 +42,112 @@ def _safe_subprocess_run(cmd, timeout=300, shell=False, capture_output=True, **k
         _log(f"Erro ao executar subprocesso: {e}", "ERRO")
         return None
 
-# ============================================================
-# VALIDAÇÃO DE INTEGRIDADE DE ARQUIVO
-# ============================================================
-def _validate_file_integrity(file_path, min_size=MIN_EXECUTABLE_SIZE, calculate_hash=False):
-    try:
-        if not os.path.exists(file_path):
-            return False, None
-        
-        file_size = os.path.getsize(file_path)
-        if file_size < min_size:
-            return False, None
-        
-        if calculate_hash:
-            sha256_hash = hashlib.sha256()
-            with open(file_path, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            return True, sha256_hash.hexdigest()
-        
-        return True, None
-    except Exception:
-        return False, None
-
-# ============================================================
-# HEALTH CHECK PÓS-INSTALAÇÃO
-# ============================================================
-def _post_install_health_check(app_name, executable_paths=None):
-    _log(f"Executando health check pós-instalação: {app_name}", "INFO")
+def check_chocolatey():
+    """Verifica se Chocolatey está instalado e funcional"""
+    _log("Verificando Chocolatey...", "INFO")
     
-    # Mapeamento de nomes de pacote Chocolatey para executáveis comuns
-    exe_aliases = {
-        "googlechrome": ["chrome.exe"],
-        "firefox": ["firefox.exe"],
-        "anydesk": ["anydesk.exe"],
-        "teamviewer": ["teamviewer.exe"],
-        "vlc": ["vlc.exe"],
-        "7zip": ["7z.exe", "7zFM.exe"],
-        "winrar": ["winrar.exe", "rar.exe"],
-        "notepadplusplus": ["notepad++.exe"],
-        "powertoys": ["PowerToys.exe"],
-        "adobereader": ["acrord32.exe", "AcroRd32.exe"],
-        "paint.net": ["paintdotnet.exe"],
-        "sharex": ["sharex.exe"],
-        "flameshot": ["flameshot.exe"],
-        "ditto": ["ditto.exe"],
-        "onlyoffice-desktopeditors": ["desktopeditors.exe"]
-    }
+    if shutil.which("choco") is None:
+        _log("Chocolatey não encontrado no PATH", "ERRO")
+        raise RuntimeError("Chocolatey não encontrado no PATH.")
     
-    # Usa caminhos fornecidos ou tenta mapear por alias
-    check_paths = list(executable_paths) if executable_paths else []
+    result = _safe_subprocess_run(["choco", "--version"], timeout=15)
     
-    if app_name in exe_aliases:
-        for alias in exe_aliases[app_name]:
-            # Tenta encontrar no PATH via where.exe
-            try:
-                result = _safe_subprocess_run(["where", alias], timeout=10)
-                if result and result.returncode == 0 and result.stdout.strip():
-                    exe_full = result.stdout.strip().splitlines()[0]
-                    if os.path.exists(exe_full):
-                        check_paths.append(exe_full)
-            except Exception:
-                pass
+    if not result:
+        _log("Falha ao executar choco --version", "ERRO")
+        raise RuntimeError("Erro ao executar Chocolatey.")
     
-    for exe_path in check_paths:
-        if os.path.exists(exe_path):
-            is_valid, _ = _validate_file_integrity(exe_path, min_size=MIN_EXECUTABLE_SIZE)
-            if is_valid:
-                _log(f"✓ Executável encontrado e válido: {exe_path}", "OK")
-                return True
+    if result.returncode != 0:
+        _log(f"Chocolatey retornou código {result.returncode}", "ERRO")
+        raise RuntimeError(f"Erro no Chocolatey. Saida: {result.stderr}")
     
-    try:
-        result = _safe_subprocess_run(["where", app_name], timeout=10)
-        if result and result.returncode == 0:
-            _log(f"✓ {app_name} encontrado no PATH", "OK")
-            return True
-    except Exception:
-        pass
-    
-    try:
-        result = _safe_subprocess_run(["sc", "query", app_name], timeout=10)
-        if result and "RUNNING" in result.stdout:
-            _log(f"✓ Serviço {app_name} está rodando", "OK")
-            return True
-    except Exception:
-        pass
-    
-    _log(f"Health check inconclusivo para {app_name}", "AVISO")
+    version = result.stdout.strip()
+    _log(f"Chocolatey OK: {version}", "OK")
     return True
 
-# ============================================================
-# INSTALAÇÃO VIA CHOCOLATEY
-# ============================================================
+def _install_anydesk(timeout=300):
+    """Instala AnyDesk com fallback para múltiplos métodos"""
+    _log("A instalar AnyDesk com redundância...", "INFO")
+    
+    # Tentativa 1: Chocolatey
+    _log("Tentativa 1/3: Instalando via Chocolatey...", "INFO")
+    try:
+        res = _safe_subprocess_run(
+            ["choco", "install", "anydesk", "-y", "--no-progress"],
+            timeout=timeout
+        )
+        
+        if res and res.returncode in (0, 1641, 3010, 1638):
+            _log("✓ AnyDesk instalado via Chocolatey", "OK")
+            return True
+        else:
+            _log(f"Chocolatey retornou código {res.returncode if res else 'None'}", "AVISO")
+    except Exception as e:
+        _log(f"Exceção no Chocolatey: {e}", "AVISO")
+    
+    # Tentativa 2: WinGet
+    _log("Tentativa 2/3: Instalando via WinGet...", "INFO")
+    try:
+        res = _safe_subprocess_run(
+            ["winget", "install", "--id", "AnyDeskSoftwareGmbH.AnyDesk", "--silent", 
+             "--accept-package-agreements", "--accept-source-agreements"],
+            timeout=timeout
+        )
+        
+        if res and res.returncode == 0:
+            _log("✓ AnyDesk instalado via WinGet", "OK")
+            return True
+        else:
+            _log(f"WinGet retornou código {res.returncode if res else 'None'}", "AVISO")
+    except Exception as e:
+        _log(f"Exceção no WinGet: {e}", "AVISO")
+    
+    # Tentativa 3: Download direto (fallback final)
+    _log("Tentativa 3/3: Download direto do site oficial...", "INFO")
+    try:
+        import urllib.request
+        
+        anydesk_url = "https://download.anydesk.com/AnyDesk.exe"
+        temp_path = os.path.join(os.environ.get("TEMP", r"C:\Windows\Temp"), "AnyDesk_Install.exe")
+        
+        _log(f"Baixando AnyDesk de {anydesk_url}...")
+        urllib.request.urlretrieve(anydesk_url, temp_path)
+        
+        # Validação de tamanho (deve ser maior que 1MB)
+        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 1048576:
+            _log("Executando instalador silencioso...", "INFO")
+            res = _safe_subprocess_run(
+                [temp_path, "--install", "--silent", "--start-with-win"],
+                timeout=timeout
+            )
+            
+            if res and res.returncode == 0:
+                _log("✓ AnyDesk instalado via download direto", "OK")
+                # Limpa arquivo temporário
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+                return True
+            else:
+                _log(f"Instalador retornou código {res.returncode if res else 'None'}", "AVISO")
+        else:
+            _log("Arquivo baixado é muito pequeno ou não existe", "ERRO")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    except Exception as e:
+        _log(f"Exceção no download direto: {e}", "AVISO")
+    
+    _log("✗ Falha absoluta ao instalar AnyDesk após 3 tentativas", "ERRO")
+    return False
+
 def _choco_install(app, timeout=300, max_retries=2):
+    """Instala pacote via Chocolatey com retry logic"""
     app = app.strip()
     if not app:
+        _log("Nome de pacote vazio", "ERRO")
         return False
     
     _log(f"A instalar pacote via Choco: {app}...", "INFO")
-    
-    if not _validate_admin_privileges():
-        return False
-    
-    if not _validate_internet_connectivity():
-        return False
-    
-    reboot_required = False
     
     for attempt in range(1, max_retries + 1):
         _log(f"Tentativa {attempt}/{max_retries} para {app}", "INFO")
@@ -241,123 +158,140 @@ def _choco_install(app, timeout=300, max_retries=2):
                 timeout=timeout
             )
             
-            if r and r.returncode in (0, 1641, 1638):
+            if r and r.returncode in (0, 1641, 3010, 1638):
                 _log(f"✓ Pacote {app} instalado/verificado com sucesso", "OK")
-                _post_install_health_check(app)
-                return True
-            elif r and r.returncode == 3010:
-                _log(f"✓ Pacote {app} instalado com sucesso. REINÍCIO NECESSÁRIO (3010).", "OK")
-                reboot_required = True
-                _post_install_health_check(app)
                 return True
             else:
                 exit_code = r.returncode if r else 'None'
                 _log(f"Erro Choco {app}: Exit Code {exit_code}", "AVISO")
                 
                 if attempt < max_retries:
+                    _log(f"Aguardando 5 segundos antes de nova tentativa...", "INFO")
                     time.sleep(5)
         except Exception as e:
             _log(f"Exceção Choco {app}: {e}", "AVISO")
+            
             if attempt < max_retries:
+                _log(f"Aguardando 5 segundos antes de nova tentativa...", "INFO")
                 time.sleep(5)
     
     _log(f"✗ Falha ao instalar {app} após {max_retries} tentativas", "ERRO")
     return False
 
-# ============================================================
-# INSTALAÇÃO DE DRIVERS DO FABRICANTE (COM FALLBACK INTELIGENTE)
-# ============================================================
+def install_office_suite(choice):
+    """Instala suíte Office conforme escolha do usuário"""
+    _log(f"Instalando Office: {choice}", "INFO")
+    
+    if choice == "office2021":
+        _log("A instalar Office 2021 via ODT...", "INFO")
+        d = os.path.dirname(os.path.abspath(__file__))
+        exe = os.path.join(d, "resources", "setup.exe")
+        xml = os.path.join(d, "resources", "configuration.xml")
+        
+        # Validação de arquivos
+        if not os.path.exists(exe):
+            _log(f"Arquivo não encontrado: {exe}", "ERRO")
+            return False
+        
+        if not os.path.exists(xml):
+            _log(f"Arquivo não encontrado: {xml}", "ERRO")
+            return False
+        
+        # Validação de tamanho
+        exe_size = os.path.getsize(exe)
+        if exe_size < 1048576:  # Mínimo 1MB
+            _log(f"Arquivo setup.exe muito pequeno ({exe_size} bytes)", "ERRO")
+            return False
+        
+        _log(f"Executando setup.exe com configuration.xml (pode demorar até 30 minutos)...", "INFO")
+        try:
+            res = _safe_subprocess_run([exe, "/configure", xml], timeout=1800)
+            
+            if res and res.returncode == 0:
+                _log("✓ Office 2021 instalado com sucesso", "OK")
+                return True
+            else:
+                exit_code = res.returncode if res else 'None'
+                _log(f"Office retornou código {exit_code}", "ERRO")
+                return False
+        except Exception as e:
+            _log(f"Exceção ao instalar Office: {e}", "ERRO")
+            return False
+            
+    elif choice == "onlyoffice":
+        _log("Instalando OnlyOffice via Chocolatey...", "INFO")
+        if _choco_install("onlyoffice-desktopeditors", timeout=600):
+            _log("✓ OnlyOffice instalado com sucesso", "OK")
+            return True
+        _log("✗ Falha ao instalar OnlyOffice", "ERRO")
+        return False
+    
+    _log(f"Escolha de Office inválida: {choice}", "AVISO")
+    return True
+
+def _get_motherboard_manufacturer():
+    """Obtém fabricante da placa-mãe via PowerShell"""
+    _log("Detectando fabricante do hardware...", "INFO")
+    try:
+        result = _safe_subprocess_run(
+            ['powershell', '-Command', '(Get-CimInstance Win32_ComputerSystem).Manufacturer'],
+            shell=True,
+            timeout=15
+        )
+        
+        if result and result.stdout:
+            manufacturer = result.stdout.strip().lower()
+            _log(f"Fabricante detectado: {manufacturer}", "OK")
+            return manufacturer
+        else:
+            _log("Falha ao detectar fabricante", "AVISO")
+            return "desconhecido"
+    except Exception as e:
+        _log(f"Erro ao detectar fabricante: {e}", "AVISO")
+        return "desconhecido"
+
 def install_manufacturer_drivers(settings_dict):
-    """Instala drivers oficiais do fabricante com estratégia de fallback"""
+    """Instala drivers oficiais do fabricante (Dell/HP/Lenovo)"""
     _log("Instalando assistente de drivers do fabricante...", "INFO")
-    
-    if not _validate_admin_privileges():
-        return False
-    
-    if not _validate_disk_space(500):
-        return False
     
     manuf = _get_motherboard_manufacturer()
     _log(f"Fabricante detectado: {manuf}", "INFO")
     
     driver_pkgs = settings_dict.get("drivers", {})
     
-    # Estratégia para DELL
+    # Determina pacote baseado no fabricante
+    target_pkg = None
     if "dell" in manuf:
         target_pkg = driver_pkgs.get("dell")
         _log("Detectado Dell, usando pacote Dell", "INFO")
-        if _choco_install(target_pkg, timeout=600):
-            _log(f"✓ {target_pkg} instalado com sucesso", "OK")
-            return True
-        else:
-            _log(f"⚠ Falha ao instalar {target_pkg}. O Windows Update fornecerá os drivers.", "AVISO")
-            return True  # Não bloqueia o fluxo
-            
-    # Estratégia para LENOVO
     elif "lenovo" in manuf:
         target_pkg = driver_pkgs.get("lenovo")
         _log("Detectado Lenovo, usando pacote Lenovo", "INFO")
-        if _choco_install(target_pkg, timeout=600):
-            _log(f"✓ {target_pkg} instalado com sucesso", "OK")
-            return True
-        else:
-            _log(f"⚠ Falha ao instalar {target_pkg}. O Windows Update fornecerá os drivers.", "AVISO")
-            return True
-            
-    # Estratégia para HP (COM FALLBACK INTELIGENTE)
     elif "hp" in manuf or "hewlett" in manuf:
-        _log("Detectado HP, aplicando estratégia de instalação inteligente...", "INFO")
-        target_pkg = driver_pkgs.get("hp", "hp-support-assistant")
-        fallback_pkg = "hpia"  # HP Image Assistant — pacote real e estável no Chocolatey
-        
-        # 1. Tenta o pacote principal
-        if _choco_install(target_pkg, timeout=600):
-            _log(f"✓ {target_pkg} instalado com sucesso", "OK")
-            return True
-        else:
-            _log(f"⚠ {target_pkg} falhou (comum em ferramentas de fabricante). Tentando alternativa moderna...", "AVISO")
-            # 2. Tenta o fallback
-            if _choco_install(fallback_pkg, timeout=600):
-                _log(f"✓ {fallback_pkg} instalado com sucesso (Alternativa HP)", "OK")
-                return True
-            else:
-                # 3. Se tudo falhar, degrada graciosamente. O Windows Update é o fallback final.
-                _log(f"⚠ Ferramentas de driver HP não puderam ser instaladas via Choco. O Windows Update cuidará disso.", "AVISO")
-                return True  # Retorna True para não bloquear o fluxo
-                
+        target_pkg = driver_pkgs.get("hp")
+        _log("Detectado HP, usando pacote HP", "INFO")
     else:
-        _log(f"Fabricante '{manuf}' não possui pacote específico configurado. Pulando...", "AVISO")
-        return True  # Não é erro, apenas não há pacote específico
+        _log(f"Fabricante não suportado: {manuf}", "AVISO")
+        return False
+    
+    if not target_pkg:
+        _log("Pacote de drivers não configurado no settings.json", "ERRO")
+        return False
+    
+    _log(f"Instalando assistente oficial: {target_pkg}...", "INFO")
+    
+    if _choco_install(target_pkg, timeout=600):
+        _log(f"✓ {target_pkg} instalado com sucesso", "OK")
+        return True
+    else:
+        _log(f"✗ Falha ao instalar {target_pkg}", "ERRO")
+        return False
 
-def _get_motherboard_manufacturer():
-    """Detecta fabricante da placa-mãe via Win32_BaseBoard (mais preciso que Win32_ComputerSystem)"""
-    try:
-        result = _safe_subprocess_run(
-            ['powershell', '-NoProfile', '-Command', '(Get-CimInstance Win32_BaseBoard).Manufacturer'],
-            timeout=15
-        )
-        if result and result.stdout:
-            return result.stdout.strip().lower()
-        return "desconhecido"
-    except Exception:
-        return "desconhecido"
-
-# ============================================================
-# WINDOWS UPDATE
-# ============================================================
 def force_windows_update_drivers():
+    """Força atualização de drivers via Windows Update"""
     _log("=" * 60, "INFO")
-    _log("ACESSANDO AO WINDOWS UPDATE... Pode demorar alguns minutos.", "INFO")
+    _log("ACEDENDO AO WINDOWS UPDATE... Pode demorar alguns minutos.", "INFO")
     _log("=" * 60, "INFO")
-    
-    if not _validate_admin_privileges():
-        return False
-    
-    if not _validate_internet_connectivity():
-        return False
-    
-    if not _validate_disk_space(2000):
-        return False
     
     ps_script = """
     $ErrorActionPreference = 'SilentlyContinue'
@@ -377,74 +311,25 @@ def force_windows_update_drivers():
     
     try:
         _log("Executando script PowerShell para Windows Update...", "INFO")
+        _log("Este processo pode demorar até 30 minutos dependendo da quantidade de atualizações", "INFO")
+        
         res = _safe_subprocess_run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
-            timeout=INSTALLATION_TIMEOUT
+            timeout=1800  # 30 minutos
         )
         
         if res and res.returncode == 0:
             _log("✓ Atualizações e Drivers instalados com sucesso via Microsoft", "OK")
-            return True
-        elif res and res.returncode == 3010:
-            _log("✓ Atualizações instaladas. REINÍCIO NECESSÁRIO (3010).", "OK")
+            if res.stdout:
+                _log(f"Saída: {res.stdout[:200]}...", "INFO")
             return True
         else:
-            _log(f"Windows Update retornou código {res.returncode if res else 'None'}", "AVISO")
-            return True  # Mesmo com código diferente de 0, pode ter instalado parcialmente
+            exit_code = res.returncode if res else 'None'
+            _log(f"Windows Update retornou código {exit_code}", "AVISO")
+            if res and res.stderr:
+                _log(f"Erros: {res.stderr[:200]}...", "AVISO")
+            # Mesmo com código diferente de 0, pode ter instalado parcialmente
+            return True
     except Exception as e:
         _log(f"Erro na rotina de Windows Update: {e}", "ERRO")
         return False
-
-# ============================================================
-# INSTALAÇÃO DO OFFICE
-# ============================================================
-def install_office_suite(choice):
-    _log(f"Instalando Office: {choice}", "INFO")
-    
-    if not _validate_admin_privileges():
-        return False
-    
-    if choice == "office2021":
-        if not _validate_disk_space(5000):
-            return False
-        
-        d = os.path.dirname(os.path.abspath(__file__))
-        exe = os.path.join(d, "resources", "setup.exe")
-        xml = os.path.join(d, "resources", "configuration.xml")
-        
-        if not os.path.exists(exe) or not os.path.exists(xml):
-            _log("Arquivos de instalação do Office não encontrados", "ERRO")
-            return False
-        
-        # Valida integridade básica dos arquivos
-        exe_valid, _ = _validate_file_integrity(exe, min_size=10485760)  # 10MB mínimo
-        if not exe_valid:
-            _log("Arquivo setup.exe do Office parece corrompido ou incompleto", "ERRO")
-            return False
-        
-        try:
-            res = _safe_subprocess_run([exe, "/configure", xml], timeout=INSTALLATION_TIMEOUT)
-            if res and res.returncode == 0:
-                _log("✓ Office 2021 instalado com sucesso", "OK")
-                return True
-            elif res and res.returncode == 3010:
-                _log("✓ Office 2021 instalado. REINÍCIO NECESSÁRIO (3010).", "OK")
-                return True
-            else:
-                _log(f"Office retornou código {res.returncode if res else 'None'}", "ERRO")
-                return False
-        except Exception as e:
-            _log(f"Exceção ao instalar Office: {e}", "ERRO")
-            return False
-            
-    elif choice == "onlyoffice":
-        if not _validate_disk_space(1000):
-            return False
-        
-        if _choco_install("onlyoffice-desktopeditors", timeout=600):
-            _log("✓ OnlyOffice instalado com sucesso", "OK")
-            return True
-        _log("✗ Falha ao instalar OnlyOffice", "ERRO")
-        return False
-    
-    return True
