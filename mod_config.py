@@ -13,6 +13,9 @@ import traceback
 from pathlib import Path
 from datetime import datetime
 
+# Constante para diretório de scripts (centralização)
+SCRIPT_DIR = r"C:\Scripts"
+
 # Configuração de encoding para evitar crashes em caracteres especiais
 if sys.platform == "win32":
     try:
@@ -162,7 +165,7 @@ def setup_self_healing():
     """Instala o sistema de auto-cura (watchdog)"""
     _log("=" * 60, "INFO")
     _log("INSTALANDO CAO DE GUARDA (SELF-HEALING)...", "INFO")
-    script_dir = r"C:\Scripts"
+    script_dir = SCRIPT_DIR
     os.makedirs(script_dir, exist_ok=True)
     
     ps_path = os.path.join(script_dir, "cpfani_watchdog.ps1")
@@ -451,8 +454,10 @@ def apply_cpfani_branding(bar_alignment):
         try:
             sid = _get_active_user_sid()
             if sid:
+                # CORREÇÃO: raw string para evitar problemas com barras invertidas
+                reg_path = rf"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
                 _safe_subprocess_run(
-                    ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\Windows\CurrentVersion\\Explorer\\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", str(val), "/f"],
+                    ["reg", "add", reg_path, "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", str(val), "/f"],
                     timeout=10
                 )
                 _log(f"✓ Barra de tarefas alinhada: {bar_alignment}", "OK")
@@ -483,8 +488,9 @@ def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
     
     if disable_hello:
         disable_windows_hello_redundant()
-    
-    remove_widgets_taskbar()
+        # A remoção de widgets agora é condicional, vinculada à desativação do Hello
+        remove_widgets_taskbar()
+    # Se disable_hello for False, não remove widgets (comportamento antigo removido)
 
 def _get_image_path(local_path, urls, temp_name):
     """Obtém caminho de imagem com validação de tamanho"""
@@ -696,7 +702,7 @@ def generate_full_snapshot():
     _log("Gerando snapshot de hardware...", "INFO")
     hw = _get_hardware_info()
     pc_name = hw.get("Nome_Computador", "UNKNOWN")
-    log_path = Path(f"C:/Scripts/CPFANI_Hardware_Snapshot_{pc_name}.txt")
+    log_path = Path(f"{SCRIPT_DIR}/CPFANI_Hardware_Snapshot_{pc_name}.txt")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     
     try:
