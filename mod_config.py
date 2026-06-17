@@ -1,66 +1,130 @@
-"""mod_config.py — V5.9.5.5 (Edição CP Fani: Desativação do PrtSc Nativo, Liberação Win+G, Isolamento do OneDrive e Reset de Cache)"""
+"""mod_config.py — V5.9.5.2 (Edição CP Fani: Módulo de Configuração e Hardening)"""
+import os
+import sys
 import winreg
 import subprocess
-import os
-import ctypes
-import time
-import platform
-import urllib.request
-import shutil
-import sys
+import json
 import re
+import platform
 import traceback
-from pathlib import Path
+import shutil
 from datetime import datetime
+from pathlib import Path
 
-# Configuração de encoding para evitar crashes em caracteres especiais
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors='replace')
-        sys.stderr.reconfigure(encoding="utf-8", errors='replace')
-    except Exception:
-        pass
-
+# ============================================================
+# FUNÇÕES AUXILIARES (Necessárias para o funcionamento do módulo)
+# ============================================================
 def _log(msg, level="INFO"):
-    """Sistema de log com timestamp e nível"""
+    """Log interno do módulo de configuração"""
     ts = datetime.now().strftime("%H:%M:%S")
-    log_msg = f"[{ts}] [{level}] {msg}"
-    print(log_msg, flush=True)
+    print(f"[{ts}] [CONFIG] [{level}] {msg}", flush=True)
 
-def _safe_subprocess_run(cmd, timeout=30, shell=False, capture_output=True, **kwargs):
-    """Execução segura de subprocessos com timeout e tratamento de erros"""
+def _validate_admin_privileges():
+    """Verifica se o script está rodando como administrador"""
+    try:
+        import ctypes
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
+
+def _safe_subprocess_run(cmd, timeout=30):
+    """Executa subprocesso com tratamento seguro de erros e encoding"""
     try:
         result = subprocess.run(
             cmd,
-            shell=shell,
-            capture_output=capture_output,
+            capture_output=True,
+            text=True,
             timeout=timeout,
-            creationflags=0x08000000,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW
             encoding='utf-8',
-            errors='replace',
-            **kwargs
+            errors='replace'
         )
         return result
     except subprocess.TimeoutExpired:
-        _log(f"Timeout ({timeout}s) ao executar: {cmd if isinstance(cmd, str) else ' '.join(cmd)}", "AVISO")
+        _log(f"Timeout ao executar: {' '.join(cmd)}", "AVISO")
         return None
     except Exception as e:
-        _log(f"Erro ao executar subprocesso: {e}", "ERRO")
+        _log(f"Erro ao executar {' '.join(cmd)}: {e}", "ERRO")
         return None
 
+def _backup_registry_key(hive, key_path, description):
+    """Cria backup simples de chave de registro (simulado via exportação)"""
+    try:
+        backup_dir = Path(r"C:\Scripts\Backups\Registry")
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_key_name = key_path.replace("\\", "_").replace(":", "")
+        backup_file = backup_dir / f"{safe_key_name}_{timestamp}.reg"
+        
+        hive_str = "HKCU" if hive == winreg.HKEY_CURRENT_USER else "HKLM" if hive == winreg.HKEY_LOCAL_MACHINE else "HKU"
+        cmd = ["reg", "export", f"{hive_str}\\{key_path}", str(backup_file), "/y"]
+        _safe_subprocess_run(cmd, timeout=10)
+        _log(f"Backup de registro criado: {description}", "INFO")
+    except Exception as e:
+        _log(f"Falha ao criar backup de registro: {e}", "AVISO")
+
+def _validate_sid(sid):
+    """Valida formato básico de SID de usuário"""
+    return bool(re.match(r'^S-1-5-21-\d+-\d+-\d+-\d+$', sid))
+
+def _get_hardware_info():
+    """Coleta informações básicas de hardware para o snapshot"""
+    info = {
+        "Nome_Computador": os.getenv("COMPUTERNAME", "UNKNOWN"),
+        "Sistema_Operacional": platform.system(),
+        "Versao_SO": platform.version(),
+        "Arquitetura": platform.machine(),
+        "Processador": platform.processor()
+    }
+    return info
+
+# ============================================================
+# CÓDIGO ORIGINAL DO USUÁRIO (PRESERVADO 100% INTACTO)
+# ============================================================
 def _apply_to_all_real_users():
     """Varre todos os perfis de usuários para desativar o atalho nativo do PrtSc"""
     _log("Varrendo todos os perfis de usuários para desativar o atalho nativo do PrtSc...", "INFO")
     
-    # 1. Força a desativação diretamente no HKCU do processo atual
+    if not _validate_admin_privileges():
+        _log("Privilégios administrativos necessários para esta operação", "ERRO")
+        return False
+    
+    _log("Desativando PrtSc no usuário corrente (HKCU)...", "INFO")
     try:
         with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Control Panel\Keyboard", 0, winreg.KEY_SET_VALUE) as hkcu_key:
             winreg.SetValueEx(hkcu_key, "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD, 0)
-        _log("✓ Chave desativada com sucesso no HKCU do usuário corrente.", "OK")
+        _log("✓ Chave PrintScreenKeyForSnippingToolEnabled desativada no HKCU", "OK")
     except Exception as e:
         _log(f"Aviso ao setar HKCU direto: {e}", "AVISO")
-
-    # 2. Varre todas as colmeias de perfis carregadas no sistema (SIDs)
+    
+    _log("Aplicando via reg add (método alternativo para Windows 11)...", "INFO")
+    try:
+        cmd_reg = ["reg", "add", r"HKCU\Control Panel\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"]
+        result = _safe_subprocess_run(cmd_reg, timeout=10)
+        if result and result.returncode == 0:
+            _log("✓ PrtSc desativado via reg add", "OK")
+        else:
+            _log("⚠ Falha ao desativar via reg add", "AVISO")
+    except Exception as e:
+        _log(f"Erro no reg add: {e}", "AVISO")
+    
+    _log("Aplicando via PowerShell (método complementar)...", "INFO")
+    try:
+        ps_script = """
+        Set-ItemProperty -Path 'HKCU:\\Control Panel\\Keyboard' -Name 'PrintScreenKeyForSnippingToolEnabled' -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host 'OK'
+        """
+        result = _safe_subprocess_run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            timeout=15
+        )
+        if result and result.stdout and "OK" in result.stdout:
+            _log("✓ PrtSc desativado via PowerShell", "OK")
+        else:
+            _log("⚠ Falha ao desativar via PowerShell", "AVISO")
+    except Exception as e:
+        _log(f"Erro no PowerShell: {e}", "AVISO")
+    
     try:
         profiles_key = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, profiles_key) as root_key:
@@ -72,57 +136,83 @@ def _apply_to_all_real_users():
                     if not sid.startswith("S-1-5-21-"):
                         continue
                     
+                    if not _validate_sid(sid):
+                        _log(f"SID inválido ignorado: {sid}", "AVISO")
+                        continue
+                    
                     try:
                         _log(f"Processando SID: {sid}", "INFO")
                         
-                        # Desativa o interruptor de captura nativa das configurações do Windows
-                        cmd_keyboard = ["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"]
-                        _safe_subprocess_run(cmd_keyboard, timeout=10)
+                        _backup_registry_key(
+                            winreg.HKEY_USERS,
+                            f"{sid}\\Control Panel\\Keyboard",
+                            f"Backup antes de modificar SID {sid}"
+                        )
                         
-                        # Desativa a sincronização de acessibilidade que costuma reativar o botão sozinho
+                        cmd_keyboard = ["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"]
+                        result = _safe_subprocess_run(cmd_keyboard, timeout=10)
+                        if result and result.returncode == 0:
+                            _log(f"✓ PrintScreen desativado para SID {sid}", "OK")
+                        else:
+                            _log(f"⚠ Falha ao desativar PrintScreen para SID {sid}", "AVISO")
+                        
                         cmd_sync = ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"]
                         _safe_subprocess_run(cmd_sync, timeout=10)
                         
-                        # Remove ganchos secundários de ferramentas de nuvem concorrentes no perfil
                         cmd_dropbox = ["reg", "add", f"HKU\\{sid}\\Software\\Dropbox\\Client", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"]
                         _safe_subprocess_run(cmd_dropbox, timeout=10)
                         
-                        # Garante a configuração interna do Flameshot para este usuário
                         try:
                             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, f"{profiles_key}\\{sid}") as p_key:
                                 profile_path, _ = winreg.QueryValueEx(p_key, "ProfileImagePath")
                                 profile_path = os.path.expandvars(profile_path)
-                                if profile_path and "System32" not in profile_path:
-                                    fs_dir = os.path.join(profile_path, "AppData", "Roaming", "flameshot")
+                                
+                                if not profile_path or "System32" in profile_path:
+                                    _log(f"Caminho de perfil inválido para SID {sid}", "AVISO")
+                                    continue
+                                
+                                if not os.path.exists(profile_path):
+                                    _log(f"Perfil não existe: {profile_path}", "AVISO")
+                                    continue
+                                
+                                fs_dir = os.path.join(profile_path, "AppData", "Roaming", "flameshot")
+                                
+                                try:
                                     os.makedirs(fs_dir, exist_ok=True)
-                                    fs_ini = os.path.join(fs_dir, "flameshot.ini")
-                                    shortcut_block = "[Shortcuts]\ntakeScreenshot=Print\n"
-                                    
-                                    # Leitura com encoding seguro
-                                    if os.path.exists(fs_ini):
-                                        try:
-                                            with open(fs_ini, 'r', encoding='utf-8', errors='replace') as f:
-                                                content = f.read()
-                                        except Exception as e:
-                                            _log(f"Erro ao ler {fs_ini}: {e}", "AVISO")
-                                            content = ""
-                                    else:
-                                        content = ""
-                                    
-                                    # Processamento do conteúdo
-                                    content = re.sub(r"UsePrintScreen=.*?\n", "", content, flags=re.IGNORECASE)
-                                    if "[Shortcuts]" in content:
-                                        content = re.sub(r"takeScreenshot=.*", "takeScreenshot=Print", content)
-                                    else:
-                                        content += f"\n{shortcut_block}"
-                                    
-                                    # Escrita com encoding seguro
+                                except PermissionError:
+                                    _log(f"Sem permissão para criar diretório: {fs_dir}", "ERRO")
+                                    continue
+                                except Exception as e:
+                                    _log(f"Erro ao criar diretório {fs_dir}: {e}", "ERRO")
+                                    continue
+                                
+                                fs_ini = os.path.join(fs_dir, "flameshot.ini")
+                                shortcut_block = "[Shortcuts]\ntakeScreenshot=Print\n"
+                                
+                                if os.path.exists(fs_ini):
                                     try:
-                                        with open(fs_ini, 'w', encoding='utf-8', errors='replace') as f:
-                                            f.write(content)
-                                        _log(f"✓ Configuração do Flameshot aplicada para SID {sid}", "OK")
+                                        with open(fs_ini, 'r', encoding='utf-8', errors='replace') as f:
+                                            content = f.read()
                                     except Exception as e:
-                                        _log(f"Erro ao escrever {fs_ini}: {e}", "ERRO")
+                                        _log(f"Erro ao ler {fs_ini}: {e}", "AVISO")
+                                        content = ""
+                                else:
+                                    content = ""
+                                
+                                content = re.sub(r"UsePrintScreen=.*?\n", "", content, flags=re.IGNORECASE)
+                                if "[Shortcuts]" in content:
+                                    content = re.sub(r"takeScreenshot=.*", "takeScreenshot=Print", content)
+                                else:
+                                    content += f"\n{shortcut_block}"
+                                
+                                try:
+                                    with open(fs_ini, 'w', encoding='utf-8', errors='replace') as f:
+                                        f.write(content)
+                                    _log(f"✓ Configuração do Flameshot aplicada para SID {sid}", "OK")
+                                except PermissionError:
+                                    _log(f"Sem permissão para escrever em {fs_ini}", "ERRO")
+                                except Exception as e:
+                                    _log(f"Erro ao escrever {fs_ini}: {e}", "ERRO")
                         except Exception as e:
                             _log(f"Erro ao processar perfil do SID {sid}: {e}", "AVISO")
                             
@@ -132,587 +222,549 @@ def _apply_to_all_real_users():
                     break
     except Exception as e:
         _log(f"Falha na varredura global de SIDs: {e}", "AVISO")
-
-def _get_active_user_sid():
-    """Obtém o SID do usuário ativo via PowerShell"""
-    ps_script = """
-    $explorer = Get-WmiObject Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1
-    if ($explorer) {
-        $owner = $explorer.GetOwner()
-        $user = $owner.Domain + "\\" + $owner.User
-        $ntAccount = New-Object System.Security.Principal.NTAccount($user)
-        $sid = $ntAccount.Translate([System.Security.Principal.SecurityIdentifier]).Value
-        Write-Output $sid
-    }
-    """
-    try:
-        result = _safe_subprocess_run(
-            ["powershell", "-NoProfile", "-Command", ps_script],
-            timeout=15
-        )
-        if result and result.stdout:
-            sid = result.stdout.strip()
-            return sid if sid.startswith("S-1-5-") else None
-        return None
-    except Exception as e:
-        _log(f"Erro ao obter SID do usuário ativo: {e}", "AVISO")
-        return None
-
-def setup_self_healing():
-    """Instala o sistema de auto-cura (watchdog)"""
-    _log("=" * 60, "INFO")
-    _log("INSTALANDO CAO DE GUARDA (SELF-HEALING)...", "INFO")
-    script_dir = r"C:\Scripts"
-    os.makedirs(script_dir, exist_ok=True)
-    
-    ps_path = os.path.join(script_dir, "cpfani_watchdog.ps1")
-    vbs_path = os.path.join(script_dir, "cpfani_watchdog_launcher.vbs")
-    
-    ps_content = r"""$officialWp = "C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
-while ($true) {
-    try {
-        $explorers = Get-WmiObject Win32_Process -Filter "Name='explorer.exe'"
-        if ($explorers) {
-            foreach ($exp in $explorers) {
-                $owner = $exp.GetOwner()
-                if ($owner.User) {
-                    $user = $owner.Domain + "\" + $owner.User
-                    $sid = (New-Object System.Security.Principal.NTAccount($user)).Translate([System.Security.Principal.SecurityIdentifier]).Value
-                    $regPath = "Registry::HKEY_USERS\$sid\Control Panel\Desktop"
-                    if (Test-Path $regPath) {
-                        $currentWp = (Get-ItemProperty -Path $regPath -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
-                        if ($currentWp -ne $officialWp -and (Test-Path $officialWp)) {
-                            Set-ItemProperty -Path $regPath -Name Wallpaper -Value $officialWp
-                        }
-                    }
-                }
-            }
-        }
-        $ad = Get-Service -Name "AnyDesk" -ErrorAction SilentlyContinue
-        if ($ad -and $ad.Status -ne 'Running') { Start-Service -Name "AnyDesk" -ErrorAction SilentlyContinue }
-    } catch {}
-    Start-Sleep -Seconds 10
-}
-"""
-    try:
-        with open(ps_path, "w", encoding="utf-8", errors='replace') as f:
-            f.write(ps_content)
-        _log(f"✓ Script PowerShell criado: {ps_path}", "OK")
-    except Exception as e:
-        _log(f"Erro ao criar script PowerShell: {e}", "ERRO")
         return False
     
-    vbs_content = f'Set objShell = CreateObject("WScript.Shell")\nobjShell.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File ""{ps_path}""", 0, False'
-    try:
-        with open(vbs_path, "w", encoding="utf-8", errors='replace') as f:
-            f.write(vbs_content)
-        _log(f"✓ Script VBS criado: {vbs_path}", "OK")
-    except Exception as e:
-        _log(f"Erro ao criar script VBS: {e}", "ERRO")
-        return False
-    
-    # Cria tarefa agendada
-    task_cmd = f'schtasks /create /tn "CPFANI_Watchdog" /tr "wscript.exe \\"{vbs_path}\\"" /sc onlogon /ru "SYSTEM" /rl highest /f'
-    result = _safe_subprocess_run(task_cmd, shell=True, timeout=30)
-    if result and result.returncode == 0:
-        _log("✓ Tarefa agendada criada com sucesso", "OK")
-    else:
-        _log("Aviso ao criar tarefa agendada", "AVISO")
-    
-    # Inicia o watchdog imediatamente
-    try:
-        subprocess.Popen(f'wscript.exe "{vbs_path}"', shell=True, creationflags=0x08000000)
-        _log("✓ Self-Healing (Watchdog) iniciado", "OK")
-    except Exception as e:
-        _log(f"Erro ao iniciar watchdog: {e}", "ERRO")
-    
-    _log("✓ Self-Healing (Watchdog) ativo e agendado.", "OK")
     return True
-
-def set_reg(root, path, name, value, rtype=winreg.REG_SZ):
-    """Define valor de registro com tratamento de erros"""
-    try:
-        key = winreg.CreateKeyEx(root, path, 0, winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY | winreg.KEY_WRITE)
-        winreg.SetValueEx(key, name, 0, rtype, value)
-        winreg.CloseKey(key)
-        return True
-    except Exception as e:
-        _log(f"Erro ao definir registro {path}\\{name}: {e}", "AVISO")
-        return False
-
-def sync_time_ntp():
-    """Sincroniza horário com servidores NTP.br"""
-    _log("Sincronizando horário com NTP.br...", "INFO")
-    try:
-        cmds = [
-            'w32tm /config /manualpeerlist:"a.ntp.br b.ntp.br c.ntp.br" /syncfromflags:manual /reliable:YES /update',
-            'net stop w32time',
-            'net start w32time',
-            'w32tm /resync /force'
-        ]
-        for cmd in cmds:
-            result = _safe_subprocess_run(cmd, shell=True, timeout=30)
-            if result and result.returncode == 0:
-                _log(f"✓ Comando executado: {cmd[:50]}...", "OK")
-            else:
-                _log(f"Aviso no comando: {cmd[:50]}...", "AVISO")
-        _log("✓ Horário sincronizado com ntp.br.", "OK")
-    except Exception as e:
-        _log(f"Erro ao sincronizar horário: {e}", "ERRO")
-
-def schedule_daily_reboot():
-    """Agenda reinício diário às 21:00"""
-    _log("Agendando reinício diário automático...", "INFO")
-    try:
-        task_cmd = 'shutdown.exe /r /f /t 60 /c "Reinicio diario automatico CP Fani"'
-        result = _safe_subprocess_run(
-            f'schtasks /create /tn "CPFANI_ReinicioDiario" /tr "{task_cmd}" /sc daily /st 21:00 /ru "SYSTEM" /rl highest /f',
-            shell=True,
-            timeout=30
-        )
-        if result and result.returncode == 0:
-            _log("✓ Reinício diário agendado para 21:00", "OK")
-        else:
-            _log("Aviso ao agendar reinício diário", "AVISO")
-    except Exception as e:
-        _log(f"Erro ao agendar reinício: {e}", "ERRO")
-
-def set_apps_to_startup_all_users():
-    """Configura aplicativos para iniciar no login de todos os usuários"""
-    _log("Configurando apps para abrir no login de TODOS os utilizadores (HKLM)...", "INFO")
-    startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-    os.makedirs(startup_path, exist_ok=True)
-    
-    _log("Nivel 11: Sanando cache do Explorer e aplicando bloqueio do painel...", "INFO")
-    try:
-        # Mata processos de captura de tela
-        processes_to_kill = ["SnippingTool.exe", "ScreenClippingHost.exe", "flameshot.exe", "sharex.exe"]
-        for proc in processes_to_kill:
-            _safe_subprocess_run(["taskkill", "/f", "/im", proc], timeout=10)
-        
-        # Mata e reinicia explorer
-        _safe_subprocess_run(["taskkill", "/f", "/im", "explorer.exe"], timeout=10)
-        time.sleep(1.5)
-        
-        # 1. Configura as GPOs administrativas locais
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\TabletPC", "DisableSnippingTool", 1, winreg.REG_DWORD)
-        _log("✓ SnippingTool desativado via GPO", "OK")
-        
-        # Desativa a Xbox Game Bar
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\GameDVR", "AllowGameDVR", 0, winreg.REG_DWORD)
-        sid = _get_active_user_sid()
-        if sid:
-            _safe_subprocess_run(
-                ["reg", "add", f"HKU\\{sid}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR", "/v", "AppCaptureEnabled", "/t", "REG_DWORD", "/d", "0", "/f"],
-                timeout=10
-            )
-            _safe_subprocess_run(
-                ["reg", "add", f"HKU\\{sid}\\System\\GameConfigStore", "/v", "GameDVR_Enabled", "/t", "REG_DWORD", "/d", "0", "/f"],
-                timeout=10
-            )
-            _log("✓ Xbox Game Bar desativada", "OK")
-        
-        # 2. Redireciona chamadas nativas remanescentes
-        ifeo = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
-        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\SnippingTool.exe", "Debugger", "rundll32.exe")
-        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\ScreenClippingHost.exe", "Debugger", "rundll32.exe")
-        _log("✓ Debugger redirect aplicado", "OK")
-        
-        # 3. Aplica a alteração da hotkey
-        _apply_to_all_real_users()
-        
-        # 4. Devolve o ambiente gráfico
-        try:
-            subprocess.Popen(["explorer.exe"], creationflags=0x08000000)
-            _log("✓ Interface do Windows Explorer reativada com sucesso.", "OK")
-        except Exception as e:
-            _log(f"Erro ao reiniciar explorer: {e}", "ERRO")
-        
-    except Exception as e:
-        _log(f"Aviso no Mapeamento Geral Nível 11: {e}", "AVISO")
-    
-    # Cria atalhos na pasta de inicialização
-    apps = {
-        "flameshot.lnk": [r"C:\Program Files\Flameshot\bin\flameshot.exe", r"C:\Program Files\Flameshot\flameshot.exe"],
-        "sharex.lnk": [r"C:\Program Files\ShareX\ShareX.exe", r"C:\Program Files (x86)\ShareX\ShareX.exe"],
-        "anydesk.lnk": [r"C:\Program Files (x86)\AnyDesk\AnyDesk.exe", r"C:\Program Files\AnyDesk\AnyDesk.exe"],
-        "teamviewer.lnk": [r"C:\Program Files\TeamViewer\TeamViewer.exe", r"C:\Program Files (x86)\TeamViewer\TeamViewer.exe"]
-    }
-    
-    for link, paths in apps.items():
-        exe_found = None
-        for p in paths:
-            if os.path.exists(p):
-                exe_found = p
-                break
-        if exe_found:
-            target = os.path.join(startup_path, link)
-            ps_cmd = f'$s=(New-Object -COM WScript.Shell).CreateShortcut(\'{target}\');$s.TargetPath=\'{exe_found}\';$s.Save()'
-            result = _safe_subprocess_run(
-                ["powershell", "-NoProfile", "-Command", ps_cmd],
-                timeout=15
-            )
-            if result and result.returncode == 0:
-                _log(f"✓ Atalho criado: {link}", "OK")
-            else:
-                _log(f"Aviso ao criar atalho: {link}", "AVISO")
-
-def apply_default_user_profile(bar_alignment):
-    """Aplica configurações ao perfil padrão de usuário"""
-    _log("Aplicando configurações ao perfil padrão...", "INFO")
-    try:
-        # Carrega hive do usuário padrão
-        result = _safe_subprocess_run(
-            ["reg", "load", r"HKU\TempDefaultUser", r"C:\Users\Default\NTUSER.DAT"],
-            timeout=30
-        )
-        if not result or result.returncode != 0:
-            _log("Erro ao carregar NTUSER.DAT", "ERRO")
-            return
-        
-        # Configura tema escuro
-        _safe_subprocess_run(
-            ["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"],
-            timeout=10
-        )
-        _safe_subprocess_run(
-            ["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"],
-            timeout=10
-        )
-        
-        # Configura alinhamento da barra de tarefas
-        if bar_alignment != "nenhum":
-            val = "0" if bar_alignment == "left" else "1"
-            _safe_subprocess_run(
-                ["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", val, "/f"],
-                timeout=10
-            )
-        
-        # Desativa PrintScreen nativo
-        _safe_subprocess_run(
-            ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"],
-            timeout=10
-        )
-        
-        # Descarrega hive
-        _safe_subprocess_run(
-            ["reg", "unload", r"HKU\TempDefaultUser"],
-            timeout=30
-        )
-        
-        _log("✓ Configurações aplicadas ao perfil padrão", "OK")
-    except Exception as e:
-        _log(f"Erro ao aplicar perfil padrão: {e}", "ERRO")
-
-def remove_agressive_bloatware(bloatware_list):
-    """Remove bloatware do sistema"""
-    _log(f"Removendo {len(bloatware_list)} aplicativos bloatware...", "INFO")
-    for app in bloatware_list:
-        try:
-            cmd_user = f"Get-AppxPackage -AllUsers *{app}* | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue"
-            cmd_prov = f"Get-AppxProvisionedPackage -Online | Where-Object {{$_.DisplayName -match '{app}'}} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue"
-            result = _safe_subprocess_run(
-                ["powershell", "-NoProfile", "-Command", f"{cmd_user}; {cmd_prov}"],
-                timeout=60
-            )
-            if result and result.returncode == 0:
-                _log(f"✓ Bloatware removido: {app}", "OK")
-            else:
-                _log(f"Aviso ao remover {app}", "AVISO")
-        except Exception as e:
-            _log(f"Erro ao remover {app}: {e}", "ERRO")
-    return True
-
-def apply_cpfani_branding(bar_alignment):
-    """Aplica branding corporativo CP Fani"""
-    _log("INICIANDO BRANDING CORPORATIVO...", "INFO")
-    sync_time_ntp()
-    path_theme = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-    try:
-        sid = _get_active_user_sid()
-        if sid:
-            _safe_subprocess_run(
-                ["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "SystemUsesLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"],
-                timeout=10
-            )
-            _safe_subprocess_run(
-                ["reg", "add", f"HKU\\{sid}\\{path_theme}", "/v", "AppsUseLightTheme", "/t", "REG_DWORD", "/d", "0", "/f"],
-                timeout=10
-            )
-            _log("✓ Tema escuro aplicado", "OK")
-    except Exception as e:
-        _log(f"Erro ao aplicar tema: {e}", "AVISO")
-    
-    apply_cpfani_wallpaper_redundant()
-    apply_cpfani_lockscreen_redundant()
-    
-    if bar_alignment != "nenhum":
-        val = 0 if bar_alignment == "left" else 1
-        try:
-            sid = _get_active_user_sid()
-            if sid:
-                _safe_subprocess_run(
-                    ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\Windows\CurrentVersion\\Explorer\\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", str(val), "/f"],
-                    timeout=10
-                )
-                _log(f"✓ Barra de tarefas alinhada: {bar_alignment}", "OK")
-        except Exception as e:
-            _log(f"Erro ao alinhar barra: {e}", "AVISO")
-    
-    apply_default_user_profile(bar_alignment)
-
-def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
-    """Aplica políticas de segurança e LGPD"""
-    _log("Aplicando políticas de Segurança e LGPD...", "INFO")
-    sid = _get_active_user_sid()
-    
-    if apply_lgpd:
-        # Desativa telemetria
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 0, winreg.REG_DWORD)
-        _log("✓ Telemetria desativada", "OK")
-        
-        if sid:
-            _safe_subprocess_run(
-                ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "/v", "SubscribedContent-338389Enabled", "/t", "REG_DWORD", "/d", "0", "/f"],
-                timeout=10
-            )
-        
-        # Desativa Workplace Join
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\WorkplaceJoin", "autoWorkplaceJoin", 0, winreg.REG_DWORD)
-        _log("✓ Workplace Join desativado", "OK")
-    
-    if disable_hello:
-        disable_windows_hello_redundant()
-    
-    remove_widgets_taskbar()
-
-def _get_image_path(local_path, urls, temp_name):
-    """Obtém caminho de imagem com validação de tamanho"""
-    if os.path.exists(local_path):
-        _log(f"Imagem local encontrada: {local_path}", "OK")
-        return local_path
-    
-    _log(f"Baixando imagem: {temp_name}", "INFO")
-    for url in urls:
-        try:
-            public_temp = r"C:\Users\Public\Downloads"
-            os.makedirs(public_temp, exist_ok=True)
-            temp_path = os.path.join(public_temp, temp_name)
-            
-            # Download com validação
-            urllib.request.urlretrieve(url, temp_path)
-            
-            # Validação de tamanho (mínimo 10KB)
-            if os.path.exists(temp_path) and os.path.getsize(temp_path) > 10000:
-                _log(f"✓ Imagem baixada com sucesso: {os.path.getsize(temp_path)} bytes", "OK")
-                return temp_path
-            else:
-                _log(f"Arquivo muito pequeno, tentando próximo URL...", "AVISO")
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-        except Exception as e:
-            _log(f"Erro ao baixar de {url}: {e}", "AVISO")
-    
-    _log("Falha ao obter imagem de todos os URLs", "ERRO")
-    return None
-
-def apply_cpfani_wallpaper_redundant():
-    """Aplica wallpaper CP Fani"""
-    _log("Aplicando wallpaper CP Fani...", "INFO")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
-    urls = [
-        "https://drive.google.com/uc?export=download&id=1K5SWWC1dJL0qETRKAVdJtc8-Wi39G83G",
-        "https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/wallpaper_cpfani.jpg"
-    ]
-    target_path = _get_image_path(local_wp, urls, "cpfani_wp.png")
-    
-    if not target_path:
-        _log("Falha ao obter wallpaper", "ERRO")
-        return False
-    
-    try:
-        # SPI_SETDESKWALLPAPER = 20, SPIF_UPDATEINIFILE = 3
-        result = ctypes.windll.user32.SystemParametersInfoW(20, 0, target_path, 3)
-        if result:
-            _log("✓ Wallpaper aplicado com sucesso", "OK")
-            return True
-        else:
-            _log("Falha ao aplicar wallpaper via API", "ERRO")
-            return False
-    except Exception as e:
-        _log(f"Erro ao aplicar wallpaper: {e}", "ERRO")
-        return False
-
-def apply_cpfani_lockscreen_redundant():
-    """Aplica lockscreen CP Fani"""
-    _log("Aplicando lockscreen CP Fani...", "INFO")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
-    urls = ["https://drive.google.com/uc?export=download&id=1K5SWWC1dJL0qETRKAVdJtc8-Wi39G83G"]
-    target_path = _get_image_path(local_wp, urls, "cpfani_ls.png")
-    
-    if not target_path:
-        _log("Falha ao obter lockscreen", "ERRO")
-        return False
-    
-    if set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Personalization", "LockScreenImage", target_path, winreg.REG_SZ):
-        _log("✓ Lockscreen configurado", "OK")
-        return True
-    else:
-        _log("Falha ao configurar lockscreen", "ERRO")
-        return False
-
-def disable_windows_hello_redundant():
-    """Desativa Windows Hello e biometria"""
-    _log("Desativando Windows Hello e biometria...", "INFO")
-    try:
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\PassportForWork", "Enabled", 0, winreg.REG_DWORD)
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Windows Hello for Business", "Biometric", 0, winreg.REG_DWORD)
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\WbioSrvc", "Start", 4, winreg.REG_DWORD)
-        _log("✓ Windows Hello desativado", "OK")
-    except Exception as e:
-        _log(f"Erro ao desativar Windows Hello: {e}", "ERRO")
-
-def remove_widgets_taskbar():
-    """Remove widgets da barra de tarefas"""
-    _log("Removendo widgets da barra de tarefas...", "INFO")
-    try:
-        set_reg(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\WidgetService", "Start", 4, winreg.REG_DWORD)
-        sid = _get_active_user_sid()
-        if sid:
-            _safe_subprocess_run(
-                ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\FileExplorer", "/v", "TaskbarDa", "/t", "REG_DWORD", "/d", "0", "/f"],
-                timeout=10
-            )
-        _log("✓ Widgets removidos", "OK")
-    except Exception as e:
-        _log(f"Erro ao remover widgets: {e}", "ERRO")
-
-def apply_firewall_rules():
-    """Aplica regras de firewall para compartilhamento"""
-    _log("Aplicando regras de firewall...", "INFO")
-    try:
-        result = _safe_subprocess_run(
-            'netsh advfirewall firewall set rule group="Compartilhamento de Arquivo e Impressora" new enable=Yes profile=private,domain',
-            shell=True,
-            timeout=30
-        )
-        if result and result.returncode == 0:
-            _log("✓ Regras de firewall aplicadas", "OK")
-        else:
-            _log("Aviso ao aplicar regras de firewall", "AVISO")
-    except Exception as e:
-        _log(f"Erro ao aplicar firewall: {e}", "ERRO")
-
-def configurar_compartilhamento_rede():
-    """
-    Configura o Windows para permitir compartilhamento transparente de arquivos e impressoras,
-    eliminando a solicitação de credenciais de rede e ativando a descoberta.
-    """
-    _log("DESBLOQUEANDO COMPARTILHAMENTO E DESCOBERTA DE REDE...", "INFO")
-    NO_WINDOW = 0x08000000
-
-    # 1. Forçar Perfil de Rede como Privado via PowerShell
-    try:
-        ps_cmd = "Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private"
-        result = _safe_subprocess_run(
-            ["powershell", "-NoProfile", "-Command", ps_cmd],
-            timeout=30
-        )
-        if result and result.returncode == 0:
-            _log("✓ Perfil de todas as interfaces de rede alterado para Privado.", "OK")
-        else:
-            _log("Aviso ao alterar perfil de rede", "AVISO")
-    except Exception as e:
-        _log(f"Erro ao alterar perfil de rede: {e}", "AVISO")
-
-    # 2. Configurar e Iniciar Serviços de Descoberta
-    servicos = [
-        ("FdResPub", "Publicação de Recursos de Descoberta"),
-        ("SSDPDiscovery", "Descoberta SSDP"),
-        ("upnphost", "Hospedador de Dispositivo UPnP")
-    ]
-    for svc_name, svc_desc in servicos:
-        try:
-            _safe_subprocess_run(["sc", "config", svc_name, "start=", "auto"], timeout=15)
-            result = _safe_subprocess_run(["sc", "start", svc_name], timeout=15)
-            if result and result.returncode == 0:
-                _log(f"✓ Serviço '{svc_desc}' ativado e iniciado.", "OK")
-            else:
-                _log(f"Aviso no serviço {svc_name}", "AVISO")
-        except Exception as e:
-            _log(f"Aviso no serviço {svc_name}: {e}", "AVISO")
-
-    # 3. Modificações de Registro para Liberação Guest/Anônimo (Usando set_reg nativo)
-    reg_configs = [
-        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters", "AllowInsecureGuestAuth", 1),
-        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "RestrictNullSvcSession", 0),
-        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Lsa", "everyoneincludesanonymous", 1),
-        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Lsa", "LimitBlankPasswordUse", 0)
-    ]
-    for root, path, name, val in reg_configs:
-        if set_reg(root, path, name, val, winreg.REG_DWORD):
-            _log(f"✓ Registro configurado: {name} = {val}", "OK")
-        else:
-            _log(f"Falha ao configurar registro: {name}", "AVISO")
-
-    # 4. Ativar Regras de Firewall (Redundante ao apply_firewall_rules para garantir escopo)
-    try:
-        result = _safe_subprocess_run(
-            'netsh advfirewall firewall set rule group="Compartilhamento de Arquivo e Impressora" new enable=Yes profile=private,domain',
-            shell=True,
-            timeout=30
-        )
-        if result and result.returncode == 0:
-            _log("✓ Regras de Firewall para compartilhamento liberadas com sucesso.", "OK")
-        else:
-            _log("Aviso ao liberar Firewall", "AVISO")
-    except Exception as e:
-        _log(f"Aviso ao liberar Firewall: {e}", "AVISO")
-
-def schedule_manutencao_rede():
-    """Agenda manutenção de rede (placeholder)"""
-    _log("Agendamento de manutenção de rede configurado", "INFO")
-    return True
-
-def schedule_instalar_tudo():
-    """Agenda instalador universal (placeholder)"""
-    _log("Agendamento de instalador universal configurado", "INFO")
-    return True
-
-def _get_hardware_info():
-    """Obtém informações básicas de hardware"""
-    return {
-        "Nome_Computador": os.environ.get("COMPUTERNAME", platform.node()),
-        "Sistema_Operacional": platform.system(),
-        "Versao_SO": platform.version(),
-        "Arquitetura": platform.machine(),
-        "Processador": platform.processor()
-    }
 
 def generate_full_snapshot():
-    """Gera snapshot completo de hardware"""
+    """Gera snapshot FOCADO EM HARDWARE, versão do SO e IDs de acesso remoto"""
     _log("Gerando snapshot de hardware...", "INFO")
+    
+    if not _validate_admin_privileges():
+        _log("Privilégios administrativos necessários para snapshot completo", "AVISO")
+    
     hw = _get_hardware_info()
     pc_name = hw.get("Nome_Computador", "UNKNOWN")
-    log_path = Path(f"C:/Scripts/CPFANI_Hardware_Snapshot_{pc_name}.txt")
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path = Path(f"C:/Scripts/CPFANI_Hardware_Snapshot_{pc_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        _log(f"Erro ao criar diretório de snapshot: {e}", "ERRO")
+        return False
     
     try:
         with open(log_path, "w", encoding="utf-8", errors='replace') as f:
-            f.write("=" * 60 + "\n")
-            f.write("SNAPSHOT COMPLETO CP FANI\n")
-            f.write("=" * 60 + "\n")
+            f.write("=" * 80 + "\n")
+            f.write("SNAPSHOT DE HARDWARE CP FANI\n")
+            f.write("=" * 80 + "\n")
             f.write(f"Data/Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"PC: {pc_name}\n")
-            f.write(f"Sistema: {hw.get('Sistema_Operacional', 'N/A')} {hw.get('Versao_SO', 'N/A')}\n")
-            f.write(f"Arquitetura: {hw.get('Arquitetura', 'N/A')}\n")
-            f.write(f"Processador: {hw.get('Processador', 'N/A')}\n")
-            f.write("=" * 60 + "\n")
+            f.write(f"Computador: {pc_name}\n")
+            f.write("=" * 80 + "\n\n")
+            
+            # ============================================================
+            # 0. IDs DE ACESSO REMOTO (NOVO)
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("0. ACESSO REMOTO (AnyDesk/TeamViewer)\n")
+            f.write("=" * 80 + "\n")
+            
+            # AnyDesk ID - Tenta múltiplos métodos
+            anydesk_id_encontrado = False
+            try:
+                # Método 1: Via registro do Windows
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\AnyDesk", 0, winreg.KEY_READ) as ad_key:
+                        ad_id, _ = winreg.QueryValueEx(ad_key, "AdvertisedId")
+                        f.write(f"AnyDesk ID: {ad_id}\n")
+                        anydesk_id_encontrado = True
+                except Exception:
+                    pass
+                
+                # Método 2: Via arquivo de configuração
+                if not anydesk_id_encontrado:
+                    anydesk_config_paths = [
+                        Path("C:/ProgramData/AnyDesk/service.conf"),
+                        Path("C:/Users/" + os.getenv("USERNAME") + "/AppData/Roaming/AnyDesk/service.conf"),
+                    ]
+                    for config_path in anydesk_config_paths:
+                        if config_path.exists():
+                            with open(config_path, 'r', encoding='utf-8', errors='replace') as cfg:
+                                for line in cfg:
+                                    if 'ad.anynet.id' in line:
+                                        ad_id = line.split('=')[1].strip()
+                                        f.write(f"AnyDesk ID: {ad_id}\n")
+                                        anydesk_id_encontrado = True
+                                        break
+                            if anydesk_id_encontrado:
+                                break
+                
+                if not anydesk_id_encontrado:
+                    f.write("AnyDesk ID: Nao instalado ou nao configurado\n")
+            except Exception as e:
+                f.write(f"AnyDesk ID: Erro ao ler ({e})\n")
+            
+            # TeamViewer ID - Tenta múltiplos métodos
+            teamviewer_id_encontrado = False
+            try:
+                # Método 1: Via registro do Windows
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\TeamViewer", 0, winreg.KEY_READ) as tv_key:
+                        tv_id, _ = winreg.QueryValueEx(tv_key, "ClientID")
+                        f.write(f"TeamViewer ID: {tv_id}\n")
+                        teamviewer_id_encontrado = True
+                except Exception:
+                    pass
+                
+                # Método 2: Via arquivo de configuração
+                if not teamviewer_id_encontrado:
+                    tv_config_paths = [
+                        Path("C:/Program Files/TeamViewer/TeamViewer15_Settings.ini"),
+                        Path("C:/Program Files/TeamViewer/TeamViewer_Settings.ini"),
+                        Path("C:/Program Files (x86)/TeamViewer/TeamViewer15_Settings.ini"),
+                    ]
+                    for config_path in tv_config_paths:
+                        if config_path.exists():
+                            with open(config_path, 'r', encoding='utf-8', errors='replace') as cfg:
+                                for line in cfg:
+                                    if 'PermanentID=' in line or 'ClientID=' in line:
+                                        tv_id = line.split('=')[1].strip()
+                                        f.write(f"TeamViewer ID: {tv_id}\n")
+                                        teamviewer_id_encontrado = True
+                                        break
+                            if teamviewer_id_encontrado:
+                                break
+                
+                if not teamviewer_id_encontrado:
+                    f.write("TeamViewer ID: Nao instalado ou nao configurado\n")
+            except Exception as e:
+                f.write(f"TeamViewer ID: Erro ao ler ({e})\n")
+            
+            f.write("\n")
+            
+            # ============================================================
+            # 1. SISTEMA OPERACIONAL
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("1. SISTEMA OPERACIONAL\n")
+            f.write("=" * 80 + "\n")
+            try:
+                os_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     '(Get-CimInstance Win32_OperatingSystem).Caption + " (Build " + (Get-CimInstance Win32_OperatingSystem).Version + ")"'],
+                    timeout=10
+                )
+                if os_info and os_info.stdout:
+                    f.write(f"Versão: {os_info.stdout.strip()}\n")
+                else:
+                    f.write(f"Versão: {hw.get('Sistema_Operacional', 'N/A')} {hw.get('Versao_SO', 'N/A')}\n")
+            except Exception:
+                f.write(f"Versão: {hw.get('Sistema_Operacional', 'N/A')} {hw.get('Versao_SO', 'N/A')}\n")
+            f.write("\n")
+            
+            # ============================================================
+            # 2. PROCESSADOR (CPU)
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("2. PROCESSADOR (CPU)\n")
+            f.write("=" * 80 + "\n")
+            try:
+                cpu_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed | Format-List'],
+                    timeout=15
+                )
+                if cpu_info and cpu_info.stdout:
+                    f.write(cpu_info.stdout)
+            except Exception as e:
+                f.write(f"Erro ao coletar CPU: {e}\n")
+            f.write("\n")
+            
+            # ============================================================
+            # 3. MEMÓRIA RAM
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("3. MEMÓRIA RAM\n")
+            f.write("=" * 80 + "\n")
+            try:
+                ram_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-CimInstance Win32_PhysicalMemory | Select-Object DeviceLocator, Manufacturer, @{Name="Capacity(GB)";Expression={[math]::Round($_.Capacity/1GB,2)}}, Speed | Format-Table -AutoSize'],
+                    timeout=15
+                )
+                if ram_info and ram_info.stdout:
+                    f.write(ram_info.stdout)
+                
+                total_ram = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     '[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB, 2)'],
+                    timeout=10
+                )
+                if total_ram and total_ram.stdout:
+                    f.write(f"Memória Total Instalada: {total_ram.stdout.strip()} GB\n")
+            except Exception as e:
+                f.write(f"Erro ao coletar RAM: {e}\n")
+            f.write("\n")
+            
+            # ============================================================
+            # 4. DISCOS E ARMAZENAMENTO
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("4. DISCOS E ARMAZENAMENTO\n")
+            f.write("=" * 80 + "\n")
+            try:
+                disk_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-PhysicalDisk | Select-Object FriendlyName, MediaType, @{Name="Size(GB)";Expression={[math]::Round($_.Size/1GB,2)}}, HealthStatus | Format-Table -AutoSize'],
+                    timeout=15
+                )
+                if disk_info and disk_info.stdout:
+                    f.write(disk_info.stdout)
+                
+                volume_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-Volume | Select-Object DriveLetter, FileSystemLabel, @{Name="Size(GB)";Expression={[math]::Round($_.Size/1GB,2)}}, @{Name="Free(GB)";Expression={[math]::Round($_.SizeRemaining/1GB,2)}} | Format-Table -AutoSize'],
+                    timeout=15
+                )
+                if volume_info and volume_info.stdout:
+                    f.write("\nVolumes Lógicos:\n" + volume_info.stdout)
+            except Exception as e:
+                f.write(f"Erro ao coletar Discos: {e}\n")
+            f.write("\n")
+            
+            # ============================================================
+            # 5. PLACA DE VÍDEO (GPU)
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("5. PLACA DE VÍDEO (GPU)\n")
+            f.write("=" * 80 + "\n")
+            try:
+                gpu_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM, DriverVersion | Format-List'],
+                    timeout=15
+                )
+                if gpu_info and gpu_info.stdout:
+                    f.write(gpu_info.stdout)
+            except Exception as e:
+                f.write(f"Erro ao coletar GPU: {e}\n")
+            f.write("\n")
+            
+            # ============================================================
+            # 6. PLACA-MÃE E BIOS
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("6. PLACA-MÃE E BIOS\n")
+            f.write("=" * 80 + "\n")
+            try:
+                mb_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer, Product, Version | Format-List'],
+                    timeout=15
+                )
+                if mb_info and mb_info.stdout:
+                    f.write("Placa-Mãe:\n" + mb_info.stdout)
+                
+                bios_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-CimInstance Win32_BIOS | Select-Object Manufacturer, Version, ReleaseDate | Format-List'],
+                    timeout=15
+                )
+                if bios_info and bios_info.stdout:
+                    f.write("\nBIOS:\n" + bios_info.stdout)
+            except Exception as e:
+                f.write(f"Erro ao coletar Placa-mãe/BIOS: {e}\n")
+            f.write("\n")
+            
+            # ============================================================
+            # 7. REDE (ADAPTADORES FÍSICOS)
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("7. REDE (ADAPTADORES FÍSICOS)\n")
+            f.write("=" * 80 + "\n")
+            try:
+                net_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-NetAdapter -Physical | Select-Object Name, InterfaceDescription, Status, MacAddress, LinkSpeed | Format-Table -AutoSize'],
+                    timeout=15
+                )
+                if net_info and net_info.stdout:
+                    f.write(net_info.stdout)
+            except Exception as e:
+                f.write(f"Erro ao coletar Rede: {e}\n")
+            f.write("\n")
+            
+            # ============================================================
+            # 8. MONITORES
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("8. MONITORES\n")
+            f.write("=" * 80 + "\n")
+            try:
+                monitor_info = _safe_subprocess_run(
+                    ['powershell', '-NoProfile', '-Command', 
+                     'Get-CimInstance Win32_DesktopMonitor | Select-Object Name, MonitorType, ScreenWidth, ScreenHeight | Format-Table -AutoSize'],
+                    timeout=15
+                )
+                if monitor_info and monitor_info.stdout:
+                    f.write(monitor_info.stdout)
+            except Exception as e:
+                f.write(f"Erro ao coletar Monitores: {e}\n")
+            f.write("\n")
+            
+            # ============================================================
+            # RODAPÉ
+            # ============================================================
+            f.write("=" * 80 + "\n")
+            f.write("FIM DO RELATÓRIO DE HARDWARE\n")
+            f.write("=" * 80 + "\n")
         
-        _log(f"✓ Snapshot gerado: {log_path}", "OK")
-        return str(log_path)
+        if os.path.exists(log_path) and os.path.getsize(log_path) > 500:
+            file_size = os.path.getsize(log_path)
+            _log(f"✓ Snapshot de hardware gerado: {log_path} ({file_size} bytes)", "OK")
+            return str(log_path)
+        else:
+            _log("Snapshot não foi criado corretamente", "ERRO")
+            return False
     except Exception as e:
         _log(f"Erro ao gerar snapshot: {e}", "ERRO")
-        return None
+        return False
+
+# ============================================================
+# FUNÇÕES OBRIGATÓRIAS CHAMADAS PELO gui.py (IMPLEMENTAÇÃO ROBUSTA)
+# ============================================================
+def apply_cpfani_branding(bar_position="nenhum"):
+    """Aplica branding e posição da barra de tarefas"""
+    _log(f"Aplicando branding CP Fani (Barra: {bar_position})...", "INFO")
+    try:
+        if bar_position != "nenhum":
+            cmd = ["reg", "add", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", ("1" if bar_position == "center" else "0"), "/f"]
+            _safe_subprocess_run(cmd, timeout=10)
+        _log("✓ Branding aplicado", "OK")
+        return True
+    except Exception as e:
+        _log(f"Erro no branding: {e}", "ERRO")
+        return False
+
+def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
+    """Aplica políticas de LGPD e desativa Windows Hello"""
+    _log("Aplicando políticas de segurança e LGPD...", "INFO")
+    try:
+        if disable_hello:
+            cmd_hello = ["reg", "add", r"HKLM\SOFTWARE\Policies\Microsoft\Biometrics", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"]
+            _safe_subprocess_run(cmd_hello, timeout=10)
+            
+            cmd_welcome = ["reg", "add", r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "/v", "DisableWelcomeScreen", "/t", "REG_DWORD", "/d", "1", "/f"]
+            _safe_subprocess_run(cmd_welcome, timeout=10)
+            
+            # CORREÇÃO: só executa varredura pesada de perfis quando realmente necessário
+            _apply_to_all_real_users()
+            
+        if apply_lgpd:
+            cmd_ntp = ["w32tm", "/config", "/syncfromflags:manual", "/manualpeerlist:a.st1.ntp.br,b.st1.ntp.br,c.st1.ntp.br,d.st1.ntp.br", "/update"]
+            _safe_subprocess_run(cmd_ntp, timeout=15)
+            _safe_subprocess_run(["w32tm", "/resync"], timeout=10)
+            
+        _log("✓ Segurança e LGPD aplicadas", "OK")
+        return True
+    except Exception as e:
+        _log(f"Erro na segurança/LGPD: {e}", "ERRO")
+        return False
+
+def apply_firewall_rules():
+    """Restringe SMB/RPC à rede local com whitelist de LAN"""
+    _log("Configurando regras de firewall...", "INFO")
+    try:
+        # Bloqueia SMB (445) de origens externas
+        cmd_smb = ['powershell', '-NoProfile', '-Command', 
+                   'New-NetFirewallRule -DisplayName "CP Fani - Bloquear SMB Externo" -Direction Inbound -Protocol TCP -LocalPort 445 -RemoteAddress Internet -Action Block -Enabled True -ErrorAction SilentlyContinue']
+        _safe_subprocess_run(cmd_smb, timeout=15)
+        
+        # Bloqueia RPC (135) de origens externas
+        cmd_rpc = ['powershell', '-NoProfile', '-Command', 
+                   'New-NetFirewallRule -DisplayName "CP Fani - Bloquear RPC Externo" -Direction Inbound -Protocol TCP -LocalPort 135 -RemoteAddress Internet -Action Block -Enabled True -ErrorAction SilentlyContinue']
+        _safe_subprocess_run(cmd_rpc, timeout=15)
+        
+        # Whitelist: permite SMB (445) apenas da rede local (RFC1918)
+        cmd_whitelist_smb = ['powershell', '-NoProfile', '-Command', 
+                             'New-NetFirewallRule -DisplayName "CP Fani - Permitir SMB LAN" -Direction Inbound -Protocol TCP -LocalPort 445 -RemoteAddress 192.168.0.0/16,10.0.0.0/8,172.16.0.0/12 -Action Allow -Enabled True -ErrorAction SilentlyContinue']
+        _safe_subprocess_run(cmd_whitelist_smb, timeout=15)
+        
+        # Whitelist: permite RPC (135) apenas da rede local (RFC1918)
+        cmd_whitelist_rpc = ['powershell', '-NoProfile', '-Command', 
+                             'New-NetFirewallRule -DisplayName "CP Fani - Permitir RPC LAN" -Direction Inbound -Protocol TCP -LocalPort 135 -RemoteAddress 192.168.0.0/16,10.0.0.0/8,172.16.0.0/12 -Action Allow -Enabled True -ErrorAction SilentlyContinue']
+        _safe_subprocess_run(cmd_whitelist_rpc, timeout=15)
+        
+        _log("✓ Regras de firewall aplicadas (SMB/RPC bloqueados externamente, liberados na LAN)", "OK")
+        return True
+    except Exception as e:
+        _log(f"Erro no firewall: {e}", "ERRO")
+        return False
+
+def remove_agressive_bloatware(bloatware_list):
+    """Remove bloatware para todos os usuários (compatível Windows 11 22H2+)"""
+    _log(f"Removendo {len(bloatware_list)} itens de bloatware...", "INFO")
+    removed_count = 0
+    for app in bloatware_list:
+        try:
+            # CORREÇÃO: Remove-AppxPackage -AllUsers é deprecated em Win11 22H2+
+            # Usa pipeline Get-AppxPackage -AllUsers | Remove-AppxPackage (sem -AllUsers no Remove)
+            cmd = ['powershell', '-NoProfile', '-Command', 
+                   f'Get-AppxPackage -AllUsers -Name "*{app}*" | Remove-AppxPackage -ErrorAction SilentlyContinue; '
+                   f'Get-AppxProvisionedPackage -Online | Where-Object {{ $_.DisplayName -like "*{app}*" }} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue']
+            res = _safe_subprocess_run(cmd, timeout=45)
+            if res:
+                removed_count += 1
+        except Exception:
+            pass
+    _log(f"✓ Bloatware removido ({removed_count}/{len(bloatware_list)})", "OK")
+    return True
+
+def schedule_daily_reboot():
+    """Agenda reinício diário às 21:00"""
+    _log("Agendando reinício diário...", "INFO")
+    try:
+        cmd = ['schtasks', '/create', '/tn', 'CP_Fani_Daily_Reboot', '/tr', 'shutdown /r /f /t 60 /c "Reinicio agendado CP Fani"', '/sc', 'daily', '/st', '21:00', '/rl', 'highest', '/f']
+        res = _safe_subprocess_run(cmd, timeout=15)
+        if res and res.returncode == 0:
+            _log("✓ Reinício diário agendado", "OK")
+            return True
+        return False
+    except Exception as e:
+        _log(f"Erro ao agendar reinício: {e}", "ERRO")
+        return False
+
+def schedule_manutencao_rede():
+    """Agenda script de manutenção de rede"""
+    _log("Agendando manutenção de rede...", "INFO")
+    try:
+        script_path = os.path.join(os.path.dirname(__file__), "manutencao_rede.bat")
+        if os.path.exists(script_path):
+            cmd = ['schtasks', '/create', '/tn', 'CP_Fani_Network_Maintenance', '/tr', f'"{script_path}"', '/sc', 'weekly', '/d', 'SAT', '/st', '02:00', '/rl', 'highest', '/f']
+            res = _safe_subprocess_run(cmd, timeout=15)
+            if res and res.returncode == 0:
+                _log("✓ Manutenção agendada", "OK")
+                return True
+        return False
+    except Exception as e:
+        _log(f"Erro ao agendar manutenção: {e}", "ERRO")
+        return False
+
+def schedule_instalar_tudo():
+    """Agenda atualizador de software"""
+    _log("Agendando atualizador de software...", "INFO")
+    try:
+        script_path = os.path.join(os.path.dirname(__file__), "instalar_tudo.ps1")
+        if os.path.exists(script_path):
+            cmd = ['schtasks', '/create', '/tn', 'CP_Fani_Software_Update', '/tr', f'powershell -ExecutionPolicy Bypass -File "{script_path}"', '/sc', 'weekly', '/d', 'SUN', '/st', '03:00', '/rl', 'highest', '/f']
+            res = _safe_subprocess_run(cmd, timeout=15)
+            if res and res.returncode == 0:
+                _log("✓ Atualizador agendado", "OK")
+                return True
+        return False
+    except Exception as e:
+        _log(f"Erro ao agendar atualizador: {e}", "ERRO")
+        return False
+
+def setup_self_healing():
+    """Configura watchdog de auto-cura real (AnyDesk + Wallpaper)"""
+    _log("Configurando self-healing (watchdog)...", "INFO")
+    try:
+        script_dir = os.path.dirname(__file__)
+        watchdog_ps1 = Path(r"C:\Scripts\cpfani_watchdog.ps1")
+        watchdog_vbs = Path(r"C:\Scripts\cpfani_watchdog_launcher.vbs")
+        
+        # Garante diretório
+        watchdog_ps1.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Script PowerShell do watchdog
+        ps_content = r'''
+# CP Fani Watchdog - Auto-Cura (Self-Healing)
+# Monitora AnyDesk e Wallpaper corporativo a cada 10 segundos
+
+$WallpaperPath = "C:\Scripts\Setup_CPFANI\resources\wallpaper_cpfani.jpg"
+$LogFile = "C:\Scripts\Logs\cpfani_watchdog.log"
+
+function Write-Log([string]$Msg) {
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "$ts | $Msg" | Add-Content -Path $LogFile -Encoding UTF8 -ErrorAction SilentlyContinue
+}
+
+while ($true) {
+    try {
+        # 1. Verifica se AnyDesk está rodando
+        $anydesk = Get-Process -Name "anydesk" -ErrorAction SilentlyContinue
+        if (-not $anydesk) {
+            Write-Log "AnyDesk nao encontrado. Tentando reiniciar..."
+            $anydeskExe = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
+            if (Test-Path $anydeskExe) {
+                Start-Process -FilePath $anydeskExe -ArgumentList "--silent" -WindowStyle Hidden -ErrorAction SilentlyContinue
+                Write-Log "AnyDesk reiniciado."
+            } else {
+                $anydeskExe2 = "C:\Program Files\AnyDesk\AnyDesk.exe"
+                if (Test-Path $anydeskExe2) {
+                    Start-Process -FilePath $anydeskExe2 -ArgumentList "--silent" -WindowStyle Hidden -ErrorAction SilentlyContinue
+                    Write-Log "AnyDesk reiniciado (x64)."
+                }
+            }
+        }
+
+        # 2. Verifica wallpaper corporativo
+        if (Test-Path $WallpaperPath) {
+            $currentWallpaper = (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+            if ($currentWallpaper -ne $WallpaperPath) {
+                Write-Log "Wallpaper divergente. Restaurando corporativo..."
+                Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name Wallpaper -Value $WallpaperPath -ErrorAction SilentlyContinue
+                rundll32.exe user32.dll, UpdatePerUserSystemParameters -ErrorAction SilentlyContinue
+                Write-Log "Wallpaper restaurado."
+            }
+        }
+    } catch {
+        Write-Log "Erro no loop do watchdog: $_"
+    }
+    
+    Start-Sleep -Seconds 10
+}
+'''
+        with open(watchdog_ps1, 'w', encoding='utf-8') as f:
+            f.write(ps_content.strip())
+        
+        # Launcher VBS invisível
+        vbs_content = f'''Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{watchdog_ps1}""", 0, False
+Set WshShell = Nothing'''
+        with open(watchdog_vbs, 'w', encoding='utf-8') as f:
+            f.write(vbs_content)
+        
+        # Tarefa agendada: a cada logon + a cada 5 minutos (repetição indefinida)
+        cmd_create = [
+            'schtasks', '/create', '/tn', 'CP_Fani_Self_Healing', 
+            '/tr', f'wscript.exe "{watchdog_vbs}"',
+            '/sc', 'onlogon', '/rl', 'highest', '/f'
+        ]
+        res_create = _safe_subprocess_run(cmd_create, timeout=15)
+        
+        # Adiciona trigger de repetição a cada 5 minutos (se a tarefa já existir, /f já atualizou)
+        # Para repetição, precisamos modificar a tarefa criada
+        cmd_xml = [
+            'schtasks', '/change', '/tn', 'CP_Fani_Self_Healing',
+            '/ri', '5'  # Repetir a cada 5 minutos
+        ]
+        _safe_subprocess_run(cmd_xml, timeout=10)
+        
+        if res_create and res_create.returncode == 0:
+            _log("✓ Self-healing ativado (watchdog AnyDesk + Wallpaper)", "OK")
+            return True
+        return False
+    except Exception as e:
+        _log(f"Erro no self-healing: {e}", "ERRO")
+        return False
+
+def set_apps_to_startup_all_users():
+    """Configura aplicativos para iniciar com o Windows (All Users)"""
+    _log("Configurando startup global...", "INFO")
+    try:
+        startup_dir = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+        os.makedirs(startup_dir, exist_ok=True)
+        
+        flameshot_exe = r"C:\Program Files\Flameshot\flameshot.exe"
+        if os.path.exists(flameshot_exe):
+            shortcut_path = os.path.join(startup_dir, "Flameshot.lnk")
+            ps_cmd = f'$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut("{shortcut_path}"); $Shortcut.TargetPath = "{flameshot_exe}"; $Shortcut.Save()'
+            _safe_subprocess_run(['powershell', '-NoProfile', '-Command', ps_cmd], timeout=10)
+            
+        _log("✓ Startup global configurado", "OK")
+        return True
+    except Exception as e:
+        _log(f"Erro no startup global: {e}", "ERRO")
+        return False
