@@ -316,7 +316,10 @@ class CPFani_GUI(ctk.CTk):
                 
                 if file_size < min_size_bytes:
                     self.log(f"Arquivo muito pequeno ({file_size} bytes < {min_size_bytes} bytes). Removendo...", "AVISO")
-                    os.remove(dest_path)
+                    try:
+                        os.remove(dest_path)
+                    except Exception as e:
+                        self.log(f"Falha ao remover arquivo corrompido: {e}", "AVISO")
                     if attempt < max_retries:
                         time.sleep(2)
                         continue
@@ -331,8 +334,8 @@ class CPFani_GUI(ctk.CTk):
                 if os.path.exists(dest_path):
                     try:
                         os.remove(dest_path)
-                    except:
-                        pass
+                    except Exception as e_rem:
+                        self.log(f"Falha ao remover arquivo parcial: {e_rem}", "AVISO")
                 if attempt < max_retries:
                     time.sleep(3)
         
@@ -393,8 +396,8 @@ class CPFani_GUI(ctk.CTk):
                         # Limpa arquivo temporário
                         try:
                             os.remove(temp_msi)
-                        except:
-                            pass
+                        except Exception as e:
+                            self.log(f"Falha ao remover {temp_msi}: {e}", "AVISO")
                         return True
                     else:
                         self.log(f"MSI retornou código {install_res.returncode}", "AVISO")
@@ -407,8 +410,8 @@ class CPFani_GUI(ctk.CTk):
                 try:
                     if os.path.exists(temp_msi):
                         os.remove(temp_msi)
-                except:
-                    pass
+                except Exception as e:
+                    self.log(f"Falha ao remover {temp_msi}: {e}", "AVISO")
             
             self.log("Fallback: Instalando via Chocolatey...", "AVISO")
         else:
