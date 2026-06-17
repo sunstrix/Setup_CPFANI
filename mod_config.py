@@ -994,11 +994,11 @@ def _get_teamviewer_id():
     return "N/A"
 
 # ============================================================
-# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UPLOAD GOOGLE DRIVE
+# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UPLOAD GOOGLE DRIVE COM INSTALAÇÃO AUTOMÁTICA
 # ============================================================
 
 def generate_full_snapshot():
-    """Gera snapshot completo de hardware e envia para o Google Drive (se configurado)"""
+    """Gera snapshot completo de hardware e envia para o Google Drive (com instalação automática)"""
     _log("Gerando snapshot de hardware...", "INFO")
 
     pc_name = os.environ.get("COMPUTERNAME", "UNKNOWN")
@@ -1046,62 +1046,76 @@ def generate_full_snapshot():
         _log(f"Erro ao gerar snapshot local: {e}", "ERRO")
         return None
 
-    # 2. Tenta enviar para o Google Drive (se configurado)
+    # 2. Tenta enviar para o Google Drive (com instalação automática se necessário)
+    for attempt in range(2):  # primeira tentativa sem instalar, segunda com instalação
+        try:
+            from google.oauth2 import service_account
+            from googleapiclient.discovery import build
+            from googleapiclient.http import MediaFileUpload
+            from googleapiclient.errors import HttpError
+            # Se chegou aqui, a biblioteca está disponível
+            break
+        except ImportError:
+            if attempt == 0:
+                _log("Biblioteca Google Drive não encontrada. Tentando instalar automaticamente...", "INFO")
+                try:
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib"],
+                        capture_output=True,
+                        timeout=60,
+                        creationflags=0x08000000
+                    )
+                    _log("Instalação concluída. Tentando novamente...", "INFO")
+                    continue
+                except Exception as e:
+                    _log(f"Falha ao instalar dependência do Google Drive: {e}", "ERRO")
+                    break
+            else:
+                _log("Biblioteca Google Drive não disponível mesmo após tentativa de instalação. Pulando upload.", "AVISO")
+                return str(local_path)
+        except Exception as e:
+            _log(f"Erro ao importar bibliotecas do Google Drive: {e}", "ERRO")
+            return str(local_path)
+
+    # Se chegou aqui, as bibliotecas estão disponíveis
     try:
-        from google.oauth2 import service_account
-        from googleapiclient.discovery import build
-        from googleapiclient.http import MediaFileUpload
-        from googleapiclient.errors import HttpError
-        
-        # Caminho para o arquivo de credenciais da conta de serviço
         credentials_path = os.path.join(os.path.dirname(__file__), "credentials", "service_account.json")
-        
         if not os.path.exists(credentials_path):
             _log("Arquivo de credenciais do Google Drive não encontrado. Pulando upload.", "AVISO")
             return str(local_path)
-        
-        # Autentica com a conta de serviço
+
         SCOPES = ['https://www.googleapis.com/auth/drive.file']
         creds = service_account.Credentials.from_service_account_file(credentials_path, scopes=SCOPES)
         service = build('drive', 'v3', credentials=creds)
-        
-        # ID da pasta de destino
+
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
-        
-        # Verifica se o arquivo já existe na pasta
         file_name = f"CPFANI_Hardware_Snapshot_{pc_name}.txt"
         query = f"name='{file_name}' and '{FOLDER_ID}' in parents and trashed=false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
         files = results.get('files', [])
-        
+
         media = MediaFileUpload(local_path, mimetype='text/plain')
-        
+
         if files:
-            # Arquivo existe - atualiza (substitui)
             file_id = files[0]['id']
             service.files().update(fileId=file_id, media_body=media).execute()
             _log(f"✓ Snapshot atualizado no Google Drive (arquivo existente substituído)", "OK")
         else:
-            # Arquivo não existe - cria novo
             file_metadata = {
                 'name': file_name,
                 'parents': [FOLDER_ID]
             }
             service.files().create(body=file_metadata, media_body=media, fields='id').execute()
             _log(f"✓ Snapshot enviado para o Google Drive (novo arquivo criado)", "OK")
-        
+
         return str(local_path)
-        
-    except ImportError:
-        _log("Biblioteca google-api-python-client não instalada. Pulando upload para o Google Drive.", "AVISO")
-        _log("Para ativar o upload, instale: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib", "INFO")
-        return str(local_path)
+
     except HttpError as e:
         _log(f"Erro na API do Google Drive: {e}", "ERRO")
-        return str(local_path)
     except Exception as e:
         _log(f"Erro ao enviar para o Google Drive: {e}", "ERRO")
-        return str(local_path)
+
+    return str(local_path)
 
 # ============================================================
 # NOVAS FUNÇÕES DE REDUNDÂNCIA PARA TEMA ESCURO, WALLPAPER E LOCKSCREEN
