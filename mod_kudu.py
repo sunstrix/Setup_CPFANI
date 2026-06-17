@@ -1,5 +1,5 @@
 """mod_kudu.py — Integração com o utilitário Kudu (limpeza e otimização)
-   Versão: 1.0.2
+   Versão: 1.0.3
    Projeto: Setup_CPFANI
    Licença: MIT
 """
@@ -7,12 +7,8 @@ import os
 import sys
 import subprocess
 import urllib.request
-import shutil
-import tempfile
-import zipfile
 import json
 from datetime import datetime
-from pathlib import Path
 
 # Configuração de encoding
 if sys.platform == "win32":
@@ -25,17 +21,18 @@ if sys.platform == "win32":
 # Constantes
 SCRIPT_DIR = r"C:\Scripts"
 KUDU_EXE = os.path.join(SCRIPT_DIR, "kudu.exe")
-# URLs alternativas para download
 KUDU_URL_LATEST = "https://github.com/adventdevinc/kudu/releases/latest/download/kudu-win-x64.exe"
 KUDU_URL_V1 = "https://github.com/adventdevinc/kudu/releases/download/v1.0.0/kudu-win-x64.exe"
 KUDU_API_URL = "https://api.github.com/repos/adventdevinc/kudu/releases/latest"
+
+# Cache de falha para evitar repetir download
+_KUDU_DOWNLOAD_FAILED = False
 
 def _log(msg, level="INFO"):
     """Sistema de log com timestamp e nível"""
     ts = datetime.now().strftime("%H:%M:%S")
     log_msg = f"[{ts}] [{level}] [KUDU] {msg}"
     print(log_msg, flush=True)
-    # Também tenta escrever em um log específico
     try:
         log_dir = SCRIPT_DIR
         os.makedirs(log_dir, exist_ok=True)
@@ -66,26 +63,71 @@ def _safe_subprocess_run(cmd, timeout=300, shell=False, capture_output=True, **k
         _log(f"Erro ao executar subprocesso: {e}", "ERRO")
         return None
 
+def _install_via_winget():
+    """Tenta instalar o Kudu via winget (fallback)"""
+    _log("Tentando instalar Kudu via winget...", "INFO")
+    try:
+        # Verifica se winget está disponível
+        check = _safe_subprocess_run(["winget", "--version"], timeout=10)
+        if check is None or check.returncode != 0:
+            _log("winget não disponível.", "AVISO")
+            return False
+        
+        # Tenta instalar o Kudu (supondo que o id seja 'Kudu' ou similar)
+        result = _safe_subprocess_run(
+            ["winget", "install", "--id", "Kudu", "--silent", "--accept-package-agreements"],
+            timeout=300
+        )
+        if result and result.returncode == 0:
+            _log("Kudu instalado via winget com sucesso.", "OK")
+            # Verifica se o executável foi instalado em algum lugar comum
+            possible_paths = [
+                r"C:\Program Files\Kudu\kudu.exe",
+                r"C:\Program Files (x86)\Kudu\kudu.exe",
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Kudu", "kudu.exe")
+            ]
+            for p in possible_paths:
+                if os.path.exists(p):
+                    # Copia para o diretório padrão
+                    shutil.copy2(p, KUDU_EXE)
+                    _log(f"Executável copiado de {p} para {KUDU_EXE}", "OK")
+                    return True
+            # Se não encontrou, tenta localizar no PATH
+            which = _safe_subprocess_run(["where", "kudu"], timeout=10)
+            if which and which.returncode == 0 and which.stdout.strip():
+                path_found = which.stdout.strip().split('\n')[0]
+                shutil.copy2(path_found, KUDU_EXE)
+                _log(f"Executável copiado de {path_found} para {KUDU_EXE}", "OK")
+                return True
+            _log("Kudu instalado via winget, mas executável não localizado.", "ERRO")
+            return False
+        else:
+            _log("Falha ao instalar via winget.", "ERRO")
+            return False
+    except Exception as e:
+        _log(f"Exceção no winget: {e}", "ERRO")
+        return False
+
 def ensure_kudu():
-    r"""Garante que o executável do Kudu esteja disponível em C:\Scripts\kudu.exe"""
+    """Garante que o executável do Kudu esteja disponível em C:\Scripts\kudu.exe"""
+    global _KUDU_DOWNLOAD_FAILED
+
     if os.path.exists(KUDU_EXE):
-        _log("Kudu já está presente.", "INFO")
         return True
+
+    if _KUDU_DOWNLOAD_FAILED:
+        _log("Download do Kudu já falhou anteriormente nesta execução. Pulando.", "AVISO")
+        return False
 
     _log("Kudu não encontrado. Iniciando download...", "INFO")
     os.makedirs(SCRIPT_DIR, exist_ok=True)
 
     # Lista de URLs para tentar
-    urls_to_try = [
-        KUDU_URL_LATEST,
-        KUDU_URL_V1,
-    ]
-
+    urls_to_try = [KUDU_URL_LATEST, KUDU_URL_V1]
     for url in urls_to_try:
         try:
             _log(f"Tentando baixar de {url}...", "INFO")
             urllib.request.urlretrieve(url, KUDU_EXE)
-            # Verifica se o arquivo é válido (tamanho > 1MB)
             if os.path.getsize(KUDU_EXE) > 1024 * 1024:
                 _log("Kudu baixado com sucesso.", "OK")
                 os.chmod(KUDU_EXE, 0o755)
@@ -97,7 +139,7 @@ def ensure_kudu():
             _log(f"Erro no download: {e}", "AVISO")
             continue
 
-    # Fallback: usar API do GitHub para obter URL do asset
+    # Fallback via API do GitHub
     try:
         _log("Tentando obter URL via API do GitHub...", "INFO")
         req = urllib.request.Request(
@@ -111,7 +153,6 @@ def ensure_kudu():
             data = json.loads(response.read().decode('utf-8'))
             assets = data.get("assets", [])
             for asset in assets:
-                # Procura por qualquer executável que contenha "win" ou "x64" no nome
                 if asset["name"].endswith(".exe") and ("win" in asset["name"].lower() or "x64" in asset["name"].lower()):
                     download_url = asset["browser_download_url"]
                     _log(f"Baixando de {download_url}...", "INFO")
@@ -127,6 +168,12 @@ def ensure_kudu():
     except Exception as e:
         _log(f"Erro na API do GitHub: {e}", "ERRO")
 
+    # Fallback via winget
+    _log("Tentando fallback via winget...", "INFO")
+    if _install_via_winget():
+        return True
+
+    _KUDU_DOWNLOAD_FAILED = True
     _log("Falha ao baixar o Kudu. Verifique sua conexão e tente novamente.", "ERRO")
     return False
 
@@ -137,7 +184,7 @@ def _run_kudu(args):
 
     cmd = [KUDU_EXE, "--cli"] + args
     _log(f"Executando: {' '.join(cmd)}", "INFO")
-    result = _safe_subprocess_run(cmd, timeout=600)  # 10 minutos para limpezas grandes
+    result = _safe_subprocess_run(cmd, timeout=600)
     if result is None:
         return False, "Subprocesso falhou"
     if result.returncode == 0:
@@ -149,10 +196,12 @@ def _run_kudu(args):
             _log(f"Erro: {result.stderr[:200]}", "AVISO")
         return False, result.stderr
 
+# ------------------------------------------------------------
+# Funções de limpeza (System, App, Gaming, Registry, Network, Debloat)
+# ------------------------------------------------------------
 def kudu_system_clean():
-    """Limpa arquivos temporários, logs, caches do sistema"""
     _log("Iniciando System Cleaner...", "INFO")
-    success, output = _run_kudu(["--system", "--clean"])
+    success, _ = _run_kudu(["--system", "--clean"])
     if success:
         _log("System Cleaner concluído.", "OK")
     else:
@@ -160,9 +209,8 @@ def kudu_system_clean():
     return success
 
 def kudu_app_clean():
-    """Remove dados residuais de aplicativos desinstalados"""
     _log("Iniciando App Cleaner...", "INFO")
-    success, output = _run_kudu(["--app", "--clean"])
+    success, _ = _run_kudu(["--app", "--clean"])
     if success:
         _log("App Cleaner concluído.", "OK")
     else:
@@ -170,9 +218,8 @@ def kudu_app_clean():
     return success
 
 def kudu_gaming_clean():
-    """Limpa caches de launchers de jogos e shaders GPU"""
     _log("Iniciando Gaming Cleaner...", "INFO")
-    success, output = _run_kudu(["--gaming", "--clean"])
+    success, _ = _run_kudu(["--gaming", "--clean"])
     if success:
         _log("Gaming Cleaner concluído.", "OK")
     else:
@@ -180,9 +227,8 @@ def kudu_gaming_clean():
     return success
 
 def kudu_registry_clean():
-    """Remove entradas de registro quebradas ou órfãs"""
     _log("Iniciando Registry Cleaner...", "INFO")
-    success, output = _run_kudu(["--registry", "--clean"])
+    success, _ = _run_kudu(["--registry", "--clean"])
     if success:
         _log("Registry Cleaner concluído.", "OK")
     else:
@@ -190,9 +236,8 @@ def kudu_registry_clean():
     return success
 
 def kudu_network_cleanup():
-    """Limpa DNS, perfis Wi-Fi, cache ARP e outras configurações de rede"""
     _log("Iniciando Network Cleanup...", "INFO")
-    success, output = _run_kudu(["--network", "--clean"])
+    success, _ = _run_kudu(["--network", "--clean"])
     if success:
         _log("Network Cleanup concluído.", "OK")
     else:
@@ -200,33 +245,22 @@ def kudu_network_cleanup():
     return success
 
 def kudu_debloat(use_defaults=True):
-    """Remove bloatware do Windows. Se use_defaults for False, usa a lista personalizada do settings.json? Mas aqui usamos a lista do Kudu.
-       Para fallback, podemos integrar com a nossa lista.
-       O Kudu --debloat usa sua própria lista interna de bloatware.
-    """
     _log("Iniciando Debloater (Kudu)...", "INFO")
-    success, output = _run_kudu(["--debloat", "--clean"])
+    success, _ = _run_kudu(["--debloat", "--clean"])
     if success:
         _log("Debloat concluído.", "OK")
     else:
         _log("Debloat falhou.", "ERRO")
     return success
 
-# ============================================================
-# FUNÇÕES DE GERENCIAMENTO DE DRIVERS (COMPLETAS)
-# ============================================================
-
+# ------------------------------------------------------------
+# Gerenciamento de Drivers
+# ------------------------------------------------------------
 def kudu_driver_scan():
-    """
-    Analisa drivers desatualizados e pacotes obsoletos.
-    Modo scan apenas — NÃO faz alterações no sistema.
-    Retorna (bool, dict) com resultados da análise.
-    """
     _log("Iniciando análise de drivers (Kudu)...", "INFO")
     success, output = _run_kudu(["--drivers", "--scan"])
     if success:
         _log("Análise de drivers concluída.", "OK")
-        # Tenta parsear o output se for JSON
         try:
             if output and output.strip().startswith('{'):
                 data = json.loads(output)
@@ -239,51 +273,35 @@ def kudu_driver_scan():
         return False, {"error": output}
 
 def kudu_driver_update():
-    """
-    Analisa, baixa e instala atualizações de drivers, removendo pacotes obsoletos.
-    Ação completa: scan + update + cleanup.
-    """
     _log("Iniciando atualização de drivers (Kudu)...", "INFO")
     _log("Esta operação pode demorar alguns minutos.", "INFO")
-    success, output = _run_kudu(["--drivers", "--update"])
+    success, _ = _run_kudu(["--drivers", "--update"])
     if success:
         _log("✓ Drivers atualizados com sucesso.", "OK")
-        return True
     else:
         _log("Falha ao atualizar drivers.", "ERRO")
-        return False
+    return success
 
 def kudu_driver_cleanup():
-    """Remove apenas pacotes de drivers obsoletos (sem instalar novos)"""
     _log("Iniciando limpeza de drivers obsoletos (Kudu)...", "INFO")
-    success, output = _run_kudu(["--drivers", "--clean"])
+    success, _ = _run_kudu(["--drivers", "--clean"])
     if success:
         _log("✓ Drivers obsoletos removidos.", "OK")
-        return True
     else:
         _log("Falha ao remover drivers obsoletos.", "ERRO")
-        return False
+    return success
 
-# Mantida para compatibilidade com código existente (apenas limpeza)
 def kudu_driver_manager():
-    """Limpa drivers obsoletos e pode ajudar a resolver conflitos (alias para kudu_driver_cleanup)"""
+    """Alias para kudu_driver_cleanup (mantido para compatibilidade)"""
     _log("Iniciando Driver Manager (limpeza)...", "INFO")
     return kudu_driver_cleanup()
 
-# ============================================================
-# SERVIÇOS E OUTRAS FUNÇÕES
-# ============================================================
-
+# ------------------------------------------------------------
+# Serviços e One-Click
+# ------------------------------------------------------------
 def kudu_service_manager():
-    """Otimiza serviços do Windows desativando os desnecessários.
-       O Kudu aplica uma lista de otimizações baseadas em boas práticas.
-       A lista de otimizações inclui: desativar Print Spooler se não houver impressora,
-       desativar Serviços de Fax, desativar Xbox Live Networking (se não jogar),
-       desativar Windows Search (se não usar), etc.
-       Consulte a documentação oficial para a lista completa.
-    """
     _log("Iniciando Service Manager (Otimização)...", "INFO")
-    success, output = _run_kudu(["--services", "--optimize"])
+    success, _ = _run_kudu(["--services", "--optimize"])
     if success:
         _log("Service Manager concluído.", "OK")
     else:
@@ -291,31 +309,25 @@ def kudu_service_manager():
     return success
 
 def kudu_one_click_clean():
-    """
-    Executa uma limpeza completa de todas as categorias.
-    Inclui System, App, Gaming, Registry, Network, Debloat, Drivers (update) e Services.
-    """
     _log("Iniciando One‑Click Clean (todas as categorias)...", "INFO")
     _log("Atualização de drivers incluída (pode demorar alguns minutos).", "INFO")
-    success, output = _run_kudu(["--all", "--clean"])
+    success, _ = _run_kudu(["--all", "--clean"])
     if success:
         _log("One‑Click Clean concluído.", "OK")
     else:
         _log("One‑Click Clean falhou.", "ERRO")
     return success
 
-# Função para obter a lista de otimizações de serviços (apenas informativa)
 def get_service_optimizations_list():
-    """Retorna uma lista descritiva das otimizações que o Kudu aplica em serviços."""
     return [
         "Desativa o serviço Print Spooler se nenhuma impressora estiver conectada.",
         "Desativa o serviço de Fax (Fax Service) se não utilizado.",
-        "Desativa os serviços do Xbox Live Networking (XblAuthManager, XblGameSave, XboxNetApiSvc) se não houver jogos instalados.",
-        "Desativa o serviço de Busca do Windows (Windows Search) se o usuário não usar a pesquisa de arquivos.",
-        "Desativa o serviço de Tempo (Windows Time) se não precisar de sincronização NTP.",
+        "Desativa os serviços do Xbox Live Networking se não houver jogos.",
+        "Desativa o serviço de Busca do Windows (Windows Search) se não usado.",
+        "Desativa o serviço de Tempo (Windows Time) se não precisar de NTP.",
         "Desativa o serviço de Assinatura de Controle Remoto (Remote Registry) por segurança.",
-        "Desativa o serviço de Compartilhamento de Rede (Server) se não houver compartilhamento de arquivos.",
-        "Desativa o serviço de Cliente de Compartilhamento (Workstation) se não houver acesso a recursos de rede.",
+        "Desativa o serviço de Compartilhamento de Rede (Server) se não houver compartilhamento.",
+        "Desativa o serviço de Cliente de Compartilhamento (Workstation) se não houver acesso a rede.",
         "Desativa o serviço de Gerenciamento de Dispositivos Móveis (DMWappushService) se não houver MDM.",
         "E outras otimizações padrão para melhorar desempenho e segurança."
     ]
