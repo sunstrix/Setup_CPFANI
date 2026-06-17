@@ -722,3 +722,138 @@ def generate_full_snapshot():
     except Exception as e:
         _log(f"Erro ao gerar snapshot: {e}", "ERRO")
         return None
+
+
+# ============================================================================
+# INTEGRAÇÃO COM O KUDU (LIMPEZA, OTIMIZAÇÃO E MANUTENÇÃO)
+# ============================================================================
+try:
+    import mod_kudu
+    KUDU_AVAILABLE = True
+except ImportError as e:
+    KUDU_AVAILABLE = False
+    _log(f"Módulo mod_kudu não encontrado. Funcionalidades de limpeza Kudu indisponíveis. Erro: {e}", "AVISO")
+
+def _kudu_call(func_name, *args, **kwargs):
+    """Chama uma função do mod_kudu se disponível, com log de início/fim"""
+    if not KUDU_AVAILABLE:
+        _log(f"Kudu não disponível. Não foi possível executar {func_name}.", "ERRO")
+        return False
+    func = getattr(mod_kudu, func_name, None)
+    if func is None:
+        _log(f"Função {func_name} não encontrada no módulo mod_kudu.", "ERRO")
+        return False
+    _log(f"Iniciando Kudu: {func_name}...", "INFO")
+    try:
+        result = func(*args, **kwargs)
+        if result:
+            _log(f"Kudu: {func_name} concluído com sucesso.", "OK")
+        else:
+            _log(f"Kudu: {func_name} falhou.", "ERRO")
+        return result
+    except Exception as e:
+        _log(f"Exceção ao executar {func_name}: {e}", "ERRO")
+        return False
+
+# --- Wrappers para as funções aprovadas ---
+
+def kudu_system_clean():
+    """Limpa arquivos temporários, logs, caches do sistema via Kudu"""
+    return _kudu_call("kudu_system_clean")
+
+def kudu_app_clean():
+    """Remove dados residuais de aplicativos desinstalados via Kudu"""
+    return _kudu_call("kudu_app_clean")
+
+def kudu_gaming_clean():
+    """Limpa caches de launchers de jogos e shaders GPU via Kudu"""
+    return _kudu_call("kudu_gaming_clean")
+
+def kudu_registry_clean():
+    """Remove entradas de registro quebradas/órfãs via Kudu"""
+    return _kudu_call("kudu_registry_clean")
+
+def kudu_network_cleanup():
+    """Limpa DNS, perfis Wi-Fi, cache ARP via Kudu"""
+    return _kudu_call("kudu_network_cleanup")
+
+def kudu_debloat():
+    """Remove bloatware do Windows usando a lista interna do Kudu (fallback)"""
+    return _kudu_call("kudu_debloat")
+
+def kudu_driver_manager():
+    """Limpa drivers obsoletos e ajuda a resolver conflitos via Kudu"""
+    return _kudu_call("kudu_driver_manager")
+
+def kudu_service_manager():
+    """Otimiza serviços do Windows desativando desnecessários via Kudu"""
+    return _kudu_call("kudu_service_manager")
+
+def kudu_one_click_clean():
+    """Executa uma limpeza completa de todas as categorias via Kudu"""
+    return _kudu_call("kudu_one_click_clean")
+
+def get_kudu_service_optimizations():
+    """Retorna uma lista descritiva das otimizações de serviços aplicadas pelo Kudu"""
+    if not KUDU_AVAILABLE:
+        return ["Kudu não disponível."]
+    try:
+        return mod_kudu.get_service_optimizations_list()
+    except Exception as e:
+        _log(f"Erro ao obter lista de otimizações: {e}", "ERRO")
+        return ["Erro ao obter lista."]
+
+def run_kudu_cleanup(selected_actions=None):
+    """
+    Executa um conjunto de ações de limpeza do Kudu.
+    
+    Parâmetros:
+        selected_actions (list): Lista de strings com as ações desejadas.
+            Valores possíveis: 'system', 'app', 'gaming', 'registry', 'network', 'debloat', 'drivers', 'services', 'all'
+            Se None ou lista vazia, executa todas as ações (exceto 'debloat' e 'services' por padrão, pode ser adicionado).
+    
+    Retorna:
+        dict: {'success': bool, 'results': dict} com o resultado de cada ação.
+    """
+    if not KUDU_AVAILABLE:
+        _log("Kudu não disponível. Nenhuma ação executada.", "ERRO")
+        return {"success": False, "results": {}}
+
+    # Mapeamento de ações para funções
+    action_map = {
+        'system': kudu_system_clean,
+        'app': kudu_app_clean,
+        'gaming': kudu_gaming_clean,
+        'registry': kudu_registry_clean,
+        'network': kudu_network_cleanup,
+        'debloat': kudu_debloat,
+        'drivers': kudu_driver_manager,
+        'services': kudu_service_manager,
+    }
+    
+    # Se selected_actions for None ou vazio, executa todas (exceto debloat e services, que são opcionais)
+    if selected_actions is None or not selected_actions:
+        selected_actions = ['system', 'app', 'gaming', 'registry', 'network', 'drivers']
+    
+    results = {}
+    overall_success = True
+    for action in selected_actions:
+        if action == 'all':
+            # Executa todas as ações, incluindo debloat e services
+            for key in action_map:
+                if key not in results:
+                    results[key] = action_map[key]()
+                    if not results[key]:
+                        overall_success = False
+            continue
+        func = action_map.get(action)
+        if func is None:
+            _log(f"Ação desconhecida: {action}", "AVISO")
+            results[action] = False
+            overall_success = False
+        else:
+            results[action] = func()
+            if not results[action]:
+                overall_success = False
+    
+    return {"success": overall_success, "results": results}
