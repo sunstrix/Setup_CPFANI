@@ -1272,8 +1272,8 @@ def kudu_one_click_clean():
     """Executa uma limpeza completa de todas as categorias via Kudu"""
     return _kudu_call("kudu_one_click_clean")
 
+# get_kudu_service_optimizations - retorna lista de otimizações de serviços
 def get_kudu_service_optimizations():
-    """Retorna uma lista descritiva das otimizações de serviços aplicadas pelo Kudu"""
     if not KUDU_AVAILABLE:
         return ["Kudu não disponível."]
     try:
