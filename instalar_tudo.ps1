@@ -54,7 +54,8 @@ if (!(Test-Path $chocoExe)) {
         Write-Log "Chocolatey instalado."
     } catch {
         Write-Erro "Falha ao instalar Chocolatey: $_"
-        return
+        # CORREÇÃO: substituído return por exit 1 para garantir término do script
+        exit 1
     }
 }
 
