@@ -113,6 +113,8 @@ class CPFani_GUI(ctk.CTk):
         self.geometry("740x800")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
+        self.local_snapshot = "Não informado"
+        self.usuario_snapshot = "Não informado"
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
@@ -495,6 +497,67 @@ class CPFani_GUI(ctk.CTk):
             self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
             self.after(0, self._finalizar, ["Crítico-NãoTratado"])
 
+    def _coletar_dados_snapshot(self):
+        """Abre janela modal para coletar local e usuário para o snapshot"""
+        # Lista de locais
+        locais = [
+            "BPCS – LOJA",
+            "4830 – MATRIZ",
+            "4842 – METRÓPOLE",
+            "5152 – CORAÇÃO",
+            "6105 – ASSAI",
+            "6106 – DIREITA",
+            "6110 – AROUCHE",
+            "8001 – DOM JOSÉ",
+            "12055 – SÃO BENTO",
+            "11576 – D'AVÓ",
+            "12605 – COOP",
+            "12645 – LIGHT",
+            "20371 – METRÔ LUZ",
+            "21502 – BB_SBC",
+            "23000 – OUTLET",
+            "12056 – MARECHAL",
+            "14120 – ARPEL SBC",
+            "14353 – ARPEL SP",
+            "23379 – Piraporinha"
+        ]
+
+        # Janela modal
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Dados do Snapshot")
+        dialog.geometry("400x250")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        # Centralizar na tela
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 200
+        y = (dialog.winfo_screenheight() // 2) - 125
+        dialog.geometry(f"+{x}+{y}")
+
+        ctk.CTkLabel(dialog, text="Selecione o Local:", font=("", 12, "bold")).pack(pady=(20, 5))
+        var_local = ctk.StringVar(value=locais[0])
+        option_menu = ctk.CTkOptionMenu(dialog, values=locais, variable=var_local, width=300)
+        option_menu.pack(pady=5)
+
+        ctk.CTkLabel(dialog, text="Nome do Usuário:", font=("", 12, "bold")).pack(pady=(15, 5))
+        entry_usuario = ctk.CTkEntry(dialog, width=300, placeholder_text="Digite o nome do usuário")
+        entry_usuario.pack(pady=5)
+        entry_usuario.focus_set()
+
+        def confirmar():
+            self.local_snapshot = var_local.get()
+            self.usuario_snapshot = entry_usuario.get().strip() or "Não informado"
+            dialog.destroy()
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        ctk.CTkButton(btn_frame, text="Confirmar", command=confirmar, width=100).pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="Cancelar", command=dialog.destroy, width=100, fg_color="#555555").pack(side="left", padx=10)
+
+        self.wait_window(dialog)
+
     def _work(self):
         """Lógica principal de deploy com tratamento robusto de erros"""
         erros = []
@@ -519,13 +582,16 @@ class CPFani_GUI(ctk.CTk):
             if self.kudu_services.get(): kudu_actions.append('services')
             has_kudu_actions = len(kudu_actions) > 0
             
+            # Coleta dados do snapshot ANTES de começar as tarefas
+            self._coletar_dados_snapshot()
+            
             # Cálculo de tarefas totais
             total_tasks = 4  # Interface, Segurança, Agendamentos, Startup
             total_tasks += len(selected_apps)
             if self.office_var.get() != "nenhum": total_tasks += 1
             if self.driver_var.get() != "nenhum": total_tasks += 1
             if self.task_watchdog.get(): total_tasks += 1
-            if has_kudu_actions: total_tasks += 1  # etapa de limpeza Kudu
+            if has_kudu_actions: total_tasks += 1
             total_tasks += 1  # Snapshot
             
             completed = 0
@@ -682,13 +748,11 @@ class CPFani_GUI(ctk.CTk):
                 )
                 try:
                     self.log(f"Iniciando limpeza Kudu com ações: {', '.join(kudu_actions)}")
-                    # Tenta importar o mod_kudu via mod_config
                     try:
                         result = mod_config.run_kudu_cleanup(kudu_actions)
                         if result.get("success", False):
                             self.log("✓ Limpeza Kudu concluída com sucesso.", "OK")
                         else:
-                            # Verifica resultados individuais
                             failed_actions = [act for act, res in result.get("results", {}).items() if not res]
                             if failed_actions:
                                 self.log(f"Ações Kudu com falha: {', '.join(failed_actions)}", "AVISO")
@@ -710,7 +774,11 @@ class CPFani_GUI(ctk.CTk):
             self.update_status("► Gerando snapshot de hardware...", (completed / total_tasks) * 100, "")
             try:
                 self.log("Gerando snapshot de hardware...")
-                mod_config.generate_full_snapshot()
+                # Passa os dados coletados
+                mod_config.generate_full_snapshot(
+                    local=self.local_snapshot,
+                    usuario=self.usuario_snapshot
+                )
                 self.log("✓ Snapshot gerado", "OK")
             except Exception as e:
                 self.log(f"Falha ao gerar snapshot: {e}", "ERRO")
