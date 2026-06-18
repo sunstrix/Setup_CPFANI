@@ -819,6 +819,23 @@ def _get_bios_serial():
         pass
     return "Desconhecido"
 
+def _get_uuid():
+    """Obtém o UUID da placa-mãe via wmic"""
+    try:
+        result = _safe_subprocess_run(
+            ['wmic', 'csproduct', 'get', 'uuid'],
+            timeout=10
+        )
+        if result and result.stdout:
+            lines = result.stdout.strip().splitlines()
+            if len(lines) >= 2:
+                uuid = lines[1].strip()
+                if uuid and len(uuid) > 10:  # validação simples
+                    return uuid
+    except Exception as e:
+        _log(f"Erro ao obter UUID: {e}", "AVISO")
+    return "Desconhecido"
+
 # ============================================================
 # FUNÇÕES MELHORADAS PARA OBTER IDs DO AnyDesk e TeamViewer
 # ============================================================
@@ -994,20 +1011,32 @@ def _get_teamviewer_id():
     return "N/A"
 
 # ============================================================
-# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UPLOAD GOOGLE DRIVE COM OAuth2
+# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UUID + LOCAl/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
 # ============================================================
 
-def generate_full_snapshot():
-    """Gera snapshot completo de hardware e envia para o Google Drive usando OAuth2"""
+def generate_full_snapshot(local=None, usuario=None):
+    """
+    Gera snapshot completo de hardware com ID único (UUID) e nome de arquivo baseado no UUID.
+    Parâmetros:
+        local (str): código e nome do local (ex: "14120 – ARPEL SBC")
+        usuario (str): nome do usuário
+    Retorna: caminho do arquivo local ou None em caso de erro.
+    """
     _log("Gerando snapshot de hardware...", "INFO")
 
-    pc_name = os.environ.get("COMPUTERNAME", "UNKNOWN")
+    # Obter UUID
+    uuid = _get_uuid()
+    if uuid == "Desconhecido":
+        _log("Não foi possível obter o UUID. Usando nome do computador como fallback.", "AVISO")
+        uuid = os.environ.get("COMPUTERNAME", "UNKNOWN")
     
-    # 1. Salva localmente (sempre)
-    local_path = Path(f"{SCRIPT_DIR}/CPFANI_Hardware_Snapshot_{pc_name}.txt")
+    # Nome do arquivo baseado no UUID
+    file_name = f"CPFANI_Hardware_Snapshot_{uuid}.txt"
+    local_path = Path(f"{SCRIPT_DIR}/{file_name}")
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Coleta de informações
+    pc_name = os.environ.get("COMPUTERNAME", "UNKNOWN")
     modelo = _get_system_model()
     processador = _get_processor_name()
     memoria = _get_total_ram()
@@ -1016,12 +1045,19 @@ def generate_full_snapshot():
     anydesk_id = _get_anydesk_id()
     teamviewer_id = _get_teamviewer_id()
 
+    # Trata parâmetros de local e usuário
+    local_str = local if local else "Não informado"
+    usuario_str = usuario if usuario else "Não informado"
+
     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     content = f"""
 ============================================================
    SNAPSHOT CP FANI V5.9.3 (Edição Infiltrado + Self-Healing)
    Gerado em: {now}
 ============================================================
+[ID]
+Local : {local_str}
+Usuário : {usuario_str}
 
 [HARDWARE]
   Nome_Computador     : {pc_name}
@@ -1029,7 +1065,7 @@ def generate_full_snapshot():
   Processador         : {processador}
   Memoria_RAM         : {memoria}
   Windows             : {windows}
-  Serial_BIOS         : {bios_serial}
+  ID         : {uuid}
 
 [SUPORTE]
   AnyDesk    : {anydesk_id}
@@ -1064,29 +1100,26 @@ def generate_full_snapshot():
         SCOPES = ['https://www.googleapis.com/auth/drive.file']
         creds = None
 
-        # Tenta carregar token salvo
         token_path = os.path.join(os.path.dirname(__file__), "credentials", "token.pickle")
         if os.path.exists(token_path):
             with open(token_path, 'rb') as token:
                 creds = pickle.load(token)
 
-        # Se não houver credenciais válidas, inicia o fluxo OAuth
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
-                # run_local_server abre uma janela do navegador para autorização
                 creds = flow.run_local_server(port=0)
-            # Salva o token para a próxima execução
             with open(token_path, 'wb') as token:
                 pickle.dump(creds, token)
 
         service = build('drive', 'v3', credentials=creds)
 
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
-        file_name = f"CPFANI_Hardware_Snapshot_{pc_name}.txt"
-        query = f"name='{file_name}' and '{FOLDER_ID}' in parents and trashed=false"
+        # Usar o mesmo nome de arquivo local (com UUID)
+        drive_file_name = file_name
+        query = f"name='{drive_file_name}' and '{FOLDER_ID}' in parents and trashed=false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
         files = results.get('files', [])
 
@@ -1098,7 +1131,7 @@ def generate_full_snapshot():
             _log(f"✓ Snapshot atualizado no Google Drive (arquivo existente substituído)", "OK")
         else:
             file_metadata = {
-                'name': file_name,
+                'name': drive_file_name,
                 'parents': [FOLDER_ID]
             }
             service.files().create(body=file_metadata, media_body=media, fields='id').execute()
@@ -1288,10 +1321,6 @@ def _apply_lockscreen_to_all_users():
         _log("✓ Bloqueio de alteração da tela de bloqueio ativado", "OK")
     except Exception as e:
         _log(f"Erro ao ativar bloqueio de alteração: {e}", "AVISO")
-    
-    # Observação: o bloco de fallback por SID (HKU\{sid}\...\Lock Screen\Creative) foi removido
-    # porque essa chave não tem efeito real na imagem de lockscreen no Windows 10/11.
-    # Em seu lugar, usamos PersonalizationCSP (HKLM) que funciona em todas as edições.
 
 # ============================================================================
 # INTEGRAÇÃO COM O KUDU (LIMPEZA, OTIMIZAÇÃO E MANUTENÇÃO)
