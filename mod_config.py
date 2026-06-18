@@ -162,9 +162,13 @@ def _get_active_user_sid():
         return None
 
 def setup_self_healing():
-    """Instala o sistema de auto-cura (watchdog)"""
+    """Instala o sistema de auto-cura (watchdog), removendo duplicatas antes"""
     _log("=" * 60, "INFO")
     _log("INSTALANDO CAO DE GUARDA (SELF-HEALING)...", "INFO")
+    
+    # Remove tarefas duplicadas antes de criar
+    _delete_duplicate_tasks("CPFANI_Watchdog")
+    
     script_dir = SCRIPT_DIR
     os.makedirs(script_dir, exist_ok=True)
     
@@ -214,7 +218,7 @@ while ($true) {
         _log(f"Erro ao criar script VBS: {e}", "ERRO")
         return False
     
-    # Cria tarefa agendada
+    # Cria tarefa agendada (força com /f para substituir se já existir)
     task_cmd = f'schtasks /create /tn "CPFANI_Watchdog" /tr "wscript.exe \\"{vbs_path}\\"" /sc onlogon /ru "SYSTEM" /rl highest /f'
     result = _safe_subprocess_run(task_cmd, shell=True, timeout=30)
     if result and result.returncode == 0:
@@ -263,9 +267,34 @@ def sync_time_ntp():
     except Exception as e:
         _log(f"Erro ao sincronizar horário: {e}", "ERRO")
 
+def _task_exists(task_name):
+    """Verifica se uma tarefa agendada com o nome existe"""
+    cmd = f'schtasks /query /tn "{task_name}" /fo csv /nh'
+    result = _safe_subprocess_run(cmd, shell=True, timeout=10)
+    return result is not None and result.returncode == 0
+
+def _delete_task(task_name):
+    """Remove uma tarefa agendada pelo nome"""
+    if _task_exists(task_name):
+        _log(f"Removendo tarefa existente: {task_name}", "INFO")
+        _safe_subprocess_run(f'schtasks /delete /tn "{task_name}" /f', shell=True, timeout=10)
+
+def _delete_duplicate_tasks(task_name):
+    """Remove todas as tarefas com o nome (garante que não haja duplicatas)"""
+    # Verifica se há múltiplas tarefas com o mesmo nome (o schtasks lista todas)
+    cmd = f'schtasks /query /tn "{task_name}" /fo csv /nh'
+    result = _safe_subprocess_run(cmd, shell=True, timeout=10)
+    if result is not None and result.returncode == 0:
+        # Se retornar 0, existe pelo menos uma. Vamos remover todas (usando /f) para garantir
+        _log(f"Removendo duplicatas da tarefa: {task_name}", "INFO")
+        _safe_subprocess_run(f'schtasks /delete /tn "{task_name}" /f', shell=True, timeout=10)
+        # Aguarda um momento para o sistema processar
+        time.sleep(1)
+
 def schedule_daily_reboot():
-    """Agenda reinício diário às 21:00"""
+    """Agenda reinício diário às 21:00, removendo duplicatas antes"""
     _log("Agendando reinício diário automático...", "INFO")
+    _delete_duplicate_tasks("CPFANI_ReinicioDiario")
     try:
         task_cmd = 'shutdown.exe /r /f /t 60 /c "Reinicio diario automatico CP Fani"'
         result = _safe_subprocess_run(
@@ -280,8 +309,59 @@ def schedule_daily_reboot():
     except Exception as e:
         _log(f"Erro ao agendar reinício: {e}", "ERRO")
 
+def schedule_manutencao_rede():
+    """Agenda manutenção de rede (placeholder), removendo duplicatas antes"""
+    _log("Agendando manutenção de rede...", "INFO")
+    _delete_duplicate_tasks("CPFANI_ManutencaoRede")
+    try:
+        # Script de manutenção: pode ser um arquivo .bat ou .ps1 existente
+        bat_path = os.path.join(os.path.dirname(__file__), "manutencao_rede.bat")
+        if not os.path.exists(bat_path):
+            _log("Arquivo manutencao_rede.bat não encontrado. Pulando agendamento.", "AVISO")
+            return True
+        task_cmd = f'"{bat_path}"'
+        result = _safe_subprocess_run(
+            f'schtasks /create /tn "CPFANI_ManutencaoRede" /tr "{task_cmd}" /sc onlogon /ru "SYSTEM" /rl highest /f',
+            shell=True,
+            timeout=30
+        )
+        if result and result.returncode == 0:
+            _log("✓ Manutenção de rede agendada no logon", "OK")
+        else:
+            _log("Aviso ao agendar manutenção de rede", "AVISO")
+    except Exception as e:
+        _log(f"Erro ao agendar manutenção de rede: {e}", "ERRO")
+    return True
+
+def schedule_instalar_tudo():
+    """Agenda instalador universal (placeholder), removendo duplicatas antes"""
+    _log("Agendando instalador universal...", "INFO")
+    _delete_duplicate_tasks("CPFANI_InstalarTudo")
+    try:
+        ps1_path = os.path.join(os.path.dirname(__file__), "instalar_tudo.ps1")
+        if not os.path.exists(ps1_path):
+            _log("Arquivo instalar_tudo.ps1 não encontrado. Pulando agendamento.", "AVISO")
+            return True
+        # Executa o PowerShell com o script
+        task_cmd = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{ps1_path}"'
+        result = _safe_subprocess_run(
+            f'schtasks /create /tn "CPFANI_InstalarTudo" /tr "{task_cmd}" /sc onlogon /ru "SYSTEM" /rl highest /f',
+            shell=True,
+            timeout=30
+        )
+        if result and result.returncode == 0:
+            _log("✓ Instalador universal agendado no logon", "OK")
+        else:
+            _log("Aviso ao agendar instalador universal", "AVISO")
+    except Exception as e:
+        _log(f"Erro ao agendar instalador universal: {e}", "ERRO")
+    return True
+
 def set_apps_to_startup_all_users():
-    """Configura aplicativos para iniciar no login de todos os usuários"""
+    """
+    Configura aplicativos para iniciar no login de todos os usuários,
+    removendo duplicatas da pasta de inicialização antes de criar novos atalhos.
+    """
     _log("Configurando apps para abrir no login de TODOS os utilizadores (HKLM)...", "INFO")
     startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
     os.makedirs(startup_path, exist_ok=True)
@@ -334,7 +414,7 @@ def set_apps_to_startup_all_users():
     except Exception as e:
         _log(f"Aviso no Mapeamento Geral Nível 11: {e}", "AVISO")
     
-    # Cria atalhos na pasta de inicialização
+    # Cria atalhos na pasta de inicialização (removendo duplicatas primeiro)
     apps = {
         "flameshot.lnk": [r"C:\Program Files\Flameshot\bin\flameshot.exe", r"C:\Program Files\Flameshot\flameshot.exe"],
         "sharex.lnk": [r"C:\Program Files\ShareX\ShareX.exe", r"C:\Program Files (x86)\ShareX\ShareX.exe"],
@@ -343,14 +423,24 @@ def set_apps_to_startup_all_users():
     }
     
     for link, paths in apps.items():
+        target_path = os.path.join(startup_path, link)
+        
+        # Remove todos os atalhos com o mesmo nome (elimina duplicatas)
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+                _log(f"Removido atalho existente: {link}", "INFO")
+            except Exception as e:
+                _log(f"Erro ao remover atalho {link}: {e}", "AVISO")
+        
+        # Encontra o executável
         exe_found = None
         for p in paths:
             if os.path.exists(p):
                 exe_found = p
                 break
         if exe_found:
-            target = os.path.join(startup_path, link)
-            ps_cmd = f'$s=(New-Object -COM WScript.Shell).CreateShortcut(\'{target}\');$s.TargetPath=\'{exe_found}\';$s.Save()'
+            ps_cmd = f'$s=(New-Object -COM WScript.Shell).CreateShortcut(\'{target_path}\');$s.TargetPath=\'{exe_found}\';$s.Save()'
             result = _safe_subprocess_run(
                 ["powershell", "-NoProfile", "-Command", ps_cmd],
                 timeout=15
@@ -359,6 +449,8 @@ def set_apps_to_startup_all_users():
                 _log(f"✓ Atalho criado: {link}", "OK")
             else:
                 _log(f"Aviso ao criar atalho: {link}", "AVISO")
+        else:
+            _log(f"Executável não encontrado para {link}", "AVISO")
 
 def apply_default_user_profile(bar_alignment):
     """Aplica configurações ao perfil padrão de usuário, incluindo wallpaper e lockscreen"""
@@ -436,9 +528,14 @@ def apply_default_user_profile(bar_alignment):
         _log(f"Erro ao aplicar perfil padrão: {e}", "ERRO")
 
 def remove_agressive_bloatware(bloatware_list):
-    """Remove bloatware do sistema"""
-    _log(f"Removendo {len(bloatware_list)} aplicativos bloatware...", "INFO")
-    for app in bloatware_list:
+    """Remove bloatware do sistema, preservando a calculadora"""
+    # Filtra a lista para NÃO remover a Calculadora
+    filtered_list = [app for app in bloatware_list if app != "Microsoft.WindowsCalculator"]
+    if len(filtered_list) != len(bloatware_list):
+        _log("Removendo Microsoft.WindowsCalculator da lista de bloatware (preservar calculadora)", "INFO")
+    
+    _log(f"Removendo {len(filtered_list)} aplicativos bloatware...", "INFO")
+    for app in filtered_list:
         try:
             cmd_user = f"Get-AppxPackage -AllUsers *{app}* | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue"
             cmd_prov = f"Get-AppxProvisionedPackage -Online | Where-Object {{$_.DisplayName -match '{app}'}} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue"
@@ -758,16 +855,6 @@ def configurar_compartilhamento_rede():
             _log("Aviso ao liberar Firewall", "AVISO")
     except Exception as e:
         _log(f"Aviso ao liberar Firewall: {e}", "AVISO")
-
-def schedule_manutencao_rede():
-    """Agenda manutenção de rede (placeholder)"""
-    _log("Agendamento de manutenção de rede configurado", "INFO")
-    return True
-
-def schedule_instalar_tudo():
-    """Agenda instalador universal (placeholder)"""
-    _log("Agendamento de instalador universal configurado", "INFO")
-    return True
 
 def _get_hardware_info():
     """Obtém informações básicas de hardware (legado)"""
