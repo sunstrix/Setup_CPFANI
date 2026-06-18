@@ -9,8 +9,6 @@ Uma ferramenta de provisionamento *zero-touch* e otimização extrema projetada 
 
 O script automatiza a instalação de softwares essenciais, aplica políticas rígidas de segurança (LGPD), extermina *bloatwares* e implementa um motor de Auto-Cura (*Self-Healing*) para garantir que a máquina nunca perca a sua configuração padrão. Além disso, gera um **Snapshot de Hardware** com identificador único (`ProcessorId`), local e usuário, e envia automaticamente para o Google Drive (com autenticação OAuth2) para rastreamento centralizado dos endpoints.
 
-Teste
-
 ---
 
 ## ✨ Recursos Principais
