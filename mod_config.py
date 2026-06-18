@@ -361,7 +361,7 @@ def set_apps_to_startup_all_users():
                 _log(f"Aviso ao criar atalho: {link}", "AVISO")
 
 def apply_default_user_profile(bar_alignment):
-    """Aplica configurações ao perfil padrão de usuário"""
+    """Aplica configurações ao perfil padrão de usuário, incluindo wallpaper e lockscreen"""
     _log("Aplicando configurações ao perfil padrão...", "INFO")
     try:
         # Carrega hive do usuário padrão
@@ -396,6 +396,34 @@ def apply_default_user_profile(bar_alignment):
             ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"],
             timeout=10
         )
+        
+        # ===== NOVO: Define wallpaper e lockscreen para novos usuários =====
+        # Garante que a imagem exista
+        wallpaper_path = _ensure_wallpaper_image()
+        if wallpaper_path:
+            # Wallpaper para o perfil padrão
+            _safe_subprocess_run(
+                ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Desktop", "/v", "Wallpaper", "/t", "REG_SZ", "/d", wallpaper_path, "/f"],
+                timeout=10
+            )
+            _safe_subprocess_run(
+                ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Desktop", "/v", "WallpaperStyle", "/t", "REG_SZ", "/d", "2", "/f"],
+                timeout=10
+            )
+            _log("✓ Wallpaper definido no perfil padrão", "OK")
+            
+            # Lockscreen para o perfil padrão (via PersonalizationCSP)
+            _safe_subprocess_run(
+                ["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Lock Screen\Creative", "/v", "LockScreenImagePath", "/t", "REG_SZ", "/d", wallpaper_path, "/f"],
+                timeout=10
+            )
+            _safe_subprocess_run(
+                ["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Lock Screen\Creative", "/v", "LockScreenImageId", "/t", "REG_SZ", "/d", "{00000000-0000-0000-0000-000000000000}", "/f"],
+                timeout=10
+            )
+            _log("✓ Lockscreen definido no perfil padrão", "OK")
+        else:
+            _log("Imagem do wallpaper não disponível. Pulando configuração no perfil padrão.", "AVISO")
         
         # Descarrega hive
         _safe_subprocess_run(
@@ -446,6 +474,7 @@ def apply_cpfani_branding(bar_alignment):
     except Exception as e:
         _log(f"Erro ao aplicar tema: {e}", "AVISO")
     
+    # Aplica wallpaper e lockscreen para o usuário atual (já existente)
     apply_cpfani_wallpaper_redundant()
     apply_cpfani_lockscreen_redundant()
     
@@ -464,9 +493,10 @@ def apply_cpfani_branding(bar_alignment):
         except Exception as e:
             _log(f"Erro ao alinhar barra: {e}", "AVISO")
     
+    # Aplica configurações ao perfil padrão (novos usuários)
     apply_default_user_profile(bar_alignment)
     
-    # ================== NOVAS FUNÇÕES DE REDUNDÂNCIA ==================
+    # ================== REDUNDÂNCIA PARA TODOS OS USUÁRIOS ==================
     _log("Aplicando configurações de tema escuro, wallpaper e lockscreen para TODOS os usuários (redundância)...", "INFO")
     _apply_dark_theme_to_all_users()
     _apply_wallpaper_to_all_users()
@@ -820,44 +850,66 @@ def _get_bios_serial():
     return "Desconhecido"
 
 # ============================================================
-# FUNÇÃO PARA OBTER O PROCESSOR ID (SUBSTITUI O UUID)
+# FUNÇÃO PARA OBTER O MAC ADDRESS (SUBSTITUI O PROCESSOR ID)
 # ============================================================
 
-def _get_processor_id():
+def _get_mac_address():
     """
-    Obtém o ProcessorId da CPU via WMI (Get-WmiObject Win32_Processor).
-    Este identificador é único para cada processador e não se repete
-    em máquinas chinesas como o UUID.
+    Obtém o endereço MAC da primeira placa de rede ativa (ou a primeira encontrada).
+    Utiliza (Get-NetAdapter).MacAddress como solicitado.
     """
-    # Método 1: PowerShell com Get-WmiObject (mais compatível)
+    # Método 1: PowerShell com Get-NetAdapter (prioriza adaptador com status 'Up')
     try:
-        ps_script = "(Get-WmiObject Win32_Processor).ProcessorId"
+        ps_script = """
+        $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
+        if (-not $adapter) {
+            $adapter = Get-NetAdapter | Select-Object -First 1
+        }
+        return $adapter.MacAddress
+        """
         result = _safe_subprocess_run(
             ['powershell', '-NoProfile', '-Command', ps_script],
             timeout=10
         )
         if result and result.stdout:
-            proc_id = result.stdout.strip()
-            if proc_id and len(proc_id) > 5:
-                return proc_id
+            mac = result.stdout.strip()
+            if mac and len(mac) > 5 and '-' in mac:
+                return mac
     except Exception as e:
-        _log(f"Erro ao obter ProcessorId via PowerShell: {e}", "AVISO")
+        _log(f"Erro ao obter MAC Address via PowerShell: {e}", "AVISO")
     
-    # Método 2: PowerShell com Get-CimInstance (fallback)
+    # Método 2: wmic nic (fallback)
     try:
-        ps_script = "(Get-CimInstance Win32_Processor).ProcessorId"
         result = _safe_subprocess_run(
-            ['powershell', '-NoProfile', '-Command', ps_script],
+            ['wmic', 'nic', 'where', 'NetEnabled=True', 'get', 'MACAddress'],
             timeout=10
         )
         if result and result.stdout:
-            proc_id = result.stdout.strip()
-            if proc_id and len(proc_id) > 5:
-                return proc_id
+            lines = result.stdout.strip().splitlines()
+            if len(lines) >= 2:
+                mac = lines[1].strip()
+                if mac and len(mac) > 5:
+                    return mac
     except Exception as e:
-        _log(f"Erro ao obter ProcessorId via Get-CimInstance: {e}", "AVISO")
+        _log(f"Erro ao obter MAC Address via wmic: {e}", "AVISO")
     
-    _log("Não foi possível obter o ProcessorId. Usando 'ID_NAO_DISPONIVEL'.", "ERRO")
+    # Método 3: ipconfig /all (fallback extremo)
+    try:
+        result = _safe_subprocess_run(
+            ['ipconfig', '/all'],
+            timeout=10
+        )
+        if result and result.stdout:
+            lines = result.stdout.splitlines()
+            for line in lines:
+                if 'Endereço Físico' in line or 'Physical Address' in line:
+                    mac = line.split(':')[-1].strip()
+                    if mac and len(mac) > 5:
+                        return mac
+    except Exception as e:
+        _log(f"Erro ao obter MAC Address via ipconfig: {e}", "AVISO")
+    
+    _log("Não foi possível obter o MAC Address. Usando 'ID_NAO_DISPONIVEL'.", "ERRO")
     return "ID_NAO_DISPONIVEL"
 
 # ============================================================
@@ -1035,12 +1087,12 @@ def _get_teamviewer_id():
     return "N/A"
 
 # ============================================================
-# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + PROCESSOR ID + LOCAL/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
+# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + MAC ADDRESS + LOCAL/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
 # ============================================================
 
 def generate_full_snapshot(local=None, usuario=None):
     """
-    Gera snapshot completo de hardware com ID único (ProcessorId) e nome de arquivo baseado no ProcessorId.
+    Gera snapshot completo de hardware com ID único (MAC Address) e nome de arquivo baseado no MAC.
     Parâmetros:
         local (str): código e nome do local (ex: "14120 – ARPEL SBC")
         usuario (str): nome do usuário
@@ -1048,11 +1100,13 @@ def generate_full_snapshot(local=None, usuario=None):
     """
     _log("Gerando snapshot de hardware...", "INFO")
 
-    # Obter ProcessorId (obrigatório)
-    proc_id = _get_processor_id()
+    # Obter MAC Address (obrigatório)
+    mac_id = _get_mac_address()
     
-    # Nome do arquivo baseado APENAS no ProcessorId
-    file_name = f"CPFANI_Hardware_Snapshot_{proc_id}.txt"
+    # Nome do arquivo baseado APENAS no MAC Address
+    # Remove caracteres especiais (hífens, dois pontos) para um nome de arquivo limpo
+    clean_mac = mac_id.replace('-', '').replace(':', '').upper()
+    file_name = f"CPFANI_Hardware_Snapshot_{clean_mac}.txt"
     local_path = Path(f"{SCRIPT_DIR}/{file_name}")
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1086,7 +1140,7 @@ Usuário : {usuario_str}
   Processador         : {processador}
   Memoria_RAM         : {memoria}
   Windows             : {windows}
-  ID         : {proc_id}
+  ID         : {mac_id}
 
 [SUPORTE]
   AnyDesk    : {anydesk_id}
@@ -1138,7 +1192,7 @@ Usuário : {usuario_str}
         service = build('drive', 'v3', credentials=creds)
 
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
-        # Usar o mesmo nome de arquivo local (com ProcessorId)
+        # Usar o mesmo nome de arquivo local (com MAC limpo)
         drive_file_name = file_name
         query = f"name='{drive_file_name}' and '{FOLDER_ID}' in parents and trashed=false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
@@ -1257,7 +1311,7 @@ def _apply_dark_theme_to_all_users():
             _log(f"Erro ao aplicar tema escuro para SID {sid}: {e}", "AVISO")
 
 def _apply_wallpaper_to_all_users():
-    """Aplica wallpaper para todos os usuários via GPO e HKCU"""
+    """Aplica wallpaper para todos os usuários via GPO + HKCU + gpupdate"""
     _log("Aplicando wallpaper para todos os usuários...", "INFO")
     
     # Garante que a imagem exista
@@ -1274,7 +1328,14 @@ def _apply_wallpaper_to_all_users():
     except Exception as e:
         _log(f"Erro ao configurar wallpaper via GPO: {e}", "AVISO")
     
-    # 2. Para cada SID de usuário real
+    # 2. Forçar atualização das políticas
+    try:
+        _safe_subprocess_run("gpupdate /force", shell=True, timeout=60)
+        _log("✓ Política de grupo atualizada (gpupdate /force)", "OK")
+    except Exception as e:
+        _log(f"Erro ao executar gpupdate: {e}", "AVISO")
+    
+    # 3. Para cada SID de usuário real (fallback)
     sids = _get_all_user_sids()
     if not sids:
         _log("Nenhum SID de usuário encontrado para aplicar wallpaper.", "AVISO")
@@ -1295,7 +1356,7 @@ def _apply_wallpaper_to_all_users():
             _log(f"Erro ao aplicar wallpaper para SID {sid}: {e}", "AVISO")
 
 def _apply_lockscreen_to_all_users():
-    """Aplica lockscreen para todos os usuários via GPO + PersonalizationCSP (com bloqueio)"""
+    """Aplica lockscreen para todos os usuários via GPO + PersonalizationCSP (com bloqueio) e gpupdate"""
     _log("Aplicando lockscreen para todos os usuários...", "INFO")
     
     # Garante que a imagem exista
