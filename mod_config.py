@@ -819,39 +819,46 @@ def _get_bios_serial():
         pass
     return "Desconhecido"
 
-def _get_uuid():
-    """Obtém o UUID da placa-mãe via PowerShell (fallback para wmic)"""
-    # Método 1: PowerShell (mais confiável)
+# ============================================================
+# FUNÇÃO PARA OBTER O PROCESSOR ID (SUBSTITUI O UUID)
+# ============================================================
+
+def _get_processor_id():
+    """
+    Obtém o ProcessorId da CPU via WMI (Get-WmiObject Win32_Processor).
+    Este identificador é único para cada processador e não se repete
+    em máquinas chinesas como o UUID.
+    """
+    # Método 1: PowerShell com Get-WmiObject (mais compatível)
     try:
-        ps_script = "(Get-CimInstance Win32_ComputerSystemProduct).UUID"
+        ps_script = "(Get-WmiObject Win32_Processor).ProcessorId"
         result = _safe_subprocess_run(
             ['powershell', '-NoProfile', '-Command', ps_script],
             timeout=10
         )
         if result and result.stdout:
-            uuid = result.stdout.strip()
-            if uuid and len(uuid) > 10 and '-' in uuid:
-                return uuid
+            proc_id = result.stdout.strip()
+            if proc_id and len(proc_id) > 5:
+                return proc_id
     except Exception as e:
-        _log(f"Erro ao obter UUID via PowerShell: {e}", "AVISO")
+        _log(f"Erro ao obter ProcessorId via PowerShell: {e}", "AVISO")
     
-    # Método 2: wmic (fallback)
+    # Método 2: PowerShell com Get-CimInstance (fallback)
     try:
+        ps_script = "(Get-CimInstance Win32_Processor).ProcessorId"
         result = _safe_subprocess_run(
-            ['wmic', 'csproduct', 'get', 'uuid'],
+            ['powershell', '-NoProfile', '-Command', ps_script],
             timeout=10
         )
         if result and result.stdout:
-            lines = result.stdout.strip().splitlines()
-            if len(lines) >= 2:
-                uuid = lines[1].strip()
-                if uuid and len(uuid) > 10 and '-' in uuid:
-                    return uuid
+            proc_id = result.stdout.strip()
+            if proc_id and len(proc_id) > 5:
+                return proc_id
     except Exception as e:
-        _log(f"Erro ao obter UUID via wmic: {e}", "AVISO")
+        _log(f"Erro ao obter ProcessorId via Get-CimInstance: {e}", "AVISO")
     
-    _log("Não foi possível obter o UUID. Usando 'UUID_NAO_DISPONIVEL'.", "ERRO")
-    return "UUID_NAO_DISPONIVEL"
+    _log("Não foi possível obter o ProcessorId. Usando 'ID_NAO_DISPONIVEL'.", "ERRO")
+    return "ID_NAO_DISPONIVEL"
 
 # ============================================================
 # FUNÇÕES MELHORADAS PARA OBTER IDs DO AnyDesk e TeamViewer
@@ -1028,12 +1035,12 @@ def _get_teamviewer_id():
     return "N/A"
 
 # ============================================================
-# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UUID + LOCAL/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
+# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + PROCESSOR ID + LOCAL/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
 # ============================================================
 
 def generate_full_snapshot(local=None, usuario=None):
     """
-    Gera snapshot completo de hardware com ID único (UUID) e nome de arquivo baseado no UUID.
+    Gera snapshot completo de hardware com ID único (ProcessorId) e nome de arquivo baseado no ProcessorId.
     Parâmetros:
         local (str): código e nome do local (ex: "14120 – ARPEL SBC")
         usuario (str): nome do usuário
@@ -1041,11 +1048,11 @@ def generate_full_snapshot(local=None, usuario=None):
     """
     _log("Gerando snapshot de hardware...", "INFO")
 
-    # Obter UUID (obrigatório)
-    uuid = _get_uuid()
+    # Obter ProcessorId (obrigatório)
+    proc_id = _get_processor_id()
     
-    # Nome do arquivo baseado APENAS no UUID
-    file_name = f"CPFANI_Hardware_Snapshot_{uuid}.txt"
+    # Nome do arquivo baseado APENAS no ProcessorId
+    file_name = f"CPFANI_Hardware_Snapshot_{proc_id}.txt"
     local_path = Path(f"{SCRIPT_DIR}/{file_name}")
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1079,7 +1086,7 @@ Usuário : {usuario_str}
   Processador         : {processador}
   Memoria_RAM         : {memoria}
   Windows             : {windows}
-  ID         : {uuid}
+  ID         : {proc_id}
 
 [SUPORTE]
   AnyDesk    : {anydesk_id}
@@ -1131,7 +1138,7 @@ Usuário : {usuario_str}
         service = build('drive', 'v3', credentials=creds)
 
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
-        # Usar o mesmo nome de arquivo local (com UUID)
+        # Usar o mesmo nome de arquivo local (com ProcessorId)
         drive_file_name = file_name
         query = f"name='{drive_file_name}' and '{FOLDER_ID}' in parents and trashed=false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
