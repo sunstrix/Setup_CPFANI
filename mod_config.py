@@ -820,7 +820,22 @@ def _get_bios_serial():
     return "Desconhecido"
 
 def _get_uuid():
-    """Obtém o UUID da placa-mãe via wmic"""
+    """Obtém o UUID da placa-mãe via PowerShell (fallback para wmic)"""
+    # Método 1: PowerShell (mais confiável)
+    try:
+        ps_script = "(Get-CimInstance Win32_ComputerSystemProduct).UUID"
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=10
+        )
+        if result and result.stdout:
+            uuid = result.stdout.strip()
+            if uuid and len(uuid) > 10 and '-' in uuid:
+                return uuid
+    except Exception as e:
+        _log(f"Erro ao obter UUID via PowerShell: {e}", "AVISO")
+    
+    # Método 2: wmic (fallback)
     try:
         result = _safe_subprocess_run(
             ['wmic', 'csproduct', 'get', 'uuid'],
@@ -830,11 +845,13 @@ def _get_uuid():
             lines = result.stdout.strip().splitlines()
             if len(lines) >= 2:
                 uuid = lines[1].strip()
-                if uuid and len(uuid) > 10:  # validação simples
+                if uuid and len(uuid) > 10 and '-' in uuid:
                     return uuid
     except Exception as e:
-        _log(f"Erro ao obter UUID: {e}", "AVISO")
-    return "Desconhecido"
+        _log(f"Erro ao obter UUID via wmic: {e}", "AVISO")
+    
+    _log("Não foi possível obter o UUID. Usando 'UUID_NAO_DISPONIVEL'.", "ERRO")
+    return "UUID_NAO_DISPONIVEL"
 
 # ============================================================
 # FUNÇÕES MELHORADAS PARA OBTER IDs DO AnyDesk e TeamViewer
@@ -1011,7 +1028,7 @@ def _get_teamviewer_id():
     return "N/A"
 
 # ============================================================
-# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UUID + LOCAl/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
+# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + UUID + LOCAL/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
 # ============================================================
 
 def generate_full_snapshot(local=None, usuario=None):
@@ -1024,13 +1041,10 @@ def generate_full_snapshot(local=None, usuario=None):
     """
     _log("Gerando snapshot de hardware...", "INFO")
 
-    # Obter UUID
+    # Obter UUID (obrigatório)
     uuid = _get_uuid()
-    if uuid == "Desconhecido":
-        _log("Não foi possível obter o UUID. Usando nome do computador como fallback.", "AVISO")
-        uuid = os.environ.get("COMPUTERNAME", "UNKNOWN")
     
-    # Nome do arquivo baseado no UUID
+    # Nome do arquivo baseado APENAS no UUID
     file_name = f"CPFANI_Hardware_Snapshot_{uuid}.txt"
     local_path = Path(f"{SCRIPT_DIR}/{file_name}")
     local_path.parent.mkdir(parents=True, exist_ok=True)
