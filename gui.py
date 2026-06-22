@@ -107,114 +107,53 @@ def load_settings():
 SETTINGS = load_settings()
 
 # ============================================================
-# NOVAS FUNÇÕES: INVENTÁRIO GB — MONITORES
+# NOVAS FUNÇÕES: INVENTÁRIO GB — MONITORES (LIDOS DO SNAPSHOT DE HARDWARE)
 # ============================================================
 
-def _generate_peripherals_snapshot():
+def _parse_monitors_from_hardware_snapshot(content):
     """
-    Gera snapshot de periféricos (monitores) e salva em C:\Scripts\
-    Formato: CPFANI_Peripherals_Snapshot_<NOME_PC>.txt
-    Também faz upload para o Google Drive (mesma pasta dos snapshots de hardware)
+    Extrai dados de monitores do conteúdo do snapshot de hardware.
+    Retorna lista de dicionários com 'Modelo' e 'Serial' de cada monitor.
     """
+    monitors = []
+    
     try:
-        pc_name = os.environ.get("COMPUTERNAME", "UNKNOWN")
-        file_name = f"CPFANI_Peripherals_Snapshot_{pc_name}.txt"
-        local_path = Path(f"{mod_config.SCRIPT_DIR}/{file_name}")
-        local_path.parent.mkdir(parents=True, exist_ok=True)
+        # Procura pela seção de monitores
+        if "PERIFÉRICOS — MONITORES" not in content:
+            return monitors
         
-        # Coleta informações dos monitores
-        monitores = mod_config._get_monitor_info()
+        # Extrai a seção de monitores
+        start_idx = content.find("PERIFÉRICOS — MONITORES")
+        monitor_section = content[start_idx:]
         
-        now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        # Regex para encontrar monitores
+        # Padrão: Monitor X:\n  Modelo        : <modelo>\n  Nº de Série   : <serial>
+        monitor_pattern = r'Monitor\s+(\d+):\s*\n\s*Modelo\s*:\s*(.*?)\s*\n\s*Nº de Série\s*:\s*(.*?)(?=\n\s*Monitor|\n=|$)'
+        matches = re.findall(monitor_pattern, monitor_section, re.DOTALL)
         
-        # Monta conteúdo do arquivo
-        content = f"PC_NAME={pc_name}\n"
-        content += f"DATA={now}\n"
-        content += f"MONITOR_COUNT={len(monitores)}\n"
-        
-        for idx, monitor in enumerate(monitores, 1):
-            content += f"MONITOR_{idx}_MODELO={monitor['Modelo']}\n"
-            content += f"MONITOR_{idx}_SERIAL={monitor['Numero_de_Serie']}\n"
-        
-        # Salva arquivo local
-        with open(local_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        
-        print(f"[OK] Snapshot de periféricos gerado: {local_path}", flush=True)
-        
-        # Tenta fazer upload para o Google Drive
-        try:
-            from google.oauth2.credentials import Credentials
-            from google_auth_oauthlib.flow import InstalledAppFlow
-            from google.auth.transport.requests import Request
-            from googleapiclient.discovery import build
-            from googleapiclient.http import MediaFileUpload
-            from googleapiclient.errors import HttpError
-            import pickle
+        for match in matches:
+            monitor_num = match[0]
+            modelo = match[1].strip()
+            serial = match[2].strip()
             
-            credentials_path = os.path.join(os.path.dirname(__file__), "credentials", "oauth2_credentials.json")
-            if not os.path.exists(credentials_path):
-                print("[AVISO] Arquivo de credenciais OAuth2 não encontrado. Pulando upload de periféricos.", flush=True)
-                return str(local_path)
-            
-            SCOPES = ['https://www.googleapis.com/auth/drive.file']
-            creds = None
-            
-            token_path = os.path.join(os.path.dirname(__file__), "credentials", "token.pickle")
-            if os.path.exists(token_path):
-                with open(token_path, 'rb') as token:
-                    creds = pickle.load(token)
-            
-            if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                else:
-                    flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
-                    creds = flow.run_local_server(port=0)
-                with open(token_path, 'wb') as token:
-                    pickle.dump(creds, token)
-            
-            service = build('drive', 'v3', credentials=creds)
-            
-            FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
-            drive_file_name = file_name
-            query = f"name='{drive_file_name}' and '{FOLDER_ID}' in parents and trashed=false"
-            results = service.files().list(q=query, fields="files(id, name)").execute()
-            files = results.get('files', [])
-            
-            media = MediaFileUpload(local_path, mimetype='text/plain')
-            
-            if files:
-                file_id = files[0]['id']
-                service.files().update(fileId=file_id, media_body=media).execute()
-                print(f"[OK] Snapshot de periféricos atualizado no Google Drive", flush=True)
-            else:
-                file_metadata = {
-                    'name': drive_file_name,
-                    'parents': [FOLDER_ID]
-                }
-                service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                print(f"[OK] Snapshot de periféricos enviado para o Google Drive", flush=True)
-            
-        except ImportError:
-            print("[AVISO] Bibliotecas do Google Drive não instaladas. Pulando upload de periféricos.", flush=True)
-        except HttpError as e:
-            print(f"[ERRO] Erro na API do Google Drive (periféricos): {e}", flush=True)
-        except Exception as e:
-            print(f"[ERRO] Erro ao enviar snapshot de periféricos para o Drive: {e}", flush=True)
-        
-        return str(local_path)
+            if modelo or serial:
+                monitors.append({
+                    'Numero_Monitor': int(monitor_num),
+                    'Modelo': modelo if modelo else 'N/A',
+                    'Serial': serial if serial else 'N/A'
+                })
     
     except Exception as e:
-        print(f"[ERRO] Falha ao gerar snapshot de periféricos: {e}", flush=True)
-        return None
+        print(f"[AVISO] Erro ao parsear monitores do snapshot: {e}", flush=True)
+    
+    return monitors
 
-def _read_peripherals_snapshots_from_drive():
+def _read_monitors_from_hardware_snapshots():
     """
-    Lê todos os arquivos CPFANI_Peripherals_Snapshot_*.txt da pasta do Google Drive
-    e retorna uma lista de dicionários com os dados para popular a planilha
+    Lê todos os arquivos CPFANI_Hardware_Snapshot_*.txt da pasta do Google Drive
+    e extrai dados de monitores para popular a planilha
     """
-    peripherals_data = []
+    monitors_data = []
     
     try:
         from google.oauth2.credentials import Credentials
@@ -229,7 +168,7 @@ def _read_peripherals_snapshots_from_drive():
         credentials_path = os.path.join(os.path.dirname(__file__), "credentials", "oauth2_credentials.json")
         if not os.path.exists(credentials_path):
             print("[AVISO] Credenciais OAuth2 não encontradas. Não é possível ler snapshots do Drive.", flush=True)
-            return peripherals_data
+            return monitors_data
         
         SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
         creds = None
@@ -251,7 +190,7 @@ def _read_peripherals_snapshots_from_drive():
         service = build('drive', 'v3', credentials=creds)
         
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
-        query = f"name contains 'CPFANI_Peripherals_Snapshot_' and '{FOLDER_ID}' in parents and trashed=false"
+        query = f"name contains 'CPFANI_Hardware_Snapshot_' and '{FOLDER_ID}' in parents and trashed=false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
         files = results.get('files', [])
         
@@ -266,56 +205,54 @@ def _read_peripherals_snapshots_from_drive():
                 
                 content = fh.getvalue().decode('utf-8')
                 
-                # Parse do conteúdo
-                data = {}
-                for line in content.strip().split('\n'):
-                    if '=' in line:
-                        key, value = line.split('=', 1)
-                        data[key] = value
+                # Extrai nome do PC do conteúdo
+                pc_name_match = re.search(r'Nome_Computador\s*:\s*(.*?)\s*\n', content)
+                pc_name = pc_name_match.group(1) if pc_name_match else 'UNKNOWN'
                 
-                pc_name = data.get('PC_NAME', 'UNKNOWN')
-                snapshot_date = data.get('DATA', 'N/A')
-                monitor_count = int(data.get('MONITOR_COUNT', 0))
+                # Extrai data do snapshot
+                date_match = re.search(r'Gerado em:\s*(.*?)\s*\n', content)
+                snapshot_date = date_match.group(1) if date_match else 'N/A'
                 
-                for idx in range(1, monitor_count + 1):
-                    modelo = data.get(f'MONITOR_{idx}_MODELO', 'N/A')
-                    serial = data.get(f'MONITOR_{idx}_SERIAL', 'N/A')
-                    
-                    peripherals_data.append({
+                # Extrai monitores
+                monitors = _parse_monitors_from_hardware_snapshot(content)
+                
+                for monitor in monitors:
+                    monitors_data.append({
                         'Nome_PC': pc_name,
                         'Data_Snapshot': snapshot_date,
-                        'Numero_Monitor': idx,
-                        'Modelo': modelo,
-                        'Serial': serial
+                        'Numero_Monitor': monitor['Numero_Monitor'],
+                        'Modelo': monitor['Modelo'],
+                        'Serial': monitor['Serial']
                     })
             
             except Exception as e:
                 print(f"[AVISO] Erro ao processar arquivo {file['name']}: {e}", flush=True)
                 continue
         
-        print(f"[OK] {len(peripherals_data)} registros de monitores lidos do Drive", flush=True)
+        print(f"[OK] {len(monitors_data)} registros de monitores lidos dos snapshots de hardware", flush=True)
         
     except ImportError:
         print("[AVISO] Bibliotecas do Google Drive não instaladas.", flush=True)
     except HttpError as e:
         print(f"[ERRO] Erro na API do Google Drive: {e}", flush=True)
     except Exception as e:
-        print(f"[ERRO] Erro ao ler snapshots de periféricos: {e}", flush=True)
+        print(f"[ERRO] Erro ao ler snapshots de hardware: {e}", flush=True)
     
-    return peripherals_data
+    return monitors_data
 
 def _create_inventory_spreadsheet_with_monitors():
     """
     Cria/atualiza a planilha de inventário GB com a nova aba 'Periféricos - Monitores'
+    Dados extraídos diretamente dos snapshots de hardware (sem snapshot separado)
     """
     try:
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
         
-        # Lê dados de monitores do Drive
-        peripherals_data = _read_peripherals_snapshots_from_drive()
+        # Lê dados de monitores dos snapshots de hardware
+        monitors_data = _read_monitors_from_hardware_snapshots()
         
-        if not peripherals_data:
+        if not monitors_data:
             print("[AVISO] Nenhum dado de monitores encontrado. Planilha não será atualizada.", flush=True)
             return False
         
@@ -352,7 +289,7 @@ def _create_inventory_spreadsheet_with_monitors():
             cell.alignment = Alignment(horizontal="center")
         
         # Adiciona dados
-        for item in peripherals_data:
+        for item in monitors_data:
             ws.append([
                 item['Nome_PC'],
                 item['Data_Snapshot'],
@@ -370,7 +307,7 @@ def _create_inventory_spreadsheet_with_monitors():
         
         # Salva planilha
         wb.save(spreadsheet_path)
-        print(f"[OK] Planilha de inventário atualizada com {len(peripherals_data)} monitores: {spreadsheet_path}", flush=True)
+        print(f"[OK] Planilha de inventário atualizada com {len(monitors_data)} monitores: {spreadsheet_path}", flush=True)
         
         return True
     
@@ -867,7 +804,7 @@ class CPFani_GUI(ctk.CTk):
             if self.driver_var.get() != "nenhum": total_tasks += 1
             if self.task_watchdog.get(): total_tasks += 1
             if has_kudu_actions: total_tasks += 1
-            total_tasks += 2  # Snapshot + Snapshot de Periféricos + Planilha GB
+            total_tasks += 2  # Snapshot + Planilha GB
             
             completed = 0
 
@@ -1045,37 +982,22 @@ class CPFani_GUI(ctk.CTk):
                     erros.append("Kudu-Crítico")
                 completed += 1
 
-            # 10. SNAPSHOT DE HARDWARE
+            # 10. SNAPSHOT DE HARDWARE (COM MONITORES INCLUSOS)
             self.update_status("► Gerando snapshot de hardware...", (completed / total_tasks) * 100, "")
             try:
-                self.log("Gerando snapshot de hardware...")
+                self.log("Gerando snapshot de hardware (incluindo monitores)...")
                 # Passa os dados coletados
                 mod_config.generate_full_snapshot(
                     local=self.local_snapshot,
                     usuario=self.usuario_snapshot
                 )
-                self.log("✓ Snapshot de hardware gerado", "OK")
+                self.log("✓ Snapshot de hardware gerado com dados de monitores", "OK")
             except Exception as e:
                 self.log(f"Falha ao gerar snapshot de hardware: {e}", "ERRO")
                 erros.append("Snapshot Hardware")
             completed += 1
 
-            # 11. SNAPSHOT DE PERIFÉRICOS (MONITORES)
-            self.update_status("► Gerando snapshot de periféricos...", (completed / total_tasks) * 100, "Coletando dados de monitores...")
-            try:
-                self.log("Gerando snapshot de periféricos (monitores)...")
-                peripherals_result = _generate_peripherals_snapshot()
-                if peripherals_result:
-                    self.log("✓ Snapshot de periféricos gerado", "OK")
-                else:
-                    self.log("Falha ao gerar snapshot de periféricos", "AVISO")
-                    erros.append("Snapshot Periféricos")
-            except Exception as e:
-                self.log(f"Falha ao gerar snapshot de periféricos: {e}", "ERRO")
-                erros.append("Snapshot Periféricos")
-            completed += 1
-
-            # 12. PLANILHA DE INVENTÁRIO GB
+            # 11. PLANILHA DE INVENTÁRIO GB (LÊ DADOS DE MONITORES DO SNAPSHOT DE HARDWARE)
             self.update_status("► Atualizando planilha de inventário GB...", (completed / total_tasks) * 100, "Processando monitores...")
             try:
                 self.log("Atualizando planilha de inventário GB com dados de monitores...")
