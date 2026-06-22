@@ -63,7 +63,7 @@ def _apply_to_all_real_users():
     except Exception as e:
         _log(f"Aviso ao setar HKCU direto: {e}", "AVISO")
 
-    # 2. Varre todas as colmeias de perfis carregadas no sistema (SIDs)
+    # 2. Varre todas as colmeias de perfis carregados no sistema (SIDs)
     try:
         profiles_key = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, profiles_key) as root_key:
@@ -820,6 +820,52 @@ def _get_bios_serial():
     return "Desconhecido"
 
 # ============================================================
+# NOVA FUNÇÃO: OBTER INFORMAÇÕES DE MONITORES CONECTADOS
+# ============================================================
+
+def _get_monitor_info():
+    """
+    Obtém informações de todos os monitores conectados via WMI (WmiMonitorID).
+    Retorna uma lista de dicionários com 'Modelo' e 'Numero_de_Serie' de cada monitor.
+    Suporta múltiplos monitores por PC.
+    """
+    monitors = []
+    try:
+        ps_script = """
+        Get-CimInstance -Namespace root\\wmi -ClassName WmiMonitorID | Select-Object `
+          @{Name="Modelo"; Expression={[System.Text.Encoding]::ASCII.GetString($_.UserFriendlyName -notmatch 0)}}, `
+          @{Name="Numero_de_Serie"; Expression={[System.Text.Encoding]::ASCII.GetString($_.SerialNumberID -notmatch 0)}}
+        """
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=15
+        )
+        
+        if result and result.stdout:
+            lines = result.stdout.strip().split('\n')
+            # Pula as duas primeiras linhas (cabeçalho e separador)
+            for line in lines[2:]:
+                if line.strip():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        # O modelo pode ter espaços, então pegamos tudo exceto o último campo
+                        modelo = ' '.join(parts[:-1]).strip()
+                        serial = parts[-1].strip()
+                        if modelo or serial:
+                            monitors.append({
+                                'Modelo': modelo if modelo else 'Desconhecido',
+                                'Numero_de_Serie': serial if serial else 'N/A'
+                            })
+    except Exception as e:
+        _log(f"Erro ao obter informações dos monitores: {e}", "AVISO")
+    
+    # Se não encontrou nenhum monitor, retorna lista vazia
+    if not monitors:
+        _log("Nenhum monitor detectado ou erro na consulta WMI.", "AVISO")
+    
+    return monitors
+
+# ============================================================
 # FUNÇÃO PARA OBTER O PROCESSOR ID (SUBSTITUI O UUID)
 # ============================================================
 
@@ -1065,12 +1111,28 @@ def generate_full_snapshot(local=None, usuario=None):
     bios_serial = _get_bios_serial()
     anydesk_id = _get_anydesk_id()
     teamviewer_id = _get_teamviewer_id()
+    
+    # NOVO: Coletar informações dos monitores
+    monitores = _get_monitor_info()
 
     # Trata parâmetros de local e usuário
     local_str = local if local else "Não informado"
     usuario_str = usuario if usuario else "Não informado"
 
     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    
+    # Monta a seção de monitores
+    monitores_section = ""
+    if monitores:
+        monitores_section = "\n============================================================\n PERIFÉRICOS — MONITORES\n============================================================\n"
+        for idx, monitor in enumerate(monitores, 1):
+            monitores_section += f" Monitor {idx}:\n"
+            monitores_section += f"   Modelo        : {monitor['Modelo']}\n"
+            monitores_section += f"   Nº de Série   : {monitor['Numero_de_Serie']}\n\n"
+        monitores_section += "============================================================\n"
+    else:
+        monitores_section = "\n============================================================\n PERIFÉRICOS — MONITORES\n============================================================\n Nenhum monitor detectado.\n============================================================\n"
+    
     content = f"""
 ============================================================
    SNAPSHOT CP FANI V5.9.3 (Edição Infiltrado + Self-Healing)
@@ -1091,9 +1153,7 @@ Usuário : {usuario_str}
 [SUPORTE]
   AnyDesk    : {anydesk_id}
   TeamViewer : {teamviewer_id}
-
-============================================================
-"""
+{monitores_section}"""
 
     try:
         with open(local_path, "w", encoding="utf-8") as f:
