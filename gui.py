@@ -318,6 +318,235 @@ def _create_inventory_spreadsheet_with_monitors():
         print(f"[ERRO] Falha ao criar planilha de inventário: {e}", flush=True)
         return False
 
+# ============================================================
+# NOVAS FUNÇÕES: INVENTÁRIO GB — IMPRESSORAS (LIDAS DO SNAPSHOT DE HARDWARE)
+# ============================================================
+
+def _parse_printers_from_hardware_snapshot(content):
+    """
+    Extrai dados de impressoras do conteúdo do snapshot de hardware.
+    Retorna lista de dicionários com dados de cada impressora.
+    """
+    printers = []
+    
+    try:
+        # Procura pela seção de impressoras
+        if "PERIFÉRICOS — IMPRESSORAS" not in content:
+            return printers
+        
+        # Extrai a seção de impressoras
+        start_idx = content.find("PERIFÉRICOS — IMPRESSORAS")
+        printer_section = content[start_idx:]
+        
+        # Regex para encontrar impressoras
+        # Padrão: Impressora X:\n  Nome: ...\n  Status: ...\n  Porta: ...\n  Driver: ...\n  Compartilhada: ...\n  (IP: ...)\n  (Modelo (SNMP): ...)\n  (Serial (SNMP): ...)
+        printer_pattern = r'Impressora\s+\d+:\s*\n(.*?)(?=\n\s*Impressora|\n=|$)'
+        matches = re.findall(printer_pattern, printer_section, re.DOTALL)
+        
+        for match in matches:
+            printer_data = {}
+            
+            # Extrai cada campo
+            nome_match = re.search(r'Nome\s*:\s*(.*?)\s*\n', match)
+            porta_match = re.search(r'Porta\s*:\s*(.*?)\s*\n', match)
+            driver_match = re.search(r'Driver\s*:\s*(.*?)\s*\n', match)
+            ip_match = re.search(r'IP\s*:\s*(.*?)\s*\n', match)
+            modelo_match = re.search(r'Modelo \(SNMP\)\s*:\s*(.*?)\s*\n', match)
+            serial_match = re.search(r'Serial \(SNMP\)\s*:\s*(.*?)\s*\n', match)
+            
+            printer_data['Nome'] = nome_match.group(1).strip() if nome_match else 'N/A'
+            printer_data['Porta'] = porta_match.group(1).strip() if porta_match else 'N/A'
+            printer_data['Driver'] = driver_match.group(1).strip() if driver_match else 'N/A'
+            printer_data['IP'] = ip_match.group(1).strip() if ip_match else 'N/A'
+            printer_data['Modelo_SNMP'] = modelo_match.group(1).strip() if modelo_match else 'N/A'
+            printer_data['Serial_SNMP'] = serial_match.group(1).strip() if serial_match else 'N/A'
+            
+            printers.append(printer_data)
+    
+    except Exception as e:
+        print(f"[AVISO] Erro ao parsear impressoras do snapshot: {e}", flush=True)
+    
+    return printers
+
+def _read_printers_from_hardware_snapshots():
+    """
+    Lê todos os arquivos CPFANI_Hardware_Snapshot_*.txt da pasta do Google Drive
+    e extrai dados de impressoras para popular a planilha
+    """
+    printers_data = []
+    
+    try:
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+        from googleapiclient.errors import HttpError
+        from googleapiclient.http import MediaIoBaseDownload
+        import pickle
+        import io
+        
+        credentials_path = os.path.join(os.path.dirname(__file__), "credentials", "oauth2_credentials.json")
+        if not os.path.exists(credentials_path):
+            print("[AVISO] Credenciais OAuth2 não encontradas. Não é possível ler snapshots do Drive.", flush=True)
+            return printers_data
+        
+        SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+        creds = None
+        
+        token_path = os.path.join(os.path.dirname(__file__), "credentials", "token.pickle")
+        if os.path.exists(token_path):
+            with open(token_path, 'rb') as token:
+                creds = pickle.load(token)
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+                creds = flow.run_local_server(port=0)
+            with open(token_path, 'wb') as token:
+                pickle.dump(creds, token)
+        
+        service = build('drive', 'v3', credentials=creds)
+        
+        FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
+        query = f"name contains 'CPFANI_Hardware_Snapshot_' and '{FOLDER_ID}' in parents and trashed=false"
+        results = service.files().list(q=query, fields="files(id, name)").execute()
+        files = results.get('files', [])
+        
+        for file in files:
+            try:
+                request = service.files().get_media(fileId=file['id'])
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while done is False:
+                    status, done = downloader.next_chunk()
+                
+                content = fh.getvalue().decode('utf-8')
+                
+                # Extrai nome do PC do conteúdo
+                pc_name_match = re.search(r'Nome_Computador\s*:\s*(.*?)\s*\n', content)
+                pc_name = pc_name_match.group(1) if pc_name_match else 'UNKNOWN'
+                
+                # Extrai data do snapshot
+                date_match = re.search(r'Gerado em:\s*(.*?)\s*\n', content)
+                snapshot_date = date_match.group(1) if date_match else 'N/A'
+                
+                # Extrai impressoras
+                printers = _parse_printers_from_hardware_snapshot(content)
+                
+                for printer in printers:
+                    printers_data.append({
+                        'Nome_PC': pc_name,
+                        'Data_Snapshot': snapshot_date,
+                        'Nome_Impressora': printer['Nome'],
+                        'Porta': printer['Porta'],
+                        'Driver': printer['Driver'],
+                        'IP': printer['IP'],
+                        'Modelo_SNMP': printer['Modelo_SNMP'],
+                        'Serial_SNMP': printer['Serial_SNMP']
+                    })
+            
+            except Exception as e:
+                print(f"[AVISO] Erro ao processar arquivo {file['name']}: {e}", flush=True)
+                continue
+        
+        print(f"[OK] {len(printers_data)} registros de impressoras lidos dos snapshots de hardware", flush=True)
+        
+    except ImportError:
+        print("[AVISO] Bibliotecas do Google Drive não instaladas.", flush=True)
+    except HttpError as e:
+        print(f"[ERRO] Erro na API do Google Drive: {e}", flush=True)
+    except Exception as e:
+        print(f"[ERRO] Erro ao ler snapshots de hardware: {e}", flush=True)
+    
+    return printers_data
+
+def _create_inventory_spreadsheet_with_printers():
+    """
+    Cria/atualiza a planilha de inventário GB com a nova aba 'Periféricos - Impressoras'
+    Dados extraídos diretamente dos snapshots de hardware
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        
+        # Lê dados de impressoras dos snapshots de hardware
+        printers_data = _read_printers_from_hardware_snapshots()
+        
+        if not printers_data:
+            print("[AVISO] Nenhum dado de impressoras encontrado. Planilha não será atualizada.", flush=True)
+            return False
+        
+        # Nome do arquivo da planilha
+        spreadsheet_path = os.path.join(mod_config.SCRIPT_DIR, "CPFANI_Inventario_GB.xlsx")
+        
+        # Cria ou abre a planilha
+        if os.path.exists(spreadsheet_path):
+            wb = openpyxl.load_workbook(spreadsheet_path)
+        else:
+            wb = openpyxl.Workbook()
+            # Remove aba padrão se existir
+            if "Sheet" in wb.sheetnames:
+                del wb["Sheet"]
+        
+        # Remove aba existente se já existir (para atualizar)
+        if "Periféricos - Impressoras" in wb.sheetnames:
+            del wb["Periféricos - Impressoras"]
+        
+        # Cria nova aba
+        ws = wb.create_sheet("Periféricos - Impressoras")
+        
+        # Cabeçalhos
+        headers = ["Nome do PC", "Data do Snapshot", "Nome Impressora", "Porta", "Driver", "IP", "Modelo (SNMP)", "Serial (SNMP)"]
+        ws.append(headers)
+        
+        # Formata cabeçalhos
+        header_fill = PatternFill(start_color="ff6b6b", end_color="ff6b6b", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+        
+        # Adiciona dados
+        for item in printers_data:
+            ws.append([
+                item['Nome_PC'],
+                item['Data_Snapshot'],
+                item['Nome_Impressora'],
+                item['Porta'],
+                item['Driver'],
+                item['IP'],
+                item['Modelo_SNMP'],
+                item['Serial_SNMP']
+            ])
+        
+        # Ajusta largura das colunas
+        ws.column_dimensions['A'].width = 20
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 30
+        ws.column_dimensions['D'].width = 25
+        ws.column_dimensions['E'].width = 30
+        ws.column_dimensions['F'].width = 18
+        ws.column_dimensions['G'].width = 25
+        ws.column_dimensions['H'].width = 25
+        
+        # Salva planilha
+        wb.save(spreadsheet_path)
+        print(f"[OK] Planilha de inventário atualizada com {len(printers_data)} impressoras: {spreadsheet_path}", flush=True)
+        
+        return True
+    
+    except ImportError:
+        print("[ERRO] openpyxl não instalado. Instale com: pip install openpyxl", flush=True)
+        return False
+    except Exception as e:
+        print(f"[ERRO] Falha ao criar planilha de inventário: {e}", flush=True)
+        return False
+
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -804,7 +1033,7 @@ class CPFani_GUI(ctk.CTk):
             if self.driver_var.get() != "nenhum": total_tasks += 1
             if self.task_watchdog.get(): total_tasks += 1
             if has_kudu_actions: total_tasks += 1
-            total_tasks += 2  # Snapshot + Planilha GB
+            total_tasks += 3  # Snapshot + Planilha Monitores + Planilha Impressoras
             
             completed = 0
 
@@ -982,33 +1211,47 @@ class CPFani_GUI(ctk.CTk):
                     erros.append("Kudu-Crítico")
                 completed += 1
 
-            # 10. SNAPSHOT DE HARDWARE (COM MONITORES INCLUSOS)
+            # 10. SNAPSHOT DE HARDWARE (COM MONITORES E IMPRESSORAS INCLUSOS)
             self.update_status("► Gerando snapshot de hardware...", (completed / total_tasks) * 100, "")
             try:
-                self.log("Gerando snapshot de hardware (incluindo monitores)...")
+                self.log("Gerando snapshot de hardware (incluindo monitores e impressoras)...")
                 # Passa os dados coletados
                 mod_config.generate_full_snapshot(
                     local=self.local_snapshot,
                     usuario=self.usuario_snapshot
                 )
-                self.log("✓ Snapshot de hardware gerado com dados de monitores", "OK")
+                self.log("✓ Snapshot de hardware gerado com dados de monitores e impressoras", "OK")
             except Exception as e:
                 self.log(f"Falha ao gerar snapshot de hardware: {e}", "ERRO")
                 erros.append("Snapshot Hardware")
             completed += 1
 
-            # 11. PLANILHA DE INVENTÁRIO GB (LÊ DADOS DE MONITORES DO SNAPSHOT DE HARDWARE)
-            self.update_status("► Atualizando planilha de inventário GB...", (completed / total_tasks) * 100, "Processando monitores...")
+            # 11. PLANILHA DE INVENTÁRIO GB — MONITORES
+            self.update_status("► Atualizando planilha de inventário GB (Monitores)...", (completed / total_tasks) * 100, "Processando monitores...")
             try:
                 self.log("Atualizando planilha de inventário GB com dados de monitores...")
                 if _create_inventory_spreadsheet_with_monitors():
                     self.log("✓ Planilha de inventário atualizada com aba de monitores", "OK")
                 else:
-                    self.log("Falha ao atualizar planilha de inventário", "AVISO")
-                    erros.append("Planilha Inventário")
+                    self.log("Falha ao atualizar planilha de inventário (monitores)", "AVISO")
+                    erros.append("Planilha Monitores")
             except Exception as e:
-                self.log(f"Falha ao atualizar planilha de inventário: {e}", "ERRO")
-                erros.append("Planilha Inventário")
+                self.log(f"Falha ao atualizar planilha de inventário (monitores): {e}", "ERRO")
+                erros.append("Planilha Monitores")
+            completed += 1
+
+            # 12. PLANILHA DE INVENTÁRIO GB — IMPRESSORAS
+            self.update_status("► Atualizando planilha de inventário GB (Impressoras)...", (completed / total_tasks) * 100, "Processando impressoras...")
+            try:
+                self.log("Atualizando planilha de inventário GB com dados de impressoras...")
+                if _create_inventory_spreadsheet_with_printers():
+                    self.log("✓ Planilha de inventário atualizada com aba de impressoras", "OK")
+                else:
+                    self.log("Falha ao atualizar planilha de inventário (impressoras)", "AVISO")
+                    erros.append("Planilha Impressoras")
+            except Exception as e:
+                self.log(f"Falha ao atualizar planilha de inventário (impressoras): {e}", "ERRO")
+                erros.append("Planilha Impressoras")
             completed += 1
 
             elapsed_time = time.time() - start_time
