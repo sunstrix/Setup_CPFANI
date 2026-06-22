@@ -866,6 +866,193 @@ def _get_monitor_info():
     return monitors
 
 # ============================================================
+# NOVA FUNÇÃO: OBTER INFORMAÇÕES DE IMPRESSORAS INSTALADAS
+# ============================================================
+
+def _get_printer_info():
+    """
+    Obtém informações de todas as impressoras instaladas no sistema.
+    Para impressoras de rede (com IP), tenta consultar via SNMP para obter modelo e serial reais.
+    Retorna uma lista de dicionários com dados de cada impressora.
+    """
+    printers = []
+    
+    try:
+        # Lista todas as impressoras instaladas
+        ps_script = """
+        Get-Printer | Select-Object Name, PrinterStatus, PortName, DriverName, Shared | ConvertTo-Json
+        """
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=20
+        )
+        
+        if result and result.stdout:
+            import json
+            try:
+                printers_data = json.loads(result.stdout)
+                
+                # Se for apenas uma impressora, converte para lista
+                if isinstance(printers_data, dict):
+                    printers_data = [printers_data]
+                
+                for printer in printers_data:
+                    printer_info = {
+                        'Nome': printer.get('Name', 'N/A'),
+                        'Status': printer.get('PrinterStatus', 'N/A'),
+                        'Porta': printer.get('PortName', 'N/A'),
+                        'Driver': printer.get('DriverName', 'N/A'),
+                        'Compartilhada': 'Sim' if printer.get('Shared') else 'Não',
+                        'Modelo_SNMP': 'N/A',
+                        'Serial_SNMP': 'N/A',
+                        'IP': 'N/A'
+                    }
+                    
+                    # Extrai IP da porta (se for impressora de rede)
+                    port_name = printer.get('PortName', '')
+                    ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', port_name)
+                    
+                    if ip_match:
+                        ip = ip_match.group(1)
+                        printer_info['IP'] = ip
+                        
+                        # Tenta consultar via SNMP para obter modelo e serial reais
+                        snmp_result = _query_printer_snmp(ip)
+                        if snmp_result:
+                            printer_info['Modelo_SNMP'] = snmp_result.get('Modelo', 'N/A')
+                            printer_info['Serial_SNMP'] = snmp_result.get('Serial', 'N/A')
+                    
+                    printers.append(printer_info)
+            
+            except json.JSONDecodeError as e:
+                _log(f"Erro ao parsear JSON das impressoras: {e}", "AVISO")
+    
+    except Exception as e:
+        _log(f"Erro ao obter informações das impressoras: {e}", "AVISO")
+    
+    if not printers:
+        _log("Nenhuma impressora detectada.", "AVISO")
+    
+    return printers
+
+def _query_printer_snmp(ip):
+    """
+    Consulta impressora via SNMP para obter modelo e número de série reais.
+    Retorna dicionário com 'Modelo' e 'Serial' ou None em caso de falha.
+    """
+    try:
+        ps_script = f"""
+        $IP = "{ip}"
+        try {{
+            $snmp = New-Object -ComObject "olePrn.OleSNMP"
+            $snmp.Open($IP, "public", 2, 3000)
+            
+            $Modelo = $snmp.Get(".1.3.6.1.2.1.25.3.2.1.3.1")
+            $Serial = $snmp.Get(".1.3.6.1.2.1.43.5.1.1.17.1")
+            
+            if ($Modelo -and $Serial) {{
+                Write-Output "$Modelo|$Serial"
+            }}
+        }} catch {{
+            # SNMP não disponível ou falhou
+        }}
+        """
+        
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=10
+        )
+        
+        if result and result.stdout:
+            output = result.stdout.strip()
+            if '|' in output:
+                parts = output.split('|')
+                if len(parts) == 2:
+                    return {
+                        'Modelo': parts[0].strip(),
+                        'Serial': parts[1].strip().upper()
+                    }
+    
+    except Exception as e:
+        _log(f"Erro ao consultar SNMP para IP {ip}: {e}", "AVISO")
+    
+    return None
+
+# ============================================================
+# NOVA FUNÇÃO: OBTER INFORMAÇÕES DE ADAPTADORES DE REDE
+# ============================================================
+
+def _get_network_adapters():
+    """
+    Obtém informações de todos os adaptadores de rede via Get-NetAdapter.
+    Retorna uma lista de dicionários com 'Nome', 'Descricao', 'MacAddress' e 'Status' de cada adaptador.
+    """
+    adapters = []
+    try:
+        ps_script = """
+        Get-NetAdapter | Select-Object Name, InterfaceDescription, MacAddress, Status | ConvertTo-Json
+        """
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=15
+        )
+        
+        if result and result.stdout:
+            import json
+            try:
+                adapters_data = json.loads(result.stdout)
+                
+                # Se for apenas um adaptador, converte para lista
+                if isinstance(adapters_data, dict):
+                    adapters_data = [adapters_data]
+                
+                for adapter in adapters_data:
+                    adapters.append({
+                        'Nome': adapter.get('Name', 'N/A'),
+                        'Descricao': adapter.get('InterfaceDescription', 'N/A'),
+                        'MacAddress': adapter.get('MacAddress', 'N/A'),
+                        'Status': adapter.get('Status', 'N/A')
+                    })
+            except json.JSONDecodeError as e:
+                _log(f"Erro ao parsear JSON dos adaptadores de rede: {e}", "AVISO")
+    except Exception as e:
+        _log(f"Erro ao obter informações dos adaptadores de rede: {e}", "AVISO")
+    
+    if not adapters:
+        _log("Nenhum adaptador de rede detectado.", "AVISO")
+    
+    return adapters
+
+# ============================================================
+# NOVA FUNÇÃO: OBTER IDENTIFICADOR ÚNICO (MAC ADDRESS COM FALLBACK)
+# ============================================================
+
+def _get_unique_id():
+    """
+    Obtém um identificador único para o PC.
+    Prioridade:
+    1. MAC Address do primeiro adaptador de rede ativo (Status = Up)
+    2. Fallback para ProcessorId (caso não encontre adaptadores ativos)
+    Retorna string com o identificador (MAC sem separadores ou ProcessorId).
+    """
+    # Tenta obter MAC Address do primeiro adaptador ativo
+    try:
+        adapters = _get_network_adapters()
+        for adapter in adapters:
+            if adapter.get('Status') == 'Up' and adapter.get('MacAddress') != 'N/A':
+                # Remove separadores do MAC (hífens e dois pontos) para usar como ID limpo
+                mac_clean = adapter['MacAddress'].replace('-', '').replace(':', '').upper()
+                if mac_clean and len(mac_clean) >= 10:
+                    _log(f"✓ Identificador único (MAC): {mac_clean}", "OK")
+                    return mac_clean
+    except Exception as e:
+        _log(f"Erro ao obter MAC Address: {e}. Usando fallback.", "AVISO")
+    
+    # Fallback: ProcessorId
+    _log("Nenhum adaptador ativo encontrado. Usando ProcessorId como fallback.", "AVISO")
+    return _get_processor_id()
+
+# ============================================================
 # FUNÇÃO PARA OBTER O PROCESSOR ID (SUBSTITUI O UUID)
 # ============================================================
 
@@ -1081,12 +1268,35 @@ def _get_teamviewer_id():
     return "N/A"
 
 # ============================================================
-# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + PROCESSOR ID + LOCAL/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
+# NOVA FUNÇÃO: GERAR SNAPSHOT DE HARDWARE (CHAMADA ISOLADA)
+# ============================================================
+
+def run_snapshot_only(local=None, usuario=None):
+    """
+    Função pública para gerar apenas o snapshot de hardware (sem deploy).
+    Pode ser chamada diretamente pelo botão "Gerar Snapshot" no GUI.
+    Retorna caminho do arquivo local ou None em caso de erro.
+    """
+    _log("=" * 60, "INFO")
+    _log("INICIANDO GERAÇÃO DE SNAPSHOT (MODO ISOLADO)...", "INFO")
+    _log("=" * 60, "INFO")
+    
+    result = generate_full_snapshot(local=local, usuario=usuario)
+    
+    if result:
+        _log("✓ Snapshot gerado com sucesso!", "OK")
+    else:
+        _log("✗ Falha ao gerar snapshot.", "ERRO")
+    
+    return result
+
+# ============================================================
+# SNAPSHOT COMPLETO (FORMATO SOLICITADO) + MAC ADDRESS + LOCAL/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
 # ============================================================
 
 def generate_full_snapshot(local=None, usuario=None):
     """
-    Gera snapshot completo de hardware com ID único (ProcessorId) e nome de arquivo baseado no ProcessorId.
+    Gera snapshot completo de hardware com ID único baseado no MAC Address (com fallback para ProcessorId).
     Parâmetros:
         local (str): código e nome do local (ex: "14120 – ARPEL SBC")
         usuario (str): nome do usuário
@@ -1094,11 +1304,11 @@ def generate_full_snapshot(local=None, usuario=None):
     """
     _log("Gerando snapshot de hardware...", "INFO")
 
-    # Obter ProcessorId (obrigatório)
-    proc_id = _get_processor_id()
+    # Obter identificador único (MAC Address com fallback para ProcessorId)
+    unique_id = _get_unique_id()
     
-    # Nome do arquivo baseado APENAS no ProcessorId
-    file_name = f"CPFANI_Hardware_Snapshot_{proc_id}.txt"
+    # Nome do arquivo baseado no identificador único
+    file_name = f"CPFANI_Hardware_Snapshot_{unique_id}.txt"
     local_path = Path(f"{SCRIPT_DIR}/{file_name}")
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1112,8 +1322,14 @@ def generate_full_snapshot(local=None, usuario=None):
     anydesk_id = _get_anydesk_id()
     teamviewer_id = _get_teamviewer_id()
     
-    # NOVO: Coletar informações dos monitores
+    # Coletar informações dos monitores
     monitores = _get_monitor_info()
+    
+    # Coletar informações das impressoras
+    impressoras = _get_printer_info()
+    
+    # Coletar informações dos adaptadores de rede
+    adaptadores = _get_network_adapters()
 
     # Trata parâmetros de local e usuário
     local_str = local if local else "Não informado"
@@ -1133,6 +1349,42 @@ def generate_full_snapshot(local=None, usuario=None):
     else:
         monitores_section = "\n============================================================\n PERIFÉRICOS — MONITORES\n============================================================\n Nenhum monitor detectado.\n============================================================\n"
     
+    # Monta a seção de impressoras
+    impressoras_section = ""
+    if impressoras:
+        impressoras_section = "\n============================================================\n PERIFÉRICOS — IMPRESSORAS\n============================================================\n"
+        for idx, printer in enumerate(impressoras, 1):
+            impressoras_section += f" Impressora {idx}:\n"
+            impressoras_section += f"   Nome          : {printer['Nome']}\n"
+            impressoras_section += f"   Status        : {printer['Status']}\n"
+            impressoras_section += f"   Porta         : {printer['Porta']}\n"
+            impressoras_section += f"   Driver        : {printer['Driver']}\n"
+            impressoras_section += f"   Compartilhada : {printer['Compartilhada']}\n"
+            if printer['IP'] != 'N/A':
+                impressoras_section += f"   IP            : {printer['IP']}\n"
+                if printer['Modelo_SNMP'] != 'N/A':
+                    impressoras_section += f"   Modelo (SNMP) : {printer['Modelo_SNMP']}\n"
+                if printer['Serial_SNMP'] != 'N/A':
+                    impressoras_section += f"   Serial (SNMP) : {printer['Serial_SNMP']}\n"
+            impressoras_section += "\n"
+        impressoras_section += "============================================================\n"
+    else:
+        impressoras_section = "\n============================================================\n PERIFÉRICOS — IMPRESSORAS\n============================================================\n Nenhuma impressora detectada.\n============================================================\n"
+    
+    # Monta a seção de adaptadores de rede
+    adaptadores_section = ""
+    if adaptadores:
+        adaptadores_section = "\n============================================================\n ADAPTADORES DE REDE\n============================================================\n"
+        for idx, adapter in enumerate(adaptadores, 1):
+            adaptadores_section += f" Adaptador {idx}:\n"
+            adaptadores_section += f"   Nome        : {adapter['Nome']}\n"
+            adaptadores_section += f"   Descrição   : {adapter['Descricao']}\n"
+            adaptadores_section += f"   MAC Address : {adapter['MacAddress']}\n"
+            adaptadores_section += f"   Status      : {adapter['Status']}\n\n"
+        adaptadores_section += "============================================================\n"
+    else:
+        adaptadores_section = "\n============================================================\n ADAPTADORES DE REDE\n============================================================\n Nenhum adaptador detectado.\n============================================================\n"
+    
     content = f"""
 ============================================================
    SNAPSHOT CP FANI V5.9.3 (Edição Infiltrado + Self-Healing)
@@ -1148,12 +1400,12 @@ Usuário : {usuario_str}
   Processador         : {processador}
   Memoria_RAM         : {memoria}
   Windows             : {windows}
-  ID         : {proc_id}
+  ID (MAC/Proc)       : {unique_id}
 
 [SUPORTE]
   AnyDesk    : {anydesk_id}
   TeamViewer : {teamviewer_id}
-{monitores_section}"""
+{monitores_section}{impressoras_section}{adaptadores_section}"""
 
     try:
         with open(local_path, "w", encoding="utf-8") as f:
@@ -1198,7 +1450,7 @@ Usuário : {usuario_str}
         service = build('drive', 'v3', credentials=creds)
 
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
-        # Usar o mesmo nome de arquivo local (com ProcessorId)
+        # Usar o mesmo nome de arquivo local
         drive_file_name = file_name
         query = f"name='{drive_file_name}' and '{FOLDER_ID}' in parents and trashed=false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
