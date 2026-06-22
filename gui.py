@@ -106,6 +106,281 @@ def load_settings():
 
 SETTINGS = load_settings()
 
+# ============================================================
+# NOVAS FUNÇÕES: INVENTÁRIO GB — MONITORES
+# ============================================================
+
+def _generate_peripherals_snapshot():
+    """
+    Gera snapshot de periféricos (monitores) e salva em C:\Scripts\
+    Formato: CPFANI_Peripherals_Snapshot_<NOME_PC>.txt
+    Também faz upload para o Google Drive (mesma pasta dos snapshots de hardware)
+    """
+    try:
+        pc_name = os.environ.get("COMPUTERNAME", "UNKNOWN")
+        file_name = f"CPFANI_Peripherals_Snapshot_{pc_name}.txt"
+        local_path = Path(f"{mod_config.SCRIPT_DIR}/{file_name}")
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Coleta informações dos monitores
+        monitores = mod_config._get_monitor_info()
+        
+        now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        
+        # Monta conteúdo do arquivo
+        content = f"PC_NAME={pc_name}\n"
+        content += f"DATA={now}\n"
+        content += f"MONITOR_COUNT={len(monitores)}\n"
+        
+        for idx, monitor in enumerate(monitores, 1):
+            content += f"MONITOR_{idx}_MODELO={monitor['Modelo']}\n"
+            content += f"MONITOR_{idx}_SERIAL={monitor['Numero_de_Serie']}\n"
+        
+        # Salva arquivo local
+        with open(local_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        
+        print(f"[OK] Snapshot de periféricos gerado: {local_path}", flush=True)
+        
+        # Tenta fazer upload para o Google Drive
+        try:
+            from google.oauth2.credentials import Credentials
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            from google.auth.transport.requests import Request
+            from googleapiclient.discovery import build
+            from googleapiclient.http import MediaFileUpload
+            from googleapiclient.errors import HttpError
+            import pickle
+            
+            credentials_path = os.path.join(os.path.dirname(__file__), "credentials", "oauth2_credentials.json")
+            if not os.path.exists(credentials_path):
+                print("[AVISO] Arquivo de credenciais OAuth2 não encontrado. Pulando upload de periféricos.", flush=True)
+                return str(local_path)
+            
+            SCOPES = ['https://www.googleapis.com/auth/drive.file']
+            creds = None
+            
+            token_path = os.path.join(os.path.dirname(__file__), "credentials", "token.pickle")
+            if os.path.exists(token_path):
+                with open(token_path, 'rb') as token:
+                    creds = pickle.load(token)
+            
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                else:
+                    flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                with open(token_path, 'wb') as token:
+                    pickle.dump(creds, token)
+            
+            service = build('drive', 'v3', credentials=creds)
+            
+            FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
+            drive_file_name = file_name
+            query = f"name='{drive_file_name}' and '{FOLDER_ID}' in parents and trashed=false"
+            results = service.files().list(q=query, fields="files(id, name)").execute()
+            files = results.get('files', [])
+            
+            media = MediaFileUpload(local_path, mimetype='text/plain')
+            
+            if files:
+                file_id = files[0]['id']
+                service.files().update(fileId=file_id, media_body=media).execute()
+                print(f"[OK] Snapshot de periféricos atualizado no Google Drive", flush=True)
+            else:
+                file_metadata = {
+                    'name': drive_file_name,
+                    'parents': [FOLDER_ID]
+                }
+                service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                print(f"[OK] Snapshot de periféricos enviado para o Google Drive", flush=True)
+            
+        except ImportError:
+            print("[AVISO] Bibliotecas do Google Drive não instaladas. Pulando upload de periféricos.", flush=True)
+        except HttpError as e:
+            print(f"[ERRO] Erro na API do Google Drive (periféricos): {e}", flush=True)
+        except Exception as e:
+            print(f"[ERRO] Erro ao enviar snapshot de periféricos para o Drive: {e}", flush=True)
+        
+        return str(local_path)
+    
+    except Exception as e:
+        print(f"[ERRO] Falha ao gerar snapshot de periféricos: {e}", flush=True)
+        return None
+
+def _read_peripherals_snapshots_from_drive():
+    """
+    Lê todos os arquivos CPFANI_Peripherals_Snapshot_*.txt da pasta do Google Drive
+    e retorna uma lista de dicionários com os dados para popular a planilha
+    """
+    peripherals_data = []
+    
+    try:
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+        from googleapiclient.errors import HttpError
+        from googleapiclient.http import MediaIoBaseDownload
+        import pickle
+        import io
+        
+        credentials_path = os.path.join(os.path.dirname(__file__), "credentials", "oauth2_credentials.json")
+        if not os.path.exists(credentials_path):
+            print("[AVISO] Credenciais OAuth2 não encontradas. Não é possível ler snapshots do Drive.", flush=True)
+            return peripherals_data
+        
+        SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+        creds = None
+        
+        token_path = os.path.join(os.path.dirname(__file__), "credentials", "token.pickle")
+        if os.path.exists(token_path):
+            with open(token_path, 'rb') as token:
+                creds = pickle.load(token)
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+                creds = flow.run_local_server(port=0)
+            with open(token_path, 'wb') as token:
+                pickle.dump(creds, token)
+        
+        service = build('drive', 'v3', credentials=creds)
+        
+        FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
+        query = f"name contains 'CPFANI_Peripherals_Snapshot_' and '{FOLDER_ID}' in parents and trashed=false"
+        results = service.files().list(q=query, fields="files(id, name)").execute()
+        files = results.get('files', [])
+        
+        for file in files:
+            try:
+                request = service.files().get_media(fileId=file['id'])
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while done is False:
+                    status, done = downloader.next_chunk()
+                
+                content = fh.getvalue().decode('utf-8')
+                
+                # Parse do conteúdo
+                data = {}
+                for line in content.strip().split('\n'):
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        data[key] = value
+                
+                pc_name = data.get('PC_NAME', 'UNKNOWN')
+                snapshot_date = data.get('DATA', 'N/A')
+                monitor_count = int(data.get('MONITOR_COUNT', 0))
+                
+                for idx in range(1, monitor_count + 1):
+                    modelo = data.get(f'MONITOR_{idx}_MODELO', 'N/A')
+                    serial = data.get(f'MONITOR_{idx}_SERIAL', 'N/A')
+                    
+                    peripherals_data.append({
+                        'Nome_PC': pc_name,
+                        'Data_Snapshot': snapshot_date,
+                        'Numero_Monitor': idx,
+                        'Modelo': modelo,
+                        'Serial': serial
+                    })
+            
+            except Exception as e:
+                print(f"[AVISO] Erro ao processar arquivo {file['name']}: {e}", flush=True)
+                continue
+        
+        print(f"[OK] {len(peripherals_data)} registros de monitores lidos do Drive", flush=True)
+        
+    except ImportError:
+        print("[AVISO] Bibliotecas do Google Drive não instaladas.", flush=True)
+    except HttpError as e:
+        print(f"[ERRO] Erro na API do Google Drive: {e}", flush=True)
+    except Exception as e:
+        print(f"[ERRO] Erro ao ler snapshots de periféricos: {e}", flush=True)
+    
+    return peripherals_data
+
+def _create_inventory_spreadsheet_with_monitors():
+    """
+    Cria/atualiza a planilha de inventário GB com a nova aba 'Periféricos - Monitores'
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        
+        # Lê dados de monitores do Drive
+        peripherals_data = _read_peripherals_snapshots_from_drive()
+        
+        if not peripherals_data:
+            print("[AVISO] Nenhum dado de monitores encontrado. Planilha não será atualizada.", flush=True)
+            return False
+        
+        # Nome do arquivo da planilha
+        spreadsheet_path = os.path.join(mod_config.SCRIPT_DIR, "CPFANI_Inventario_GB.xlsx")
+        
+        # Cria ou abre a planilha
+        if os.path.exists(spreadsheet_path):
+            wb = openpyxl.load_workbook(spreadsheet_path)
+        else:
+            wb = openpyxl.Workbook()
+            # Remove aba padrão se existir
+            if "Sheet" in wb.sheetnames:
+                del wb["Sheet"]
+        
+        # Remove aba existente se já existir (para atualizar)
+        if "Periféricos - Monitores" in wb.sheetnames:
+            del wb["Periféricos - Monitores"]
+        
+        # Cria nova aba
+        ws = wb.create_sheet("Periféricos - Monitores")
+        
+        # Cabeçalhos
+        headers = ["Nome do PC", "Data do Snapshot", "Nº do Monitor", "Modelo", "Nº de Série"]
+        ws.append(headers)
+        
+        # Formata cabeçalhos
+        header_fill = PatternFill(start_color="3a86ff", end_color="3a86ff", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+        
+        # Adiciona dados
+        for item in peripherals_data:
+            ws.append([
+                item['Nome_PC'],
+                item['Data_Snapshot'],
+                item['Numero_Monitor'],
+                item['Modelo'],
+                item['Serial']
+            ])
+        
+        # Ajusta largura das colunas
+        ws.column_dimensions['A'].width = 20
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 30
+        ws.column_dimensions['E'].width = 25
+        
+        # Salva planilha
+        wb.save(spreadsheet_path)
+        print(f"[OK] Planilha de inventário atualizada com {len(peripherals_data)} monitores: {spreadsheet_path}", flush=True)
+        
+        return True
+    
+    except ImportError:
+        print("[ERRO] openpyxl não instalado. Instale com: pip install openpyxl", flush=True)
+        return False
+    except Exception as e:
+        print(f"[ERRO] Falha ao criar planilha de inventário: {e}", flush=True)
+        return False
+
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -592,7 +867,7 @@ class CPFani_GUI(ctk.CTk):
             if self.driver_var.get() != "nenhum": total_tasks += 1
             if self.task_watchdog.get(): total_tasks += 1
             if has_kudu_actions: total_tasks += 1
-            total_tasks += 1  # Snapshot
+            total_tasks += 2  # Snapshot + Snapshot de Periféricos + Planilha GB
             
             completed = 0
 
@@ -770,7 +1045,7 @@ class CPFani_GUI(ctk.CTk):
                     erros.append("Kudu-Crítico")
                 completed += 1
 
-            # 10. SNAPSHOT
+            # 10. SNAPSHOT DE HARDWARE
             self.update_status("► Gerando snapshot de hardware...", (completed / total_tasks) * 100, "")
             try:
                 self.log("Gerando snapshot de hardware...")
@@ -779,10 +1054,39 @@ class CPFani_GUI(ctk.CTk):
                     local=self.local_snapshot,
                     usuario=self.usuario_snapshot
                 )
-                self.log("✓ Snapshot gerado", "OK")
+                self.log("✓ Snapshot de hardware gerado", "OK")
             except Exception as e:
-                self.log(f"Falha ao gerar snapshot: {e}", "ERRO")
-                erros.append("Snapshot")
+                self.log(f"Falha ao gerar snapshot de hardware: {e}", "ERRO")
+                erros.append("Snapshot Hardware")
+            completed += 1
+
+            # 11. SNAPSHOT DE PERIFÉRICOS (MONITORES)
+            self.update_status("► Gerando snapshot de periféricos...", (completed / total_tasks) * 100, "Coletando dados de monitores...")
+            try:
+                self.log("Gerando snapshot de periféricos (monitores)...")
+                peripherals_result = _generate_peripherals_snapshot()
+                if peripherals_result:
+                    self.log("✓ Snapshot de periféricos gerado", "OK")
+                else:
+                    self.log("Falha ao gerar snapshot de periféricos", "AVISO")
+                    erros.append("Snapshot Periféricos")
+            except Exception as e:
+                self.log(f"Falha ao gerar snapshot de periféricos: {e}", "ERRO")
+                erros.append("Snapshot Periféricos")
+            completed += 1
+
+            # 12. PLANILHA DE INVENTÁRIO GB
+            self.update_status("► Atualizando planilha de inventário GB...", (completed / total_tasks) * 100, "Processando monitores...")
+            try:
+                self.log("Atualizando planilha de inventário GB com dados de monitores...")
+                if _create_inventory_spreadsheet_with_monitors():
+                    self.log("✓ Planilha de inventário atualizada com aba de monitores", "OK")
+                else:
+                    self.log("Falha ao atualizar planilha de inventário", "AVISO")
+                    erros.append("Planilha Inventário")
+            except Exception as e:
+                self.log(f"Falha ao atualizar planilha de inventário: {e}", "ERRO")
+                erros.append("Planilha Inventário")
             completed += 1
 
             elapsed_time = time.time() - start_time
