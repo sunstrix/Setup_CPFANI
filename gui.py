@@ -151,7 +151,8 @@ def _parse_monitors_from_hardware_snapshot(content):
 def _read_monitors_from_hardware_snapshots():
     """
     Lê todos os arquivos CPFANI_Hardware_Snapshot_*.txt da pasta do Google Drive
-    e extrai dados de monitores para popular a planilha
+    e extrai dados de monitores para popular a planilha.
+    Funciona com qualquer formato de ID (MAC Address ou ProcessorId).
     """
     monitors_data = []
     
@@ -205,7 +206,7 @@ def _read_monitors_from_hardware_snapshots():
                 
                 content = fh.getvalue().decode('utf-8')
                 
-                # Extrai nome do PC do conteúdo
+                # Extrai nome do PC do conteúdo (compatível com formato antigo e novo)
                 pc_name_match = re.search(r'Nome_Computador\s*:\s*(.*?)\s*\n', content)
                 pc_name = pc_name_match.group(1) if pc_name_match else 'UNKNOWN'
                 
@@ -339,7 +340,6 @@ def _parse_printers_from_hardware_snapshot(content):
         printer_section = content[start_idx:]
         
         # Regex para encontrar impressoras
-        # Padrão: Impressora X:\n  Nome: ...\n  Status: ...\n  Porta: ...\n  Driver: ...\n  Compartilhada: ...\n  (IP: ...)\n  (Modelo (SNMP): ...)\n  (Serial (SNMP): ...)
         printer_pattern = r'Impressora\s+\d+:\s*\n(.*?)(?=\n\s*Impressora|\n=|$)'
         matches = re.findall(printer_pattern, printer_section, re.DOTALL)
         
@@ -371,7 +371,8 @@ def _parse_printers_from_hardware_snapshot(content):
 def _read_printers_from_hardware_snapshots():
     """
     Lê todos os arquivos CPFANI_Hardware_Snapshot_*.txt da pasta do Google Drive
-    e extrai dados de impressoras para popular a planilha
+    e extrai dados de impressoras para popular a planilha.
+    Funciona com qualquer formato de ID (MAC Address ou ProcessorId).
     """
     printers_data = []
     
@@ -551,7 +552,7 @@ class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Setup Automatizado CP Fani — V5.9.5")
-        self.geometry("740x800")
+        self.geometry("740x860")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
         self.local_snapshot = "Não informado"
@@ -725,8 +726,33 @@ class CPFani_GUI(ctk.CTk):
         self.log_area.pack(padx=20, pady=10, fill="both", expand=True)
         self.log_area.configure(state="disabled")
 
-        self.btn_run = ctk.CTkButton(self.main_scroll, text="▶ EXECUTAR DEPLOY", font=("", 14, "bold"), height=40, command=self.start_deploy)
-        self.btn_run.pack(pady=10, padx=20, fill="x")
+        # ============================================================
+        # BOTÕES DE AÇÃO (DEPLOY + SNAPSHOT ISOLADO)
+        # ============================================================
+        
+        # Botão principal: Deploy completo
+        self.btn_run = ctk.CTkButton(
+            self.main_scroll, 
+            text="▶ EXECUTAR DEPLOY", 
+            font=("", 14, "bold"), 
+            height=40, 
+            fg_color="#3a86ff",
+            hover_color="#2a76ef",
+            command=self.start_deploy
+        )
+        self.btn_run.pack(pady=(10, 5), padx=20, fill="x")
+        
+        # Botão secundário: Gerar apenas snapshot (NOVO)
+        self.btn_snapshot = ctk.CTkButton(
+            self.main_scroll, 
+            text="📸 GERAR APENAS SNAPSHOT", 
+            font=("", 13, "bold"), 
+            height=38, 
+            fg_color="#2b8a3e",
+            hover_color="#1b7a2e",
+            command=self.start_snapshot_only
+        )
+        self.btn_snapshot.pack(pady=(0, 10), padx=20, fill="x")
 
     def select_all_apps(self):
         for var in self.app_vars.values():
@@ -921,6 +947,7 @@ class CPFani_GUI(ctk.CTk):
             return
         
         self.btn_run.configure(state="disabled", text="⏳ EXECUTANDO...")
+        self.btn_snapshot.configure(state="disabled")
         self.log_area.configure(state="normal")
         self.log_area.delete("1.0", "end")
         self.log_area.configure(state="disabled")
@@ -928,6 +955,126 @@ class CPFani_GUI(ctk.CTk):
         # Inicia thread com tratamento de exceções
         thread = threading.Thread(target=self._safe_work, daemon=True)
         thread.start()
+
+    # ============================================================
+    # NOVO: INICIAR APENAS SNAPSHOT (SEM DEPLOY)
+    # ============================================================
+
+    def start_snapshot_only(self):
+        """Inicia a geração isolada do snapshot (sem deploy)"""
+        if not messagebox.askyesno("Confirmar Snapshot", "Gerar apenas o snapshot de hardware (sem executar o deploy completo)?"):
+            return
+        
+        self.btn_snapshot.configure(state="disabled", text="⏳ GERANDO SNAPSHOT...")
+        self.btn_run.configure(state="disabled")
+        self.log_area.configure(state="normal")
+        self.log_area.delete("1.0", "end")
+        self.log_area.configure(state="disabled")
+        
+        # Inicia thread para o snapshot isolado
+        thread = threading.Thread(target=self._safe_snapshot_only_work, daemon=True)
+        thread.start()
+
+    def _safe_snapshot_only_work(self):
+        """Wrapper seguro para _snapshot_only_work com captura de exceções"""
+        try:
+            self._snapshot_only_work()
+        except Exception as e:
+            self.log(f"ERRO CRÍTICO NÃO TRATADO: {str(e)}", "ERRO")
+            self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
+            self.after(0, self._finalizar_snapshot_only, [str(e)])
+
+    def _snapshot_only_work(self):
+        """Lógica de geração isolada do snapshot (sem deploy)"""
+        erros = []
+        start_time = time.time()
+        
+        try:
+            self.log("► Iniciando geração isolada de snapshot...")
+            
+            # Coleta dados do snapshot (local e usuário)
+            self._coletar_dados_snapshot()
+            
+            # Total de tarefas: Snapshot + Planilha Monitores + Planilha Impressoras
+            total_tasks = 3
+            completed = 0
+            
+            # 1. GERAR SNAPSHOT DE HARDWARE
+            self.update_status("► Gerando snapshot de hardware...", (completed / total_tasks) * 100, "Coletando dados...")
+            try:
+                self.log("Gerando snapshot de hardware (incluindo monitores, impressoras e adaptadores de rede)...")
+                result = mod_config.run_snapshot_only(
+                    local=self.local_snapshot,
+                    usuario=self.usuario_snapshot
+                )
+                if result:
+                    self.log(f"✓ Snapshot gerado com sucesso: {result}", "OK")
+                else:
+                    self.log("Falha ao gerar snapshot", "ERRO")
+                    erros.append("Snapshot")
+            except Exception as e:
+                self.log(f"Falha ao gerar snapshot: {e}", "ERRO")
+                erros.append("Snapshot")
+            completed += 1
+            
+            # 2. PLANILHA DE INVENTÁRIO GB — MONITORES
+            self.update_status("► Atualizando planilha (Monitores)...", (completed / total_tasks) * 100, "Processando monitores...")
+            try:
+                self.log("Atualizando planilha de inventário GB com dados de monitores...")
+                if _create_inventory_spreadsheet_with_monitors():
+                    self.log("✓ Planilha atualizada com aba de monitores", "OK")
+                else:
+                    self.log("Falha ao atualizar planilha (monitores)", "AVISO")
+                    erros.append("Planilha Monitores")
+            except Exception as e:
+                self.log(f"Falha ao atualizar planilha (monitores): {e}", "ERRO")
+                erros.append("Planilha Monitores")
+            completed += 1
+            
+            # 3. PLANILHA DE INVENTÁRIO GB — IMPRESSORAS
+            self.update_status("► Atualizando planilha (Impressoras)...", (completed / total_tasks) * 100, "Processando impressoras...")
+            try:
+                self.log("Atualizando planilha de inventário GB com dados de impressoras...")
+                if _create_inventory_spreadsheet_with_printers():
+                    self.log("✓ Planilha atualizada com aba de impressoras", "OK")
+                else:
+                    self.log("Falha ao atualizar planilha (impressoras)", "AVISO")
+                    erros.append("Planilha Impressoras")
+            except Exception as e:
+                self.log(f"Falha ao atualizar planilha (impressoras): {e}", "ERRO")
+                erros.append("Planilha Impressoras")
+            completed += 1
+            
+            elapsed_time = time.time() - start_time
+            self.log(f"Snapshot concluído em {elapsed_time:.1f} segundos")
+        
+        except Exception as e:
+            self.log(f"ERRO CRÍTICO: {str(e)}", "ERRO")
+            self.log(f"Stack trace: {traceback.format_exc()}", "ERRO")
+            erros.append("Crítico")
+        finally:
+            self.after(0, self._finalizar_snapshot_only, erros)
+
+    def _finalizar_snapshot_only(self, erros):
+        """Finaliza a geração isolada do snapshot e exibe resultados"""
+        try:
+            self.progress.set(1.0)
+            self.progress_text.configure(text="100%")
+            self.current_app_label.configure(text="")
+            self.btn_snapshot.configure(state="normal", text="📸 GERAR APENAS SNAPSHOT")
+            self.btn_run.configure(state="normal")
+            
+            if erros:
+                self.update_status(f"⚠ Snapshot concluído com {len(erros)} alerta(s)", 100)
+                self.log(f"Snapshot concluído com {len(erros)} erro(s): {', '.join(erros)}", "AVISO")
+                show_windows_toast("Aviso no Snapshot", f"Problemas com: {', '.join(erros)}.")
+            else:
+                self.update_status("✓ Snapshot finalizado com sucesso!", 100)
+                self.log("✓ Snapshot concluído sem erros!", "OK")
+                show_windows_toast("CP Fani - Snapshot", "Snapshot gerado com sucesso!")
+        
+        except Exception as e:
+            self.log(f"Erro ao finalizar snapshot: {e}", "ERRO")
 
     def _safe_work(self):
         """Wrapper seguro para _work com captura de exceções não tratadas"""
@@ -1211,16 +1358,16 @@ class CPFani_GUI(ctk.CTk):
                     erros.append("Kudu-Crítico")
                 completed += 1
 
-            # 10. SNAPSHOT DE HARDWARE (COM MONITORES E IMPRESSORAS INCLUSOS)
+            # 10. SNAPSHOT DE HARDWARE (COM MONITORES, IMPRESSORAS E ADAPTADORES DE REDE)
             self.update_status("► Gerando snapshot de hardware...", (completed / total_tasks) * 100, "")
             try:
-                self.log("Gerando snapshot de hardware (incluindo monitores e impressoras)...")
+                self.log("Gerando snapshot de hardware (incluindo monitores, impressoras e adaptadores de rede)...")
                 # Passa os dados coletados
                 mod_config.generate_full_snapshot(
                     local=self.local_snapshot,
                     usuario=self.usuario_snapshot
                 )
-                self.log("✓ Snapshot de hardware gerado com dados de monitores e impressoras", "OK")
+                self.log("✓ Snapshot de hardware gerado com dados completos", "OK")
             except Exception as e:
                 self.log(f"Falha ao gerar snapshot de hardware: {e}", "ERRO")
                 erros.append("Snapshot Hardware")
@@ -1271,6 +1418,7 @@ class CPFani_GUI(ctk.CTk):
             self.progress_text.configure(text="100%")
             self.current_app_label.configure(text="")
             self.btn_run.configure(state="normal", text="▶ EXECUTAR DEPLOY")
+            self.btn_snapshot.configure(state="normal")
             
             if erros:
                 self.update_status(f"⚠ Concluído com {len(erros)} alerta(s)", 100)
