@@ -63,7 +63,7 @@ def _apply_to_all_real_users():
     except Exception as e:
         _log(f"Aviso ao setar HKCU direto: {e}", "AVISO")
 
-    # 2. Varre todas as colmeias de perfis carregadas no sistema (SIDs)
+    # 2. Varre todas as colmeias de perfis carregados no sistema (SIDs)
     try:
         profiles_key = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, profiles_key) as root_key:
@@ -162,13 +162,9 @@ def _get_active_user_sid():
         return None
 
 def setup_self_healing():
-    """Instala o sistema de auto-cura (watchdog), removendo duplicatas antes"""
+    """Instala o sistema de auto-cura (watchdog)"""
     _log("=" * 60, "INFO")
     _log("INSTALANDO CAO DE GUARDA (SELF-HEALING)...", "INFO")
-    
-    # Remove tarefas duplicadas antes de criar
-    _delete_duplicate_tasks("CPFANI_Watchdog")
-    
     script_dir = SCRIPT_DIR
     os.makedirs(script_dir, exist_ok=True)
     
@@ -218,7 +214,7 @@ while ($true) {
         _log(f"Erro ao criar script VBS: {e}", "ERRO")
         return False
     
-    # Cria tarefa agendada (força com /f para substituir se já existir)
+    # Cria tarefa agendada
     task_cmd = f'schtasks /create /tn "CPFANI_Watchdog" /tr "wscript.exe \\"{vbs_path}\\"" /sc onlogon /ru "SYSTEM" /rl highest /f'
     result = _safe_subprocess_run(task_cmd, shell=True, timeout=30)
     if result and result.returncode == 0:
@@ -267,34 +263,9 @@ def sync_time_ntp():
     except Exception as e:
         _log(f"Erro ao sincronizar horário: {e}", "ERRO")
 
-def _task_exists(task_name):
-    """Verifica se uma tarefa agendada com o nome existe"""
-    cmd = f'schtasks /query /tn "{task_name}" /fo csv /nh'
-    result = _safe_subprocess_run(cmd, shell=True, timeout=10)
-    return result is not None and result.returncode == 0
-
-def _delete_task(task_name):
-    """Remove uma tarefa agendada pelo nome"""
-    if _task_exists(task_name):
-        _log(f"Removendo tarefa existente: {task_name}", "INFO")
-        _safe_subprocess_run(f'schtasks /delete /tn "{task_name}" /f', shell=True, timeout=10)
-
-def _delete_duplicate_tasks(task_name):
-    """Remove todas as tarefas com o nome (garante que não haja duplicatas)"""
-    # Verifica se há múltiplas tarefas com o mesmo nome (o schtasks lista todas)
-    cmd = f'schtasks /query /tn "{task_name}" /fo csv /nh'
-    result = _safe_subprocess_run(cmd, shell=True, timeout=10)
-    if result is not None and result.returncode == 0:
-        # Se retornar 0, existe pelo menos uma. Vamos remover todas (usando /f) para garantir
-        _log(f"Removendo duplicatas da tarefa: {task_name}", "INFO")
-        _safe_subprocess_run(f'schtasks /delete /tn "{task_name}" /f', shell=True, timeout=10)
-        # Aguarda um momento para o sistema processar
-        time.sleep(1)
-
 def schedule_daily_reboot():
-    """Agenda reinício diário às 21:00, removendo duplicatas antes"""
+    """Agenda reinício diário às 21:00"""
     _log("Agendando reinício diário automático...", "INFO")
-    _delete_duplicate_tasks("CPFANI_ReinicioDiario")
     try:
         task_cmd = 'shutdown.exe /r /f /t 60 /c "Reinicio diario automatico CP Fani"'
         result = _safe_subprocess_run(
@@ -309,59 +280,8 @@ def schedule_daily_reboot():
     except Exception as e:
         _log(f"Erro ao agendar reinício: {e}", "ERRO")
 
-def schedule_manutencao_rede():
-    """Agenda manutenção de rede (placeholder), removendo duplicatas antes"""
-    _log("Agendando manutenção de rede...", "INFO")
-    _delete_duplicate_tasks("CPFANI_ManutencaoRede")
-    try:
-        # Script de manutenção: pode ser um arquivo .bat ou .ps1 existente
-        bat_path = os.path.join(os.path.dirname(__file__), "manutencao_rede.bat")
-        if not os.path.exists(bat_path):
-            _log("Arquivo manutencao_rede.bat não encontrado. Pulando agendamento.", "AVISO")
-            return True
-        task_cmd = f'"{bat_path}"'
-        result = _safe_subprocess_run(
-            f'schtasks /create /tn "CPFANI_ManutencaoRede" /tr "{task_cmd}" /sc onlogon /ru "SYSTEM" /rl highest /f',
-            shell=True,
-            timeout=30
-        )
-        if result and result.returncode == 0:
-            _log("✓ Manutenção de rede agendada no logon", "OK")
-        else:
-            _log("Aviso ao agendar manutenção de rede", "AVISO")
-    except Exception as e:
-        _log(f"Erro ao agendar manutenção de rede: {e}", "ERRO")
-    return True
-
-def schedule_instalar_tudo():
-    """Agenda instalador universal (placeholder), removendo duplicatas antes"""
-    _log("Agendando instalador universal...", "INFO")
-    _delete_duplicate_tasks("CPFANI_InstalarTudo")
-    try:
-        ps1_path = os.path.join(os.path.dirname(__file__), "instalar_tudo.ps1")
-        if not os.path.exists(ps1_path):
-            _log("Arquivo instalar_tudo.ps1 não encontrado. Pulando agendamento.", "AVISO")
-            return True
-        # Executa o PowerShell com o script
-        task_cmd = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{ps1_path}"'
-        result = _safe_subprocess_run(
-            f'schtasks /create /tn "CPFANI_InstalarTudo" /tr "{task_cmd}" /sc onlogon /ru "SYSTEM" /rl highest /f',
-            shell=True,
-            timeout=30
-        )
-        if result and result.returncode == 0:
-            _log("✓ Instalador universal agendado no logon", "OK")
-        else:
-            _log("Aviso ao agendar instalador universal", "AVISO")
-    except Exception as e:
-        _log(f"Erro ao agendar instalador universal: {e}", "ERRO")
-    return True
-
 def set_apps_to_startup_all_users():
-    """
-    Configura aplicativos para iniciar no login de todos os usuários,
-    removendo duplicatas da pasta de inicialização antes de criar novos atalhos.
-    """
+    """Configura aplicativos para iniciar no login de todos os usuários"""
     _log("Configurando apps para abrir no login de TODOS os utilizadores (HKLM)...", "INFO")
     startup_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
     os.makedirs(startup_path, exist_ok=True)
@@ -414,7 +334,7 @@ def set_apps_to_startup_all_users():
     except Exception as e:
         _log(f"Aviso no Mapeamento Geral Nível 11: {e}", "AVISO")
     
-    # Cria atalhos na pasta de inicialização (removendo duplicatas primeiro)
+    # Cria atalhos na pasta de inicialização
     apps = {
         "flameshot.lnk": [r"C:\Program Files\Flameshot\bin\flameshot.exe", r"C:\Program Files\Flameshot\flameshot.exe"],
         "sharex.lnk": [r"C:\Program Files\ShareX\ShareX.exe", r"C:\Program Files (x86)\ShareX\ShareX.exe"],
@@ -423,24 +343,14 @@ def set_apps_to_startup_all_users():
     }
     
     for link, paths in apps.items():
-        target_path = os.path.join(startup_path, link)
-        
-        # Remove todos os atalhos com o mesmo nome (elimina duplicatas)
-        if os.path.exists(target_path):
-            try:
-                os.remove(target_path)
-                _log(f"Removido atalho existente: {link}", "INFO")
-            except Exception as e:
-                _log(f"Erro ao remover atalho {link}: {e}", "AVISO")
-        
-        # Encontra o executável
         exe_found = None
         for p in paths:
             if os.path.exists(p):
                 exe_found = p
                 break
         if exe_found:
-            ps_cmd = f'$s=(New-Object -COM WScript.Shell).CreateShortcut(\'{target_path}\');$s.TargetPath=\'{exe_found}\';$s.Save()'
+            target = os.path.join(startup_path, link)
+            ps_cmd = f'$s=(New-Object -COM WScript.Shell).CreateShortcut(\'{target}\');$s.TargetPath=\'{exe_found}\';$s.Save()'
             result = _safe_subprocess_run(
                 ["powershell", "-NoProfile", "-Command", ps_cmd],
                 timeout=15
@@ -449,11 +359,9 @@ def set_apps_to_startup_all_users():
                 _log(f"✓ Atalho criado: {link}", "OK")
             else:
                 _log(f"Aviso ao criar atalho: {link}", "AVISO")
-        else:
-            _log(f"Executável não encontrado para {link}", "AVISO")
 
 def apply_default_user_profile(bar_alignment):
-    """Aplica configurações ao perfil padrão de usuário, incluindo wallpaper e lockscreen"""
+    """Aplica configurações ao perfil padrão de usuário"""
     _log("Aplicando configurações ao perfil padrão...", "INFO")
     try:
         # Carrega hive do usuário padrão
@@ -489,34 +397,6 @@ def apply_default_user_profile(bar_alignment):
             timeout=10
         )
         
-        # ===== NOVO: Define wallpaper e lockscreen para novos usuários =====
-        # Garante que a imagem exista
-        wallpaper_path = _ensure_wallpaper_image()
-        if wallpaper_path:
-            # Wallpaper para o perfil padrão
-            _safe_subprocess_run(
-                ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Desktop", "/v", "Wallpaper", "/t", "REG_SZ", "/d", wallpaper_path, "/f"],
-                timeout=10
-            )
-            _safe_subprocess_run(
-                ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Desktop", "/v", "WallpaperStyle", "/t", "REG_SZ", "/d", "2", "/f"],
-                timeout=10
-            )
-            _log("✓ Wallpaper definido no perfil padrão", "OK")
-            
-            # Lockscreen para o perfil padrão (via PersonalizationCSP)
-            _safe_subprocess_run(
-                ["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Lock Screen\Creative", "/v", "LockScreenImagePath", "/t", "REG_SZ", "/d", wallpaper_path, "/f"],
-                timeout=10
-            )
-            _safe_subprocess_run(
-                ["reg", "add", r"HKU\TempDefaultUser\Software\Microsoft\Windows\CurrentVersion\Lock Screen\Creative", "/v", "LockScreenImageId", "/t", "REG_SZ", "/d", "{00000000-0000-0000-0000-000000000000}", "/f"],
-                timeout=10
-            )
-            _log("✓ Lockscreen definido no perfil padrão", "OK")
-        else:
-            _log("Imagem do wallpaper não disponível. Pulando configuração no perfil padrão.", "AVISO")
-        
         # Descarrega hive
         _safe_subprocess_run(
             ["reg", "unload", r"HKU\TempDefaultUser"],
@@ -528,14 +408,9 @@ def apply_default_user_profile(bar_alignment):
         _log(f"Erro ao aplicar perfil padrão: {e}", "ERRO")
 
 def remove_agressive_bloatware(bloatware_list):
-    """Remove bloatware do sistema, preservando a calculadora"""
-    # Filtra a lista para NÃO remover a Calculadora
-    filtered_list = [app for app in bloatware_list if app != "Microsoft.WindowsCalculator"]
-    if len(filtered_list) != len(bloatware_list):
-        _log("Removendo Microsoft.WindowsCalculator da lista de bloatware (preservar calculadora)", "INFO")
-    
-    _log(f"Removendo {len(filtered_list)} aplicativos bloatware...", "INFO")
-    for app in filtered_list:
+    """Remove bloatware do sistema"""
+    _log(f"Removendo {len(bloatware_list)} aplicativos bloatware...", "INFO")
+    for app in bloatware_list:
         try:
             cmd_user = f"Get-AppxPackage -AllUsers *{app}* | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue"
             cmd_prov = f"Get-AppxProvisionedPackage -Online | Where-Object {{$_.DisplayName -match '{app}'}} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue"
@@ -571,7 +446,6 @@ def apply_cpfani_branding(bar_alignment):
     except Exception as e:
         _log(f"Erro ao aplicar tema: {e}", "AVISO")
     
-    # Aplica wallpaper e lockscreen para o usuário atual (já existente)
     apply_cpfani_wallpaper_redundant()
     apply_cpfani_lockscreen_redundant()
     
@@ -590,10 +464,9 @@ def apply_cpfani_branding(bar_alignment):
         except Exception as e:
             _log(f"Erro ao alinhar barra: {e}", "AVISO")
     
-    # Aplica configurações ao perfil padrão (novos usuários)
     apply_default_user_profile(bar_alignment)
     
-    # ================== REDUNDÂNCIA PARA TODOS OS USUÁRIOS ==================
+    # ================== NOVAS FUNÇÕES DE REDUNDÂNCIA ==================
     _log("Aplicando configurações de tema escuro, wallpaper e lockscreen para TODOS os usuários (redundância)...", "INFO")
     _apply_dark_theme_to_all_users()
     _apply_wallpaper_to_all_users()
@@ -856,6 +729,16 @@ def configurar_compartilhamento_rede():
     except Exception as e:
         _log(f"Aviso ao liberar Firewall: {e}", "AVISO")
 
+def schedule_manutencao_rede():
+    """Agenda manutenção de rede (placeholder)"""
+    _log("Agendamento de manutenção de rede configurado", "INFO")
+    return True
+
+def schedule_instalar_tudo():
+    """Agenda instalador universal (placeholder)"""
+    _log("Agendamento de instalador universal configurado", "INFO")
+    return True
+
 def _get_hardware_info():
     """Obtém informações básicas de hardware (legado)"""
     return {
@@ -937,66 +820,277 @@ def _get_bios_serial():
     return "Desconhecido"
 
 # ============================================================
-# FUNÇÃO PARA OBTER O MAC ADDRESS (SUBSTITUI O PROCESSOR ID)
+# NOVA FUNÇÃO: OBTER INFORMAÇÕES DE MONITORES CONECTADOS
 # ============================================================
 
-def _get_mac_address():
+def _get_monitor_info():
     """
-    Obtém o endereço MAC da primeira placa de rede ativa (ou a primeira encontrada).
-    Utiliza (Get-NetAdapter).MacAddress como solicitado.
+    Obtém informações de todos os monitores conectados via WMI (WmiMonitorID).
+    Retorna uma lista de dicionários com 'Modelo' e 'Numero_de_Serie' de cada monitor.
+    Suporta múltiplos monitores por PC.
     """
-    # Método 1: PowerShell com Get-NetAdapter (prioriza adaptador com status 'Up')
+    monitors = []
     try:
         ps_script = """
-        $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
-        if (-not $adapter) {
-            $adapter = Get-NetAdapter | Select-Object -First 1
-        }
-        return $adapter.MacAddress
+        Get-CimInstance -Namespace root\\wmi -ClassName WmiMonitorID | Select-Object `
+          @{Name="Modelo"; Expression={[System.Text.Encoding]::ASCII.GetString($_.UserFriendlyName -notmatch 0)}}, `
+          @{Name="Numero_de_Serie"; Expression={[System.Text.Encoding]::ASCII.GetString($_.SerialNumberID -notmatch 0)}}
         """
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=15
+        )
+        
+        if result and result.stdout:
+            lines = result.stdout.strip().split('\n')
+            # Pula as duas primeiras linhas (cabeçalho e separador)
+            for line in lines[2:]:
+                if line.strip():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        # O modelo pode ter espaços, então pegamos tudo exceto o último campo
+                        modelo = ' '.join(parts[:-1]).strip()
+                        serial = parts[-1].strip()
+                        if modelo or serial:
+                            monitors.append({
+                                'Modelo': modelo if modelo else 'Desconhecido',
+                                'Numero_de_Serie': serial if serial else 'N/A'
+                            })
+    except Exception as e:
+        _log(f"Erro ao obter informações dos monitores: {e}", "AVISO")
+    
+    # Se não encontrou nenhum monitor, retorna lista vazia
+    if not monitors:
+        _log("Nenhum monitor detectado ou erro na consulta WMI.", "AVISO")
+    
+    return monitors
+
+# ============================================================
+# NOVA FUNÇÃO: OBTER INFORMAÇÕES DE IMPRESSORAS INSTALADAS
+# ============================================================
+
+def _get_printer_info():
+    """
+    Obtém informações de todas as impressoras instaladas no sistema.
+    Para impressoras de rede (com IP), tenta consultar via SNMP para obter modelo e serial reais.
+    Retorna uma lista de dicionários com dados de cada impressora.
+    """
+    printers = []
+    
+    try:
+        # Lista todas as impressoras instaladas
+        ps_script = """
+        Get-Printer | Select-Object Name, PrinterStatus, PortName, DriverName, Shared | ConvertTo-Json
+        """
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=20
+        )
+        
+        if result and result.stdout:
+            import json
+            try:
+                printers_data = json.loads(result.stdout)
+                
+                # Se for apenas uma impressora, converte para lista
+                if isinstance(printers_data, dict):
+                    printers_data = [printers_data]
+                
+                for printer in printers_data:
+                    printer_info = {
+                        'Nome': printer.get('Name', 'N/A'),
+                        'Status': printer.get('PrinterStatus', 'N/A'),
+                        'Porta': printer.get('PortName', 'N/A'),
+                        'Driver': printer.get('DriverName', 'N/A'),
+                        'Compartilhada': 'Sim' if printer.get('Shared') else 'Não',
+                        'Modelo_SNMP': 'N/A',
+                        'Serial_SNMP': 'N/A',
+                        'IP': 'N/A'
+                    }
+                    
+                    # Extrai IP da porta (se for impressora de rede)
+                    port_name = printer.get('PortName', '')
+                    ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', port_name)
+                    
+                    if ip_match:
+                        ip = ip_match.group(1)
+                        printer_info['IP'] = ip
+                        
+                        # Tenta consultar via SNMP para obter modelo e serial reais
+                        snmp_result = _query_printer_snmp(ip)
+                        if snmp_result:
+                            printer_info['Modelo_SNMP'] = snmp_result.get('Modelo', 'N/A')
+                            printer_info['Serial_SNMP'] = snmp_result.get('Serial', 'N/A')
+                    
+                    printers.append(printer_info)
+            
+            except json.JSONDecodeError as e:
+                _log(f"Erro ao parsear JSON das impressoras: {e}", "AVISO")
+    
+    except Exception as e:
+        _log(f"Erro ao obter informações das impressoras: {e}", "AVISO")
+    
+    if not printers:
+        _log("Nenhuma impressora detectada.", "AVISO")
+    
+    return printers
+
+def _query_printer_snmp(ip):
+    """
+    Consulta impressora via SNMP para obter modelo e número de série reais.
+    Retorna dicionário com 'Modelo' e 'Serial' ou None em caso de falha.
+    """
+    try:
+        ps_script = f"""
+        $IP = "{ip}"
+        try {{
+            $snmp = New-Object -ComObject "olePrn.OleSNMP"
+            $snmp.Open($IP, "public", 2, 3000)
+            
+            $Modelo = $snmp.Get(".1.3.6.1.2.1.25.3.2.1.3.1")
+            $Serial = $snmp.Get(".1.3.6.1.2.1.43.5.1.1.17.1")
+            
+            if ($Modelo -and $Serial) {{
+                Write-Output "$Modelo|$Serial"
+            }}
+        }} catch {{
+            # SNMP não disponível ou falhou
+        }}
+        """
+        
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=10
+        )
+        
+        if result and result.stdout:
+            output = result.stdout.strip()
+            if '|' in output:
+                parts = output.split('|')
+                if len(parts) == 2:
+                    return {
+                        'Modelo': parts[0].strip(),
+                        'Serial': parts[1].strip().upper()
+                    }
+    
+    except Exception as e:
+        _log(f"Erro ao consultar SNMP para IP {ip}: {e}", "AVISO")
+    
+    return None
+
+# ============================================================
+# NOVA FUNÇÃO: OBTER INFORMAÇÕES DE ADAPTADORES DE REDE
+# ============================================================
+
+def _get_network_adapters():
+    """
+    Obtém informações de todos os adaptadores de rede via Get-NetAdapter.
+    Retorna uma lista de dicionários com 'Nome', 'Descricao', 'MacAddress' e 'Status' de cada adaptador.
+    """
+    adapters = []
+    try:
+        ps_script = """
+        Get-NetAdapter | Select-Object Name, InterfaceDescription, MacAddress, Status | ConvertTo-Json
+        """
+        result = _safe_subprocess_run(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            timeout=15
+        )
+        
+        if result and result.stdout:
+            import json
+            try:
+                adapters_data = json.loads(result.stdout)
+                
+                # Se for apenas um adaptador, converte para lista
+                if isinstance(adapters_data, dict):
+                    adapters_data = [adapters_data]
+                
+                for adapter in adapters_data:
+                    adapters.append({
+                        'Nome': adapter.get('Name', 'N/A'),
+                        'Descricao': adapter.get('InterfaceDescription', 'N/A'),
+                        'MacAddress': adapter.get('MacAddress', 'N/A'),
+                        'Status': adapter.get('Status', 'N/A')
+                    })
+            except json.JSONDecodeError as e:
+                _log(f"Erro ao parsear JSON dos adaptadores de rede: {e}", "AVISO")
+    except Exception as e:
+        _log(f"Erro ao obter informações dos adaptadores de rede: {e}", "AVISO")
+    
+    if not adapters:
+        _log("Nenhum adaptador de rede detectado.", "AVISO")
+    
+    return adapters
+
+# ============================================================
+# NOVA FUNÇÃO: OBTER IDENTIFICADOR ÚNICO (MAC ADDRESS COM FALLBACK)
+# ============================================================
+
+def _get_unique_id():
+    """
+    Obtém um identificador único para o PC.
+    Prioridade:
+    1. MAC Address do primeiro adaptador de rede ativo (Status = Up)
+    2. Fallback para ProcessorId (caso não encontre adaptadores ativos)
+    Retorna string com o identificador (MAC sem separadores ou ProcessorId).
+    """
+    # Tenta obter MAC Address do primeiro adaptador ativo
+    try:
+        adapters = _get_network_adapters()
+        for adapter in adapters:
+            if adapter.get('Status') == 'Up' and adapter.get('MacAddress') != 'N/A':
+                # Remove separadores do MAC (hífens e dois pontos) para usar como ID limpo
+                mac_clean = adapter['MacAddress'].replace('-', '').replace(':', '').upper()
+                if mac_clean and len(mac_clean) >= 10:
+                    _log(f"✓ Identificador único (MAC): {mac_clean}", "OK")
+                    return mac_clean
+    except Exception as e:
+        _log(f"Erro ao obter MAC Address: {e}. Usando fallback.", "AVISO")
+    
+    # Fallback: ProcessorId
+    _log("Nenhum adaptador ativo encontrado. Usando ProcessorId como fallback.", "AVISO")
+    return _get_processor_id()
+
+# ============================================================
+# FUNÇÃO PARA OBTER O PROCESSOR ID (SUBSTITUI O UUID)
+# ============================================================
+
+def _get_processor_id():
+    """
+    Obtém o ProcessorId da CPU via WMI (Get-WmiObject Win32_Processor).
+    Este identificador é único para cada processador e não se repete
+    em máquinas chinesas como o UUID.
+    """
+    # Método 1: PowerShell com Get-WmiObject (mais compatível)
+    try:
+        ps_script = "(Get-WmiObject Win32_Processor).ProcessorId"
         result = _safe_subprocess_run(
             ['powershell', '-NoProfile', '-Command', ps_script],
             timeout=10
         )
         if result and result.stdout:
-            mac = result.stdout.strip()
-            if mac and len(mac) > 5 and '-' in mac:
-                return mac
+            proc_id = result.stdout.strip()
+            if proc_id and len(proc_id) > 5:
+                return proc_id
     except Exception as e:
-        _log(f"Erro ao obter MAC Address via PowerShell: {e}", "AVISO")
+        _log(f"Erro ao obter ProcessorId via PowerShell: {e}", "AVISO")
     
-    # Método 2: wmic nic (fallback)
+    # Método 2: PowerShell com Get-CimInstance (fallback)
     try:
+        ps_script = "(Get-CimInstance Win32_Processor).ProcessorId"
         result = _safe_subprocess_run(
-            ['wmic', 'nic', 'where', 'NetEnabled=True', 'get', 'MACAddress'],
+            ['powershell', '-NoProfile', '-Command', ps_script],
             timeout=10
         )
         if result and result.stdout:
-            lines = result.stdout.strip().splitlines()
-            if len(lines) >= 2:
-                mac = lines[1].strip()
-                if mac and len(mac) > 5:
-                    return mac
+            proc_id = result.stdout.strip()
+            if proc_id and len(proc_id) > 5:
+                return proc_id
     except Exception as e:
-        _log(f"Erro ao obter MAC Address via wmic: {e}", "AVISO")
+        _log(f"Erro ao obter ProcessorId via Get-CimInstance: {e}", "AVISO")
     
-    # Método 3: ipconfig /all (fallback extremo)
-    try:
-        result = _safe_subprocess_run(
-            ['ipconfig', '/all'],
-            timeout=10
-        )
-        if result and result.stdout:
-            lines = result.stdout.splitlines()
-            for line in lines:
-                if 'Endereço Físico' in line or 'Physical Address' in line:
-                    mac = line.split(':')[-1].strip()
-                    if mac and len(mac) > 5:
-                        return mac
-    except Exception as e:
-        _log(f"Erro ao obter MAC Address via ipconfig: {e}", "AVISO")
-    
-    _log("Não foi possível obter o MAC Address. Usando 'ID_NAO_DISPONIVEL'.", "ERRO")
+    _log("Não foi possível obter o ProcessorId. Usando 'ID_NAO_DISPONIVEL'.", "ERRO")
     return "ID_NAO_DISPONIVEL"
 
 # ============================================================
@@ -1174,12 +1268,35 @@ def _get_teamviewer_id():
     return "N/A"
 
 # ============================================================
+# NOVA FUNÇÃO: GERAR SNAPSHOT DE HARDWARE (CHAMADA ISOLADA)
+# ============================================================
+
+def run_snapshot_only(local=None, usuario=None):
+    """
+    Função pública para gerar apenas o snapshot de hardware (sem deploy).
+    Pode ser chamada diretamente pelo botão "Gerar Snapshot" no GUI.
+    Retorna caminho do arquivo local ou None em caso de erro.
+    """
+    _log("=" * 60, "INFO")
+    _log("INICIANDO GERAÇÃO DE SNAPSHOT (MODO ISOLADO)...", "INFO")
+    _log("=" * 60, "INFO")
+    
+    result = generate_full_snapshot(local=local, usuario=usuario)
+    
+    if result:
+        _log("✓ Snapshot gerado com sucesso!", "OK")
+    else:
+        _log("✗ Falha ao gerar snapshot.", "ERRO")
+    
+    return result
+
+# ============================================================
 # SNAPSHOT COMPLETO (FORMATO SOLICITADO) + MAC ADDRESS + LOCAL/USUÁRIO + UPLOAD GOOGLE DRIVE OAuth2
 # ============================================================
 
 def generate_full_snapshot(local=None, usuario=None):
     """
-    Gera snapshot completo de hardware com ID único (MAC Address) e nome de arquivo baseado no MAC.
+    Gera snapshot completo de hardware com ID único baseado no MAC Address (com fallback para ProcessorId).
     Parâmetros:
         local (str): código e nome do local (ex: "14120 – ARPEL SBC")
         usuario (str): nome do usuário
@@ -1187,13 +1304,11 @@ def generate_full_snapshot(local=None, usuario=None):
     """
     _log("Gerando snapshot de hardware...", "INFO")
 
-    # Obter MAC Address (obrigatório)
-    mac_id = _get_mac_address()
+    # Obter identificador único (MAC Address com fallback para ProcessorId)
+    unique_id = _get_unique_id()
     
-    # Nome do arquivo baseado APENAS no MAC Address
-    # Remove caracteres especiais (hífens, dois pontos) para um nome de arquivo limpo
-    clean_mac = mac_id.replace('-', '').replace(':', '').upper()
-    file_name = f"CPFANI_Hardware_Snapshot_{clean_mac}.txt"
+    # Nome do arquivo baseado no identificador único
+    file_name = f"CPFANI_Hardware_Snapshot_{unique_id}.txt"
     local_path = Path(f"{SCRIPT_DIR}/{file_name}")
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1206,12 +1321,70 @@ def generate_full_snapshot(local=None, usuario=None):
     bios_serial = _get_bios_serial()
     anydesk_id = _get_anydesk_id()
     teamviewer_id = _get_teamviewer_id()
+    
+    # Coletar informações dos monitores
+    monitores = _get_monitor_info()
+    
+    # Coletar informações das impressoras
+    impressoras = _get_printer_info()
+    
+    # Coletar informações dos adaptadores de rede
+    adaptadores = _get_network_adapters()
 
     # Trata parâmetros de local e usuário
     local_str = local if local else "Não informado"
     usuario_str = usuario if usuario else "Não informado"
 
     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    
+    # Monta a seção de monitores
+    monitores_section = ""
+    if monitores:
+        monitores_section = "\n============================================================\n PERIFÉRICOS — MONITORES\n============================================================\n"
+        for idx, monitor in enumerate(monitores, 1):
+            monitores_section += f" Monitor {idx}:\n"
+            monitores_section += f"   Modelo        : {monitor['Modelo']}\n"
+            monitores_section += f"   Nº de Série   : {monitor['Numero_de_Serie']}\n\n"
+        monitores_section += "============================================================\n"
+    else:
+        monitores_section = "\n============================================================\n PERIFÉRICOS — MONITORES\n============================================================\n Nenhum monitor detectado.\n============================================================\n"
+    
+    # Monta a seção de impressoras
+    impressoras_section = ""
+    if impressoras:
+        impressoras_section = "\n============================================================\n PERIFÉRICOS — IMPRESSORAS\n============================================================\n"
+        for idx, printer in enumerate(impressoras, 1):
+            impressoras_section += f" Impressora {idx}:\n"
+            impressoras_section += f"   Nome          : {printer['Nome']}\n"
+            impressoras_section += f"   Status        : {printer['Status']}\n"
+            impressoras_section += f"   Porta         : {printer['Porta']}\n"
+            impressoras_section += f"   Driver        : {printer['Driver']}\n"
+            impressoras_section += f"   Compartilhada : {printer['Compartilhada']}\n"
+            if printer['IP'] != 'N/A':
+                impressoras_section += f"   IP            : {printer['IP']}\n"
+                if printer['Modelo_SNMP'] != 'N/A':
+                    impressoras_section += f"   Modelo (SNMP) : {printer['Modelo_SNMP']}\n"
+                if printer['Serial_SNMP'] != 'N/A':
+                    impressoras_section += f"   Serial (SNMP) : {printer['Serial_SNMP']}\n"
+            impressoras_section += "\n"
+        impressoras_section += "============================================================\n"
+    else:
+        impressoras_section = "\n============================================================\n PERIFÉRICOS — IMPRESSORAS\n============================================================\n Nenhuma impressora detectada.\n============================================================\n"
+    
+    # Monta a seção de adaptadores de rede
+    adaptadores_section = ""
+    if adaptadores:
+        adaptadores_section = "\n============================================================\n ADAPTADORES DE REDE\n============================================================\n"
+        for idx, adapter in enumerate(adaptadores, 1):
+            adaptadores_section += f" Adaptador {idx}:\n"
+            adaptadores_section += f"   Nome        : {adapter['Nome']}\n"
+            adaptadores_section += f"   Descrição   : {adapter['Descricao']}\n"
+            adaptadores_section += f"   MAC Address : {adapter['MacAddress']}\n"
+            adaptadores_section += f"   Status      : {adapter['Status']}\n\n"
+        adaptadores_section += "============================================================\n"
+    else:
+        adaptadores_section = "\n============================================================\n ADAPTADORES DE REDE\n============================================================\n Nenhum adaptador detectado.\n============================================================\n"
+    
     content = f"""
 ============================================================
    SNAPSHOT CP FANI V5.9.3 (Edição Infiltrado + Self-Healing)
@@ -1227,14 +1400,12 @@ Usuário : {usuario_str}
   Processador         : {processador}
   Memoria_RAM         : {memoria}
   Windows             : {windows}
-  ID         : {mac_id}
+  ID (MAC/Proc)       : {unique_id}
 
 [SUPORTE]
   AnyDesk    : {anydesk_id}
   TeamViewer : {teamviewer_id}
-
-============================================================
-"""
+{monitores_section}{impressoras_section}{adaptadores_section}"""
 
     try:
         with open(local_path, "w", encoding="utf-8") as f:
@@ -1279,7 +1450,7 @@ Usuário : {usuario_str}
         service = build('drive', 'v3', credentials=creds)
 
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
-        # Usar o mesmo nome de arquivo local (com MAC limpo)
+        # Usar o mesmo nome de arquivo local
         drive_file_name = file_name
         query = f"name='{drive_file_name}' and '{FOLDER_ID}' in parents and trashed=false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
@@ -1398,7 +1569,7 @@ def _apply_dark_theme_to_all_users():
             _log(f"Erro ao aplicar tema escuro para SID {sid}: {e}", "AVISO")
 
 def _apply_wallpaper_to_all_users():
-    """Aplica wallpaper para todos os usuários via GPO + HKCU + gpupdate"""
+    """Aplica wallpaper para todos os usuários via GPO e HKCU"""
     _log("Aplicando wallpaper para todos os usuários...", "INFO")
     
     # Garante que a imagem exista
@@ -1415,14 +1586,7 @@ def _apply_wallpaper_to_all_users():
     except Exception as e:
         _log(f"Erro ao configurar wallpaper via GPO: {e}", "AVISO")
     
-    # 2. Forçar atualização das políticas
-    try:
-        _safe_subprocess_run("gpupdate /force", shell=True, timeout=60)
-        _log("✓ Política de grupo atualizada (gpupdate /force)", "OK")
-    except Exception as e:
-        _log(f"Erro ao executar gpupdate: {e}", "AVISO")
-    
-    # 3. Para cada SID de usuário real (fallback)
+    # 2. Para cada SID de usuário real
     sids = _get_all_user_sids()
     if not sids:
         _log("Nenhum SID de usuário encontrado para aplicar wallpaper.", "AVISO")
@@ -1443,7 +1607,7 @@ def _apply_wallpaper_to_all_users():
             _log(f"Erro ao aplicar wallpaper para SID {sid}: {e}", "AVISO")
 
 def _apply_lockscreen_to_all_users():
-    """Aplica lockscreen para todos os usuários via GPO + PersonalizationCSP (com bloqueio) e gpupdate"""
+    """Aplica lockscreen para todos os usuários via GPO + PersonalizationCSP (com bloqueio)"""
     _log("Aplicando lockscreen para todos os usuários...", "INFO")
     
     # Garante que a imagem exista
