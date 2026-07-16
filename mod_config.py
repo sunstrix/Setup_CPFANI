@@ -1,4 +1,4 @@
-"""mod_config.py — V5.9.5.5 (Edição CP Fani: Desativação do PrtSc Nativo, Liberação Win+G, Isolamento do OneDrive e Reset de Cache)"""
+"""mod_config.py — V6.0.0 (Edição CP Fani: Desativação do PrtSc Nativo, Liberação Win+G, Isolamento do OneDrive e Reset de Cache)"""
 import winreg
 import subprocess
 import os
@@ -138,11 +138,12 @@ def _apply_to_all_real_users():
 
 def _get_active_user_sid():
     """Obtém o SID do usuário ativo via PowerShell"""
+    # ITEM 3: Padronizar Get-WmiObject → Get-CimInstance + Invoke-CimMethod
     ps_script = """
-    $explorer = Get-WmiObject Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1
+    $explorer = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1
     if ($explorer) {
-        $owner = $explorer.GetOwner()
-        $user = $owner.Domain + "\\" + $owner.User
+        $ownerInfo = Invoke-CimMethod -InputObject $explorer -MethodName GetOwner
+        $user = $ownerInfo.Domain + "\\" + $ownerInfo.User
         $ntAccount = New-Object System.Security.Principal.NTAccount($user)
         $sid = $ntAccount.Translate([System.Security.Principal.SecurityIdentifier]).Value
         Write-Output $sid
@@ -171,15 +172,16 @@ def setup_self_healing():
     ps_path = os.path.join(script_dir, "cpfani_watchdog.ps1")
     vbs_path = os.path.join(script_dir, "cpfani_watchdog_launcher.vbs")
     
+    # ITEM 3: Substituir Get-WmiObject por Get-CimInstance + Invoke-CimMethod
     ps_content = r"""$officialWp = "C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
 while ($true) {
     try {
-        $explorers = Get-WmiObject Win32_Process -Filter "Name='explorer.exe'"
+        $explorers = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'"
         if ($explorers) {
             foreach ($exp in $explorers) {
-                $owner = $exp.GetOwner()
-                if ($owner.User) {
-                    $user = $owner.Domain + "\" + $owner.User
+                $ownerInfo = Invoke-CimMethod -InputObject $exp -MethodName GetOwner
+                if ($ownerInfo.User) {
+                    $user = $ownerInfo.Domain + "\" + $ownerInfo.User
                     $sid = (New-Object System.Security.Principal.NTAccount($user)).Translate([System.Security.Principal.SecurityIdentifier]).Value
                     $regPath = "Registry::HKEY_USERS\$sid\Control Panel\Desktop"
                     if (Test-Path $regPath) {
@@ -222,12 +224,28 @@ while ($true) {
     else:
         _log("Aviso ao criar tarefa agendada", "AVISO")
     
-    # Inicia o watchdog imediatamente
+    # ITEM 7: Verificar se já está rodando antes de iniciar
+    check_cmd = (
+        'powershell -NoProfile -Command '
+        '"Get-CimInstance Win32_Process -Filter \\"Name=\'powershell.exe\'\\" | '
+        'Where-Object { $_.CommandLine -like \'*cpfani_watchdog.ps1*\' } | Measure-Object | Select-Object -ExpandProperty Count"'
+    )
+    check_result = _safe_subprocess_run(check_cmd, shell=True, timeout=15)
+    already_running = False
     try:
-        subprocess.Popen(f'wscript.exe "{vbs_path}"', shell=True, creationflags=0x08000000)
-        _log("✓ Self-Healing (Watchdog) iniciado", "OK")
-    except Exception as e:
-        _log(f"Erro ao iniciar watchdog: {e}", "ERRO")
+        if check_result and check_result.stdout and int(check_result.stdout.strip()) > 0:
+            already_running = True
+    except Exception:
+        already_running = False
+
+    if already_running:
+        _log("Watchdog ja esta em execucao — nao sera iniciada uma segunda instancia.", "INFO")
+    else:
+        try:
+            subprocess.Popen(f'wscript.exe "{vbs_path}"', shell=True, creationflags=0x08000000)
+            _log("✓ Self-Healing (Watchdog) iniciado", "OK")
+        except Exception as e:
+            _log(f"Erro ao iniciar watchdog: {e}", "ERRO")
     
     _log("✓ Self-Healing (Watchdog) ativo e agendado.", "OK")
     return True
@@ -454,8 +472,8 @@ def apply_cpfani_branding(bar_alignment):
         try:
             sid = _get_active_user_sid()
             if sid:
-                # CORREÇÃO: raw string para evitar problemas com barras invertidas
-                reg_path = rf"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
+                # ITEM 1: Correção da raw-string (rf -> f) para evitar barras duplas literais
+                reg_path = f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
                 _safe_subprocess_run(
                     ["reg", "add", reg_path, "/v", "TaskbarAl", "/t", "REG_DWORD", "/d", str(val), "/f"],
                     timeout=10
@@ -729,15 +747,116 @@ def configurar_compartilhamento_rede():
     except Exception as e:
         _log(f"Aviso ao liberar Firewall: {e}", "AVISO")
 
+# ITEM 6: Implementação real das funções placeholder
 def schedule_manutencao_rede():
-    """Agenda manutenção de rede (placeholder)"""
-    _log("Agendamento de manutenção de rede configurado", "INFO")
-    return True
+    """Agenda a execução diária do manutencao_rede.bat de forma oculta."""
+    _log("Agendando manutencao de rede (execucao oculta)...", "INFO")
+    script_dir = SCRIPT_DIR
+    bat_path = os.path.join(script_dir, "manutencao_rede.bat")
+    vbs_path = os.path.join(script_dir, "cpfani_manutencao_rede_launcher.vbs")
+    vbs_content = f'Set objShell = CreateObject("WScript.Shell")\nobjShell.Run """{bat_path}""", 0, False'
+    try:
+        with open(vbs_path, "w", encoding="utf-8", errors='replace') as f:
+            f.write(vbs_content)
+    except Exception as e:
+        _log(f"Erro ao criar VBS de manutencao de rede: {e}", "ERRO")
+        return False
+    task_cmd = f'schtasks /create /tn "CPFANI_ManutencaoRede" /tr "wscript.exe \\"{vbs_path}\\"" /sc daily /st 08:00 /ru "SYSTEM" /rl highest /f'
+    result = _safe_subprocess_run(task_cmd, shell=True, timeout=30)
+    if result and result.returncode == 0:
+        _log("Tarefa de manutencao de rede criada/atualizada com sucesso (execucao oculta).", "OK")
+        return True
+    else:
+        _log("Aviso ao criar tarefa de manutencao de rede", "AVISO")
+        return False
 
 def schedule_instalar_tudo():
-    """Agenda instalador universal (placeholder)"""
-    _log("Agendamento de instalador universal configurado", "INFO")
-    return True
+    """Agenda a execução do instalar_tudo.ps1 de forma oculta."""
+    _log("Agendando atualizador de software (execucao oculta)...", "INFO")
+    script_dir = SCRIPT_DIR
+    ps1_path = os.path.join(script_dir, "instalar_tudo.ps1")
+    vbs_path = os.path.join(script_dir, "cpfani_instalar_tudo_launcher.vbs")
+    vbs_content = f'Set objShell = CreateObject("WScript.Shell")\nobjShell.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File ""{ps1_path}""", 0, False'
+    try:
+        with open(vbs_path, "w", encoding="utf-8", errors='replace') as f:
+            f.write(vbs_content)
+    except Exception as e:
+        _log(f"Erro ao criar VBS do instalador universal: {e}", "ERRO")
+        return False
+    task_cmd = f'schtasks /create /tn "CPFANI_InstalarTudo" /tr "wscript.exe \\"{vbs_path}\\"" /sc onlogon /ru "SYSTEM" /rl highest /f'
+    result = _safe_subprocess_run(task_cmd, shell=True, timeout=30)
+    if result and result.returncode == 0:
+        _log("Tarefa do instalador universal criada/atualizada com sucesso (execucao oculta).", "OK")
+        return True
+    else:
+        _log("Aviso ao criar tarefa do instalador universal", "AVISO")
+        return False
+
+# ITEM 9: Nova função para remoção de aplicativos legados
+def check_and_remove_legacy_apps(app_names):
+    """
+    Verifica se algum dos nomes em app_names (ex: ["TeamViewer", "Lightshot"])
+    está instalado, consultando as chaves de desinstalação do Registro, e
+    remove silenciosamente cada instalação encontrada.
+    Retorna um dict {nome_procurado: bool_removido_com_sucesso}.
+    """
+    _log(f"Verificando aplicativos legados para remocao: {app_names}", "INFO")
+    resultado = {app: False for app in app_names}
+    uninstall_roots = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    ]
+    
+    for root, base_path in uninstall_roots:
+        try:
+            with winreg.OpenKey(root, base_path) as base_key:
+                i = 0
+                while True:
+                    try:
+                        subkey_name = winreg.EnumKey(base_key, i)
+                        i += 1
+                        try:
+                            with winreg.OpenKey(base_key, subkey_name) as subkey:
+                                try:
+                                    display_name, _ = winreg.QueryValueEx(subkey, "DisplayName")
+                                except FileNotFoundError:
+                                    continue
+                                
+                                for app in app_names:
+                                    if app.lower() in display_name.lower() and not resultado[app]:
+                                        try:
+                                            uninstall_string, _ = winreg.QueryValueEx(subkey, "UninstallString")
+                                        except FileNotFoundError:
+                                            continue
+                                        
+                                        _log(f"Encontrado: {display_name}. Executando desinstalacao silenciosa...", "INFO")
+                                        silent_cmd = uninstall_string
+                                        
+                                        if "msiexec" in uninstall_string.lower():
+                                            silent_cmd = uninstall_string.replace("/I", "/X").replace("/i", "/x") + " /qn /norestart"
+                                        else:
+                                            silent_cmd = f'{uninstall_string} /S'
+                                        
+                                        unres = _safe_subprocess_run(silent_cmd, shell=True, timeout=120)
+                                        
+                                        if unres and unres.returncode in (0, 3010):
+                                            _log(f"✓ {display_name} removido com sucesso.", "OK")
+                                            resultado[app] = True
+                                        else:
+                                            _log(f"Aviso: desinstalacao de {display_name} retornou codigo {unres.returncode if unres else 'None'}", "AVISO")
+                        except Exception:
+                            continue
+                    except OSError:
+                        break
+        except Exception as e:
+            _log(f"Erro ao varrer {base_path}: {e}", "AVISO")
+            
+    for app, removido in resultado.items():
+        if not removido:
+            _log(f"{app} nao encontrado no sistema (ou ja removido anteriormente).", "INFO")
+            
+    return resultado
 
 def _get_hardware_info():
     """Obtém informações básicas de hardware (legado)"""
@@ -1058,25 +1177,11 @@ def _get_unique_id():
 
 def _get_processor_id():
     """
-    Obtém o ProcessorId da CPU via WMI (Get-WmiObject Win32_Processor).
+    Obtém o ProcessorId da CPU via WMI (Get-CimInstance Win32_Processor).
     Este identificador é único para cada processador e não se repete
     em máquinas chinesas como o UUID.
     """
-    # Método 1: PowerShell com Get-WmiObject (mais compatível)
-    try:
-        ps_script = "(Get-WmiObject Win32_Processor).ProcessorId"
-        result = _safe_subprocess_run(
-            ['powershell', '-NoProfile', '-Command', ps_script],
-            timeout=10
-        )
-        if result and result.stdout:
-            proc_id = result.stdout.strip()
-            if proc_id and len(proc_id) > 5:
-                return proc_id
-    except Exception as e:
-        _log(f"Erro ao obter ProcessorId via PowerShell: {e}", "AVISO")
-    
-    # Método 2: PowerShell com Get-CimInstance (fallback)
+    # ITEM 3: Substituir Get-WmiObject por Get-CimInstance
     try:
         ps_script = "(Get-CimInstance Win32_Processor).ProcessorId"
         result = _safe_subprocess_run(
@@ -1088,7 +1193,7 @@ def _get_processor_id():
             if proc_id and len(proc_id) > 5:
                 return proc_id
     except Exception as e:
-        _log(f"Erro ao obter ProcessorId via Get-CimInstance: {e}", "AVISO")
+        _log(f"Erro ao obter ProcessorId via PowerShell: {e}", "AVISO")
     
     _log("Não foi possível obter o ProcessorId. Usando 'ID_NAO_DISPONIVEL'.", "ERRO")
     return "ID_NAO_DISPONIVEL"
@@ -1222,6 +1327,7 @@ def _get_teamviewer_id():
     
     # Fallback via PowerShell (consultar WMI ou arquivos de configuração)
     try:
+        # ITEM 3: Substituir Get-WmiObject por Get-CimInstance
         ps_script = """
         $id = $null
         # Tenta ler do arquivo de configuração do TeamViewer
@@ -1248,9 +1354,9 @@ def _get_teamviewer_id():
             }
         }
         if (-not $id) {
-            # Tenta via WMI
+            # Tenta via WMI (CimInstance)
             try {
-                $id = (Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -match 'TeamViewer' }).IdentifyingNumber
+                $id = (Get-CimInstance -Class Win32_Product | Where-Object { $_.Name -match 'TeamViewer' }).IdentifyingNumber
                 if ($id) { $id = $id -replace '.*(\\d+)$', '$1' }
             } catch {}
         }
@@ -1654,121 +1760,3 @@ def _apply_lockscreen_to_all_users():
         _log("✓ Bloqueio de alteração da tela de bloqueio ativado", "OK")
     except Exception as e:
         _log(f"Erro ao ativar bloqueio de alteração: {e}", "AVISO")
-
-# ============================================================================
-# INTEGRAÇÃO COM O KUDU (LIMPEZA, OTIMIZAÇÃO E MANUTENÇÃO)
-# ============================================================================
-try:
-    import mod_kudu
-    KUDU_AVAILABLE = True
-except ImportError as e:
-    KUDU_AVAILABLE = False
-    _log(f"Módulo mod_kudu não encontrado. Funcionalidades de limpeza Kudu indisponíveis. Erro: {e}", "AVISO")
-
-# Função _kudu_call: chama uma função do mod_kudu se disponível, com log
-def _kudu_call(func_name, *args, **kwargs):
-    if not KUDU_AVAILABLE:
-        _log(f"Kudu não disponível. Não foi possível executar {func_name}.", "ERRO")
-        return False
-    func = getattr(mod_kudu, func_name, None)
-    if func is None:
-        _log(f"Função {func_name} não encontrada no módulo mod_kudu.", "ERRO")
-        return False
-    _log(f"Iniciando Kudu: {func_name}...", "INFO")
-    try:
-        result = func(*args, **kwargs)
-        if result:
-            _log(f"Kudu: {func_name} concluído com sucesso.", "OK")
-        else:
-            _log(f"Kudu: {func_name} falhou.", "ERRO")
-        return result
-    except Exception as e:
-        _log(f"Exceção ao executar {func_name}: {e}", "ERRO")
-        return False
-
-# --- Wrappers para as funções aprovadas (sem docstrings problemáticas) ---
-
-def kudu_system_clean():
-    return _kudu_call("kudu_system_clean")
-
-def kudu_app_clean():
-    return _kudu_call("kudu_app_clean")
-
-def kudu_gaming_clean():
-    return _kudu_call("kudu_gaming_clean")
-
-def kudu_registry_clean():
-    return _kudu_call("kudu_registry_clean")
-
-def kudu_network_cleanup():
-    return _kudu_call("kudu_network_cleanup")
-
-def kudu_debloat():
-    return _kudu_call("kudu_debloat")
-
-def kudu_driver_manager():
-    return _kudu_call("kudu_driver_manager")
-
-def kudu_service_manager():
-    return _kudu_call("kudu_service_manager")
-
-def kudu_one_click_clean():
-    return _kudu_call("kudu_one_click_clean")
-
-# get_kudu_service_optimizations - retorna lista de otimizações de serviços
-def get_kudu_service_optimizations():
-    if not KUDU_AVAILABLE:
-        return ["Kudu não disponível."]
-    try:
-        return mod_kudu.get_service_optimizations_list()
-    except Exception as e:
-        _log(f"Erro ao obter lista de otimizações: {e}", "ERRO")
-        return ["Erro ao obter lista."]
-
-# ============================================================
-# FUNÇÃO CORRIGIDA SEM DOCSTRING
-# ============================================================
-
-# Função run_kudu_cleanup: executa ações de limpeza do Kudu.
-# Parâmetros: selected_actions (list) - opções: system, app, gaming, registry, network, debloat, drivers, services, all.
-# Retorna: dict com success e results.
-def run_kudu_cleanup(selected_actions=None):
-    if not KUDU_AVAILABLE:
-        _log("Kudu não disponível. Nenhuma ação executada.", "ERRO")
-        return {"success": False, "results": {}}
-
-    action_map = {
-        'system': kudu_system_clean,
-        'app': kudu_app_clean,
-        'gaming': kudu_gaming_clean,
-        'registry': kudu_registry_clean,
-        'network': kudu_network_cleanup,
-        'debloat': kudu_debloat,
-        'drivers': kudu_driver_manager,
-        'services': kudu_service_manager,
-    }
-
-    if selected_actions is None or not selected_actions:
-        selected_actions = ['system', 'app', 'gaming', 'registry', 'network', 'drivers']
-
-    results = {}
-    overall_success = True
-    for action in selected_actions:
-        if action == 'all':
-            for key in action_map:
-                if key not in results:
-                    results[key] = action_map[key]()
-                    if not results[key]:
-                        overall_success = False
-            continue
-        func = action_map.get(action)
-        if func is None:
-            _log(f"Ação desconhecida: {action}", "AVISO")
-            results[action] = False
-            overall_success = False
-        else:
-            results[action] = func()
-            if not results[action]:
-                overall_success = False
-
-    return {"success": overall_success, "results": results}
