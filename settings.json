@@ -4,19 +4,12 @@
     "choco": [
       "googlechrome",
       "anydesk",
-      "7zip",
       "flameshot",
-      "teamviewer",
       "vlc",
       "winrar",
-      "vcredist-all",
       "ditto",
-      "sharex",
-      "notepadplusplus",
-      "powertoys",
-      "firefox",
-      "adobereader",
-      "paint.net"
+      "vcredist-all",
+      "rustdesk"
     ]
   },
   "bloatware_remove": [
