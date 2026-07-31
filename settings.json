@@ -1,5 +1,5 @@
 {
-  "_comment": "Configurações ativas do Setup CP Fani. Apenas as seções 'apps', 'bloatware_remove' e 'drivers' são lidas pelo código. As demais opções (timeouts, paths, security, etc.) estão atualmente hardcoded nos scripts.",
+  "_comment": "Configuracoes ativas do Setup CP Fani. Apenas as secoes 'apps', 'bloatware_remove' e 'drivers' sao lidas pelo codigo. As demais opcoes (timeouts, paths, security, etc.) estao atualmente hardcoded nos scripts.",
   "apps": {
     "choco": [
       "googlechrome",
@@ -51,9 +51,7 @@
     "Microsoft.OneDriveSync",
     "Microsoft.WindowsCamera",
     "Microsoft.WindowsSoundRecorder",
-    "Microsoft.WindowsAlarms",
-    "Microsoft.WindowsCalculator",
-    "Microsoft.WindowsStore"
+    "Microsoft.WindowsAlarms"
   ],
   "drivers": {
     "dell": "dellcommandupdate",
