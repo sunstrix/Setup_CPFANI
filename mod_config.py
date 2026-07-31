@@ -1,5 +1,5 @@
 # -*- coding: ascii -*-
-"""mod_config.py - V6.0.0 (Edicao CP Fani: Desativacao do PrtSc Nativo, Liberacao Win+G, Isolamento do OneDrive e Reset de Cache)"""
+"""mod_config.py - V6.0.1 (Edicao CP Fani: PrintScreenKeyForSnippingEnabled adicionado)"""
 import winreg
 import subprocess
 import os
@@ -194,10 +194,16 @@ def _apply_to_all_real_users():
     """Varre todos os perfis de usuarios para desativar o atalho nativo do PrtSc"""
     _log("Varrendo todos os perfis de usuarios para desativar o atalho nativo do PrtSc...", "INFO")
 
+    printscreen_values = (
+        "PrintScreenKeyForSnippingToolEnabled",
+        "PrintScreenKeyForSnippingEnabled"
+    )
+
     try:
         with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Control Panel\Keyboard", 0, winreg.KEY_SET_VALUE) as hkcu_key:
-            winreg.SetValueEx(hkcu_key, "PrintScreenKeyForSnippingToolEnabled", 0, winreg.REG_DWORD, 0)
-        _log("[OK] Chave desativada com sucesso no HKCU do usuario corrente.", "OK")
+            for value_name in printscreen_values:
+                winreg.SetValueEx(hkcu_key, value_name, 0, winreg.REG_DWORD, 0)
+        _log("[OK] Chaves PrintScreen desativadas com sucesso no HKCU do usuario corrente.", "OK")
     except Exception as e:
         _log(f"Aviso ao setar HKCU direto: {e}", "AVISO")
 
@@ -215,13 +221,35 @@ def _apply_to_all_real_users():
                     try:
                         _log(f"Processando SID: {sid}", "INFO")
 
-                        cmd_keyboard = ["reg", "add", f"HKU\\{sid}\\Control Panel\\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"]
-                        _safe_subprocess_run(cmd_keyboard, timeout=10)
+                        for value_name in printscreen_values:
+                            cmd_keyboard = [
+                                "reg", "add",
+                                f"HKU\\{sid}\\Control Panel\\Keyboard",
+                                "/v", value_name,
+                                "/t", "REG_DWORD",
+                                "/d", "0",
+                                "/f"
+                            ]
+                            _safe_subprocess_run(cmd_keyboard, timeout=10)
 
-                        cmd_sync = ["reg", "add", f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility", "/v", "Enabled", "/t", "REG_DWORD", "/d", "0", "/f"]
+                        cmd_sync = [
+                            "reg", "add",
+                            f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\SettingSync\\Groups\\Accessibility",
+                            "/v", "Enabled",
+                            "/t", "REG_DWORD",
+                            "/d", "0",
+                            "/f"
+                        ]
                         _safe_subprocess_run(cmd_sync, timeout=10)
 
-                        cmd_dropbox = ["reg", "add", f"HKU\\{sid}\\Software\\Dropbox\\Client", "/v", "CapturePrintScreen", "/t", "REG_DWORD", "/d", "0", "/f"]
+                        cmd_dropbox = [
+                            "reg", "add",
+                            f"HKU\\{sid}\\Software\\Dropbox\\Client",
+                            "/v", "CapturePrintScreen",
+                            "/t", "REG_DWORD",
+                            "/d", "0",
+                            "/f"
+                        ]
                         _safe_subprocess_run(cmd_dropbox, timeout=10)
 
                         try:
@@ -527,6 +555,11 @@ def apply_default_user_profile(bar_alignment):
     hive_path = r"HKU\TempDefaultUser"
     default_dat = r"C:\Users\Default\NTUSER.DAT"
 
+    printscreen_values = (
+        "PrintScreenKeyForSnippingToolEnabled",
+        "PrintScreenKeyForSnippingEnabled"
+    )
+
     try:
         _safe_subprocess_run(["reg", "unload", hive_path], timeout=30)
         time.sleep(1)
@@ -554,10 +587,11 @@ def apply_default_user_profile(bar_alignment):
                     timeout=10
                 )
 
-            _safe_subprocess_run(
-                ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Keyboard", "/v", "PrintScreenKeyForSnippingToolEnabled", "/t", "REG_DWORD", "/d", "0", "/f"],
-                timeout=10
-            )
+            for value_name in printscreen_values:
+                _safe_subprocess_run(
+                    ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Keyboard", "/v", value_name, "/t", "REG_DWORD", "/d", "0", "/f"],
+                    timeout=10
+                )
         finally:
             _safe_subprocess_run(["reg", "unload", hive_path], timeout=30)
 
