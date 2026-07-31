@@ -1,5 +1,5 @@
 # -*- coding: ascii -*-
-"""gui.py - V5.9.7 (Edicao CP Fani: Interface Estabilizada, Remocao Kudu e Centralizacao OAuth2)"""
+"""gui.py - V5.9.8 (Edicao CP Fani: Flameshot dinamico via GitHub latest release)"""
 from tkinter import messagebox
 import customtkinter as ctk
 import threading
@@ -9,11 +9,13 @@ import sys
 import shutil
 import subprocess
 import urllib.request
+import urllib.error
 import re
 import time
 import traceback
 import hashlib
 import unicodedata
+import io
 from datetime import datetime
 from pathlib import Path
 
@@ -116,7 +118,7 @@ def load_settings():
     }
 
     if not os.path.exists(SETTINGS_PATH):
-        print(f"[INFO] settings.json nao encontrado. Usando configuracoes padrao.", flush=True)
+        print("[INFO] settings.json nao encontrado. Usando configuracoes padrao.", flush=True)
         return default_settings
 
     try:
@@ -167,21 +169,43 @@ def _verify_sha256(file_path, expected_sha256):
     return True
 
 
-def _get_expected_flameshot_sha256():
+def _get_expected_flameshot_sha256(version_tag=""):
     env_hash = os.environ.get("CPFANI_FLAMESHOT_MSI_SHA256", "").strip().upper()
     if env_hash:
         return env_hash
 
-    sidecar = os.path.join(os.path.dirname(__file__), "resources", "Flameshot-13.3.0-win64.msi.sha256")
-    if os.path.exists(sidecar):
-        try:
-            with open(sidecar, "r", encoding="ascii", errors="ignore") as f:
-                content = f.read().strip().split()[0].upper()
-                return content
-        except Exception as e:
-            print(f"[AVISO] Falha ao ler sidecar de hash do Flameshot: {e}", flush=True)
+    resources_dir = os.path.join(os.path.dirname(__file__), "resources")
+    candidates = []
+
+    if version_tag:
+        clean_version = str(version_tag).lstrip("vV").strip()
+        if clean_version:
+            candidates.append(f"Flameshot-{clean_version}-win64.msi.sha256")
+
+    candidates.extend([
+        "flameshot_msi.sha256",
+        "Flameshot-13.3.0-win64.msi.sha256"
+    ])
+
+    for candidate in candidates:
+        sidecar = os.path.join(resources_dir, candidate)
+        if os.path.exists(sidecar):
+            try:
+                with open(sidecar, "r", encoding="ascii", errors="ignore") as f:
+                    content = f.read().strip().split()[0].upper()
+                    if content:
+                        return content
+            except Exception as e:
+                print(f"[AVISO] Falha ao ler sidecar de hash do Flameshot {sidecar}: {e}", flush=True)
 
     return ""
+
+
+def _version_to_list(v_str):
+    nums = [int(x) for x in re.findall(r"\d+", str(v_str))]
+    while len(nums) < 3:
+        nums.append(0)
+    return nums[:3]
 
 
 def _normalize_snapshot_text(content):
@@ -348,7 +372,6 @@ def _read_monitors_from_hardware_snapshots():
     for file in files:
         try:
             from googleapiclient.http import MediaIoBaseDownload
-            import io
 
             request = service.files().get_media(fileId=file["id"])
             fh = io.BytesIO()
@@ -533,7 +556,6 @@ def _read_printers_from_hardware_snapshots():
     for file in files:
         try:
             from googleapiclient.http import MediaIoBaseDownload
-            import io
 
             request = service.files().get_media(fileId=file["id"])
             fh = io.BytesIO()
@@ -669,7 +691,7 @@ class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Setup Automatizado CP Fani - V5.9.7")
+        self.title("Setup Automatizado CP Fani - V5.9.8")
         self.geometry("740x860")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
@@ -705,7 +727,7 @@ class CPFani_GUI(ctk.CTk):
                     self.log(f"Aviso: Falha ao carregar logo: {e}", "AVISO")
 
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
-        ctk.CTkLabel(header_frame, text="v5.9.7  |  Gestao de Endpoints (Adaptacao Dinamica)", font=("Segoe UI", 11), text_color="#666666").pack()
+        ctk.CTkLabel(header_frame, text="v5.9.8  |  Gestao de Endpoints (Adaptacao Dinamica)", font=("Segoe UI", 11), text_color="#666666").pack()
 
         ui_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         ui_frame.pack(padx=20, pady=5, fill="x")
@@ -898,6 +920,127 @@ class CPFani_GUI(ctk.CTk):
         self.log(f"[OK] Hash SHA256 validado: {os.path.basename(file_path)}", "OK")
         return True
 
+    def _github_headers(self, accept=None):
+        headers = {
+            "User-Agent": "Setup-CPFANI",
+            "Accept": accept if accept else "application/vnd.github+json"
+        }
+
+        token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        return headers
+
+    def _github_api_request(self, url, timeout=20):
+        req = urllib.request.Request(url, headers=self._github_headers())
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8", errors="replace"))
+        except urllib.error.HTTPError as e:
+            self.log(f"Falha na API do GitHub ({e.code}): {e.reason}", "AVISO")
+        except Exception as e:
+            self.log(f"Erro ao consultar API do GitHub: {e}", "AVISO")
+
+        return None
+
+    def _download_text(self, url, timeout=30):
+        headers = self._github_headers(accept="text/plain, application/octet-stream")
+        req = urllib.request.Request(url, headers=headers)
+
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            self.log(f"Falha ao baixar texto de {url}: {e}", "AVISO")
+            return None
+
+    def _download_file(self, url, dest_path, timeout=300):
+        headers = self._github_headers(accept="application/octet-stream")
+        req = urllib.request.Request(url, headers=headers)
+
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            with open(dest_path, "wb") as out:
+                shutil.copyfileobj(resp, out)
+
+    def _extract_sha256_from_sum(self, content, target_file_name):
+        if not content:
+            return ""
+
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            parts = line.split()
+            if len(parts) >= 2:
+                hash_value = parts[0].strip()
+                file_name = parts[-1].strip().lstrip("*")
+
+                if file_name.lower() == str(target_file_name).lower() and re.fullmatch(r"[0-9a-fA-F]{64}", hash_value):
+                    return hash_value.upper()
+
+        m = re.search(r"\b[0-9a-fA-F]{64}\b", content)
+        if m:
+            return m.group(0).upper()
+
+        return ""
+
+    def _get_latest_flameshot_release(self):
+        api_url = "https://api.github.com/repos/flameshot-org/flameshot/releases/latest"
+        data = self._github_api_request(api_url)
+
+        if not data:
+            return None
+
+        tag = str(data.get("tag_name", "")).strip()
+        if not tag:
+            self.log("Release mais recente do Flameshot sem tag_name.", "AVISO")
+            return None
+
+        version = _version_to_list(tag)
+        assets = data.get("assets", []) or []
+
+        msi_url = ""
+        msi_name = ""
+        sha_url = ""
+
+        for asset in assets:
+            name = str(asset.get("name", "")).strip()
+            url = str(asset.get("browser_download_url", "")).strip()
+            lower_name = name.lower()
+
+            if not name or not url:
+                continue
+
+            if lower_name.endswith(".msi") and "win64" in lower_name:
+                msi_url = url
+                msi_name = name
+            elif lower_name.endswith(".msi.sha256sum") and "win64" in lower_name:
+                sha_url = url
+
+        if not msi_url:
+            self.log("Nenhum asset MSI win64 encontrado na release mais recente do Flameshot.", "AVISO")
+            return None
+
+        if not sha_url and msi_name:
+            expected_sha_name = f"{msi_name}.sha256sum"
+            for asset in assets:
+                name = str(asset.get("name", "")).strip()
+                url = str(asset.get("browser_download_url", "")).strip()
+                if name.lower() == expected_sha_name.lower() and url:
+                    sha_url = url
+                    break
+
+        return {
+            "tag": tag,
+            "version": version,
+            "msi_url": msi_url,
+            "msi_name": msi_name,
+            "sha_url": sha_url
+        }
+
     def _download_with_validation(self, url, dest_path, min_size_mb=1, max_retries=3, timeout=300, expected_sha256=None):
         """Download robusto com validacao de tamanho, retry logic e hash opcional"""
         for attempt in range(1, max_retries + 1):
@@ -906,7 +1049,7 @@ class CPFani_GUI(ctk.CTk):
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
                 start_time = time.time()
-                urllib.request.urlretrieve(url, dest_path)
+                self._download_file(url, dest_path, timeout=timeout)
                 elapsed = time.time() - start_time
 
                 file_size = os.path.getsize(dest_path)
@@ -955,8 +1098,8 @@ class CPFani_GUI(ctk.CTk):
         return False
 
     def install_smart_flameshot(self):
-        """Instalacao inteligente do Flameshot comparando versoes"""
-        self.log("Analisando repositorios do Flameshot (Chocolatey vs GitHub v13.3.0)...")
+        """Instalacao inteligente do Flameshot comparando Chocolatey com GitHub latest"""
+        self.log("Analisando repositorios do Flameshot (Chocolatey vs GitHub latest)...")
 
         choco_version = "0.0.0"
 
@@ -981,25 +1124,43 @@ class CPFani_GUI(ctk.CTk):
         except Exception as e:
             self.log(f"Erro ao consultar Chocolatey: {e}", "AVISO")
 
-        self.log(f"Disponivel no Chocolatey: {choco_version}  |  Disponivel no GitHub: 13.3.0")
+        release = self._get_latest_flameshot_release()
 
-        def _version_to_list(v_str):
-            return [int(x) for x in re.findall(r"\d+", v_str)]
+        if not release:
+            self.log("Nao foi possivel obter a release mais recente do GitHub. Fallback para Chocolatey.", "AVISO")
+            return mod_instalar._choco_install("flameshot")
 
+        github_tag = release["tag"]
+        v_github = release["version"]
         v_choco = _version_to_list(choco_version) if choco_version != "0.0.0" else [0, 0, 0]
-        v_github = [13, 3, 0]
+
+        self.log(f"Disponivel no Chocolatey: {choco_version}  |  Disponivel no GitHub: {github_tag}")
 
         if v_github >= v_choco:
-            self.log("A versao v13.3.0 do GitHub e a mais atual ou identica. Iniciando download via MSI...")
+            self.log(f"A versao {github_tag} do GitHub e a mais atual ou identica. Iniciando download via MSI...")
 
-            msi_url = "https://github.com/flameshot-org/flameshot/releases/download/v13.3.0/Flameshot-13.3.0-win64.msi"
-            temp_msi = r"C:\Users\Public\Downloads\Flameshot-13.3.0-win64.msi"
-            expected_hash = _get_expected_flameshot_sha256()
+            expected_hash = ""
+
+            if release.get("sha_url"):
+                sum_text = self._download_text(release["sha_url"])
+                expected_hash = self._extract_sha256_from_sum(sum_text, release["msi_name"])
+
+                if expected_hash:
+                    self.log(f"[OK] Hash SHA256 oficial obtido do arquivo .sha256sum: {expected_hash}", "OK")
+                else:
+                    self.log("Arquivo .sha256sum baixado, mas nao foi possivel extrair hash valido.", "AVISO")
+            else:
+                self.log("Asset .sha256sum nao encontrado na release. Tentando fontes locais/ambiente.", "AVISO")
 
             if not expected_hash:
-                self.log("Hash SHA256 do MSI do Flameshot nao configurado. Use CPFANI_FLAMESHOT_MSI_SHA256 ou resources/Flameshot-13.3.0-win64.msi.sha256. Pulando MSI.", "AVISO")
+                expected_hash = _get_expected_flameshot_sha256(github_tag)
+
+            if not expected_hash:
+                self.log("Hash SHA256 nao disponivel para o MSI. Use asset .sha256sum, GITHUB_TOKEN, CPFANI_FLAMESHOT_MSI_SHA256 ou sidecar. Pulando MSI.", "AVISO")
             else:
-                if self._download_with_validation(msi_url, temp_msi, min_size_mb=5, max_retries=3, expected_sha256=expected_hash):
+                temp_msi = os.path.join(r"C:\Users\Public\Downloads", release["msi_name"])
+
+                if self._download_with_validation(release["msi_url"], temp_msi, min_size_mb=5, max_retries=3, expected_sha256=expected_hash):
                     try:
                         self.log("Executando instalacao silenciosa do MSI corporativo...")
                         install_res = subprocess.run(
@@ -1012,7 +1173,7 @@ class CPFani_GUI(ctk.CTk):
                         )
 
                         if install_res.returncode in [0, 3010]:
-                            self.log("[OK] Flameshot v13.3.0 instalado via GitHub MSI com sucesso.", "OK")
+                            self.log(f"[OK] Flameshot {github_tag} instalado via GitHub MSI com sucesso.", "OK")
                             try:
                                 os.remove(temp_msi)
                             except Exception as e:
