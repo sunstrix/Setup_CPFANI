@@ -99,3 +99,10 @@ downloads_temp/
 # ============================================================
 CPFANI_Hardware_Snapshot_*.txt
 battery_report.html
+drive_import_check.py
+drive_upload_test.py
+fix_locais.py
+gui.py.bak_drive
+gui.py.bak_locais
+historico_desatualizado_17466_ver09_07_2026-1779898678074_-1784309181131.pdf
+mod_config.py.bak_drive

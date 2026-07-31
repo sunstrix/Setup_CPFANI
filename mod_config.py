@@ -1725,26 +1725,60 @@ TeamViewer : {teamviewer_id}
             _log("Arquivo de credenciais OAuth2 nao encontrado. Pulando upload.", "AVISO")
             return str(local_path)
 
-        SCOPES = ['https://www.googleapis.com/auth/drive.file']
-        creds = None
+        SCOPES = ['https://www.googleapis.com/auth/drive']
         token_path = os.path.join(os.path.dirname(__file__), "credentials", "token.pickle")
 
+        _log(f"Drive upload: credenciais em {credentials_path}", "INFO")
+        _log(f"Drive upload: token em {token_path}", "INFO")
+
+        required_scopes = set(SCOPES)
+        creds = None
+
         if os.path.exists(token_path):
-            with open(token_path, 'rb') as token:
-                creds = pickle.load(token)
+            try:
+                with open(token_path, 'rb') as token:
+                    creds = pickle.load(token)
+            except Exception as e:
+                _log(f"Falha ao ler token.pickle: {e}. Token sera recriado.", "ERRO")
+                creds = None
+
+        if creds is not None:
+            current_scopes = set(getattr(creds, "scopes", []) or [])
+            if current_scopes and not required_scopes.issubset(current_scopes):
+                _log("Token atual nao possui escopo completo de Drive. Reautenticando...", "AVISO")
+                creds = None
 
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                    _log("[OK] Token OAuth2 renovado com sucesso.", "OK")
+                except Exception as e:
+                    _log(f"Falha ao renovar token OAuth2: {e}. Reautenticando...", "ERRO")
+                    creds = None
+
+            if not creds or not creds.valid:
                 flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
                 creds = flow.run_local_server(port=0)
+                _log("[OK] Autenticacao OAuth2 concluida.", "OK")
 
-            with open(token_path, 'wb') as token:
-                pickle.dump(creds, token)
+            try:
+                with open(token_path, 'wb') as token:
+                    pickle.dump(creds, token)
+            except Exception as e:
+                _log(f"Falha ao salvar token.pickle: {e}", "ERRO")
 
         service = build('drive', 'v3', credentials=creds)
         FOLDER_ID = "1EldWrM7U2tP4SPoGczMJyNdIIIcCsX3d"
+
+        try:
+            folder = service.files().get(fileId=FOLDER_ID, fields="id, name, capabilities").execute()
+            _log(f"[OK] Pasta do Drive acessivel: {folder.get('name')}", "OK")
+        except HttpError as e:
+            _log(f"Erro ao acessar pasta do Drive {FOLDER_ID}: {e}", "ERRO")
+            _log("Verifique se a conta autenticada tem permissao na pasta.", "AVISO")
+            return str(local_path)
+
 
         drive_file_name = file_name
         query = f"name='{drive_file_name}' and '{FOLDER_ID}' in parents and trashed=false"
@@ -1766,10 +1800,12 @@ TeamViewer : {teamviewer_id}
             _log("[OK] Snapshot enviado para o Google Drive (novo arquivo criado)", "OK")
 
         return str(local_path)
-    except ImportError:
-        _log("Bibliotecas do Google Drive (OAuth2) nao instaladas. Pulando upload.", "AVISO")
-        _log("Para ativar o upload, instale: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2", "INFO")
+    except ImportError as e:
+        _log(f"Bibliotecas do Google Drive (OAuth2) nao instaladas ou falha ao importar: {e}", "ERRO")
+        _log(traceback.format_exc(), "ERRO")
+        _log("Instale com: python -m pip install google-api-python-client google-auth-oauthlib google-auth-httplib2", "INFO")
         return str(local_path)
+
     except HttpError as e:
         _log(f"Erro na API do Google Drive: {e}", "ERRO")
     except Exception as e:
