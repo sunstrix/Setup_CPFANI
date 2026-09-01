@@ -13,19 +13,15 @@ A partir da versão **6.1.0**, o sistema também possui:
 
 - Snapshot de hardware **agendado diariamente às 11:00**.
 - Script independente `run_snapshot_only.py`.
-- Campo **Origem** no snapshot:
-  - `Deploy Manual`
-  - `Agendamento Automatico`
-- Coleta ampliada de impressoras:
-  - Impressoras instaladas no Windows.
-  - Dispositivos POS/térmicos brutos detectados via PnP/USB/Serial.
-- Autenticação Google Drive OAuth2 mais robusta:
-  - Token salvo por máquina.
-  - Validação de token corrompido.
-  - Timeout no login interativo.
-  - Modo não interativo para tarefa agendada.
-  - Pré-checagem opcional antes do deploy.
-  - Aviso claro quando o snapshot ficar somente local.
+- Campo `Origem` no snapshot (`Deploy Manual` / `Agendamento Automatico`).
+- Coleta ampliada de impressoras (instaladas + dispositivos POS/térmicos brutos via PnP).
+- Autenticação Google Drive OAuth2 mais robusta (token por máquina, validação de token corrompido, timeout no login, modo não interativo para tarefa agendada, pré-checagem opcional e aviso claro quando o snapshot fica somente local).
+
+A partir da versão **6.2.0**, o sistema também possui:
+
+- **ID único por monitor** (`ID_Unico`) com regra de geração para monitores sem serial.
+- **Rótulo duplo** na seção de monitores (`Numero_de_Serie` + `Nº de Série`) para compatibilidade total com o **Dashboard-TI**.
+- Contagem de monitores no Dashboard consistente com a frota (sem descarte por serial ausente ou duplicado).
 
 ---
 
@@ -33,46 +29,23 @@ A partir da versão **6.1.0**, o sistema também possui:
 
 ### 🛡️ Segurança e Privacidade
 
-- Conformidade com LGPD:
-  - Desativa telemetria.
-  - Reduz coleta de dados em segundo plano.
-- Blindagem de logon:
-  - Bloqueia Windows Hello/Biometria quando habilitado.
-- Firewall inteligente:
-  - Restringe SMB/RPC conforme política selecionada.
-- Tela de bloqueio corporativa:
-  - Aplica wallpaper/lockscreen via GPO + PersonalizationCSP.
-- Remoção agressiva de bloatware:
-  - Remove aplicativos pré-instalados indesejados.
-
----
+- Conformidade LGPD: desativa telemetria e reduz coleta de dados em segundo plano.
+- Blindagem de logon: bloqueia Windows Hello/Biometria quando habilitado.
+- Firewall inteligente: restringe SMB/RPC conforme política selecionada.
+- Tela de bloqueio corporativa: aplica wallpaper/lockscreen via GPO + PersonalizationCSP.
+- Remoção agressiva de bloatware: remove aplicativos pré-instalados indesejados.
 
 ### ⚡ Otimização e Instalação
 
-- Instalação silenciosa via Chocolatey.
-- Fallback para WinGet quando necessário.
-- Gestão de drivers:
-  - Fabricante (Dell/HP/Lenovo).
-  - Windows Update.
-- Smart install do Flameshot:
-  - Compara versão do Chocolatey com release mais recente do GitHub.
-  - Valida hash SHA256 antes de instalar.
-
----
+- Instalação silenciosa via Chocolatey, com fallback para WinGet quando necessário.
+- Gestão de drivers: fabricante (Dell/HP/Lenovo) ou Windows Update.
+- Smart install do Flameshot: compara versão do Chocolatey com a release mais recente do GitHub e valida hash SHA256 antes de instalar.
 
 ### 🤖 Automação e Resiliência
 
-- Self-Healing/Watchdog:
-  - Mantém wallpaper corporativo e serviços de suporte ativos.
-- Tarefas agendadas opcionais:
-  - Manutenção de rede.
-  - Atualizador de software.
-  - Reinício diário.
-- Snapshot diário automático:
-  - Tarefa `CPFANI_SnapshotDiario`.
-  - Execução às **11:00**.
-  - Executa como `SYSTEM`.
-  - Gera snapshot independente do deploy completo.
+- Self-Healing/Watchdog: mantém wallpaper corporativo e serviços de suporte ativos.
+- Tarefas agendadas opcionais: manutenção de rede, atualizador de software e reinício diário.
+- Snapshot diário automático: tarefa `CPFANI_SnapshotDiario`, execução às 11:00 como `SYSTEM`, independente do deploy completo.
 
 ---
 
@@ -94,24 +67,13 @@ C:\Scripts\
 
 Conteúdo coletado:
 
-- Local.
-- Usuário.
-- Origem da geração.
-- Nome do computador.
-- Modelo do sistema.
-- Processador.
-- Memória RAM.
-- Versão do Windows.
-- Serial da BIOS.
+- Local, usuário e origem da geração.
+- Nome do computador, modelo do sistema, processador, memória RAM, versão do Windows e serial da BIOS.
 - ID único por MAC/ProcessorId.
-- AnyDesk ID.
-- TeamViewer ID.
-- Monitores.
-- Impressoras instaladas.
-- Adaptadores de rede.
-- Nova seção `IMPRESSORAS DETECTADAS`:
-  - Impressoras instaladas via `Win32_Printer`.
-  - Dispositivos POS/térmicos brutos via `Get-PnpDevice`.
+- AnyDesk ID e TeamViewer ID.
+- Monitores (com `ID_Unico` — veja a seção específica abaixo).
+- Impressoras instaladas e adaptadores de rede.
+- Seção `IMPRESSORAS DETECTADAS`: impressoras via `Win32_Printer` + dispositivos POS/térmicos brutos via `Get-PnpDevice`.
 
 Exemplo de origem no snapshot:
 
@@ -124,6 +86,57 @@ ou:
 ```text
 Origem  : Agendamento Automatico
 ```
+
+---
+
+## 🖥️ Identificação Única de Monitores (V6.2.0)
+
+### Problema que motivou a mudança
+
+O **Dashboard-TI** (repositório `sunstrix/Dashboard-TI`) exibia **menos monitores do que PCs**. A causa era dupla:
+
+1. Monitores sem serial válido (WMI retorna vazio) eram **descartados** pelo filtro de seriais inválidos do Dashboard (`N/A`, `0`, `-`, `null`, `s/n` etc.).
+2. Seriais duplicados eram **colapsados** pela deduplicação global por `Serial_Monitor`.
+
+### Regra de geração do `ID_Unico`
+
+Cada monitor recebe um identificador único, calculado em `mod_config.py :: _gerar_ids_unicos_monitores()`:
+
+| Situação | Valor do `ID_Unico` |
+|---|---|
+| Serial válido e único na máquina | O próprio serial real (ex: `105NTMX2A775`) |
+| Serial inválido/vazio | `SEM-SN-<PC_ID>-M<n>` (PC_ID = MAC/ProcessorId, `n` = posição do monitor) |
+| Serial duplicado dentro da mesma máquina | Serial + sufixo `-D2`, `-D3`... |
+
+### Formato da seção de monitores (rótulo duplo)
+
+```text
+============================================================
+ PERIFÉRICOS — MONITORES
+============================================================
+ Monitor 1:
+   Modelo          : LG 24MK430
+   Numero_de_Serie : 105NTMX2A775
+   Nº de Série     : 105NTMX2A775
+   ID_Unico        : 105NTMX2A775
+
+ Monitor 2:
+   Modelo          : Monitor Genérico
+   Numero_de_Serie : N/A
+   Nº de Série     : SEM-SN-A1B2C3D4E5F6-M2
+   ID_Unico        : SEM-SN-A1B2C3D4E5F6-M2
+============================================================
+```
+
+### Compatibilidade
+
+| Consumidor | Campo lido | Comportamento |
+|---|---|---|
+| **Dashboard-TI** (`parser.py`) | `Nº de Série` (regex `N[º°.]?\s*de\s*S[ée]rie`) | Agora sempre recebe um valor **único e válido** — nada é descartado nem colapsado |
+| **GUI / planilha xlsx** (legado) | `Numero_de_Serie` | Continua lendo o serial bruto do WMI |
+| **Snapshots antigos** | `Numero_de_Serie` | Parsing com fallback — nada quebra |
+
+> **Nota:** a contagem de monitores no Dashboard só reflete a frota completa **após cada PC regenerar o snapshot** ao menos uma vez com a V6.2.0 (via deploy, botão "GERAR APENAS SNAPSHOT" ou tarefa diária `CPFANI_SnapshotDiario`).
 
 ---
 
@@ -154,10 +167,7 @@ Comportamento importante:
 
 - Em modo agendado, o script **não abre navegador**.
 - Se o token do Google Drive estiver válido, tenta renovar/enviar silenciosamente.
-- Se o token estiver ausente/expirado/corrompido:
-  - O snapshot é salvo localmente.
-  - O upload é ignorado.
-  - A tarefa não fica travada aguardando login.
+- Se o token estiver ausente/expirado/corrompido: o snapshot é salvo localmente, o upload é ignorado e a tarefa não fica travada aguardando login.
 
 Logs do snapshot agendado:
 
@@ -169,64 +179,21 @@ C:\Scripts\Logs\cpfani_snapshot_diario.log
 
 ## 🖨️ Coleta Completa de Impressoras
 
-A nova coleta foi pensada para PDVs e balcões, cobrindo impressoras comuns e impressoras térmicas/POS.
+A coleta foi pensada para PDVs e balcões, cobrindo impressoras comuns e impressoras térmicas/POS.
 
 ### Impressoras instaladas
 
-Coleta via:
-
-```powershell
-Get-CimInstance Win32_Printer
-```
-
-Informações capturadas:
-
-- Nome.
-- Driver.
-- Porta.
-- Padrão.
-- Status.
-- Compartilhamento.
-- Tipo de conexão:
-  - `REDE`
-  - `USB`
-  - `SERIAL`
-  - `PARALELA`
-  - `LOCAL`
+Coleta via `Get-CimInstance Win32_Printer`, capturando nome, driver, porta, padrão, status, compartilhamento e tipo de conexão (`REDE`, `USB`, `SERIAL`, `PARALELA`, `LOCAL`).
 
 ### Dispositivos POS brutos
 
-Coleta adicional via:
-
-```powershell
-Get-PnpDevice -Class Ports
-Get-PnpDevice -Class USB
-```
-
-Filtro por palavras-chave típicas de impressoras térmicas/POS:
-
-```text
-Printer
-POS
-Thermal
-ESC
-Elgin
-Bematech
-Epson
-Zebra
-Diebold
-Sweda
-```
-
-Isso ajuda a detectar impressoras térmicas usadas diretamente pelo PDV via ESC/POS, mesmo quando não há driver Windows instalado.
+Coleta adicional via `Get-PnpDevice -Class Ports` e `Get-PnpDevice -Class USB`, filtrando palavras-chave típicas de impressoras térmicas/POS (`Printer`, `POS`, `Thermal`, `ESC`, `Elgin`, `Bematech`, `Epson`, `Zebra`, `Diebold`, `Sweda`). Isso detecta térmicas usadas diretamente pelo PDV via ESC/POS, mesmo sem driver Windows instalado.
 
 ---
 
 ## ☁️ Google Drive OAuth2 Robusto
 
-O envio do snapshot para o Google Drive usa OAuth2 com aplicativo desktop.
-
-Não depende de Google Drive Desktop.
+O envio do snapshot para o Google Drive usa OAuth2 com aplicativo desktop. Não depende de Google Drive Desktop.
 
 ### Credenciais
 
@@ -248,8 +215,8 @@ C:\Scripts\credentials\token.pickle
 
 Importante:
 
-- O token **não deve ser salvo dentro do repositório**.
-- O token **não deve ser commitado**.
+- O token **não deve** ser salvo dentro do repositório.
+- O token **não deve** ser commitado.
 - Cada máquina deve ter seu próprio token.
 
 ### Validações implementadas
@@ -264,19 +231,7 @@ Importante:
 
 ### Pré-checagem opcional
 
-Na GUI existe a opção:
-
-```text
-Verificar Google Drive antes de iniciar
-```
-
-Se marcada, o deploy tenta validar o Drive antes de aplicar branding, segurança, firewall, bloatware etc.
-
-Se falhar, o técnico pode:
-
-- Cancelar o deploy.
-- Continuar sem upload.
-- Gerar snapshot apenas localmente.
+Na GUI existe a opção **"Verificar Google Drive antes de iniciar"**. Se marcada, o deploy tenta validar o Drive antes de aplicar branding, segurança, firewall, bloatware etc. Se falhar, o técnico pode cancelar o deploy, continuar sem upload ou gerar snapshot apenas localmente.
 
 ---
 
@@ -286,7 +241,7 @@ Se falhar, o técnico pode:
 |---|---|
 | `EXECUTAR.bat` | Launcher principal. Valida privilégios, prepara ambiente, instala dependências e inicia a GUI. |
 | `gui.py` | Interface gráfica em CustomTkinter. Permite selecionar políticas, executar deploy, gerar snapshot isolado e verificar a tarefa de snapshot. |
-| `mod_config.py` | Núcleo de configuração. Aplica políticas, firewall, branding, watchdog, snapshot, scheduler de snapshot e coleta ampliada de impressoras. |
+| `mod_config.py` | Núcleo de configuração. Aplica políticas, firewall, branding, watchdog, snapshot, scheduler de snapshot, coleta ampliada de impressoras e ID único de monitores. |
 | `mod_instalar.py` | Motor de instalação. Usa Chocolatey, WinGet e PowerShell para softwares e drivers. |
 | `run_snapshot_only.py` | Script independente para gerar somente o snapshot, sem deploy. Usado manualmente ou pela tarefa diária. |
 | `settings.json` | Dicionário de aplicativos e bloatware. |
@@ -300,22 +255,20 @@ Se falhar, o técnico pode:
 | `resources/wallpaper_cpfani.jpg` | Wallpaper corporativo usado por branding/lockscreen. |
 | `.gitignore` | Impede commit de token, logs e artefatos locais. |
 
+### Projeto consumidor
+
+| Repositório | Descrição |
+|---|---|
+| `sunstrix/Dashboard-TI` | Dashboard Streamlit que lê os snapshots do Drive e exibe KPIs de inventário (computadores, monitores, impressoras). Consome o campo `Nº de Série` dos monitores para deduplicação. |
+
 ---
 
 ## ⚙️ Pré-requisitos
 
 - Windows 10 ou Windows 11.
 - Execução como Administrador.
-- Internet para:
-  - Instalar dependências.
-  - Baixar pacotes.
-  - Sincronizar NTP.
-  - Renovar token Google Drive quando necessário.
-- Para upload automático:
-  - Google Cloud projeto.
-  - Drive API habilitada.
-  - OAuth Client ID para Desktop.
-  - Arquivo `credentials/oauth2_credentials.json`.
+- Internet para instalar dependências, baixar pacotes, sincronizar NTP e renovar token Google Drive quando necessário.
+- Para upload automático: projeto no Google Cloud, Drive API habilitada, OAuth Client ID para Desktop e arquivo `credentials/oauth2_credentials.json`.
 
 O `EXECUTAR.bat` tenta preparar Python e dependências automaticamente.
 
@@ -325,94 +278,26 @@ O `EXECUTAR.bat` tenta preparar Python e dependências automaticamente.
 
 ### 1. Deploy completo
 
-1. Coloque o projeto em disco local, por exemplo:
-
-```text
-C:\Scripts\Setup_CPFANI
-```
-
-2. Clique com o botão direito em:
-
-```text
-EXECUTAR.bat
-```
-
-3. Selecione **Executar como Administrador**.
-
-4. Aguarde a preparação do ambiente.
-
-5. Na GUI, selecione as opções desejadas:
-   - Interface/branding.
-   - Segurança/LGPD.
-   - Firewall.
-   - Bloatware.
-   - Softwares.
-   - Office.
-   - Drivers.
-   - Tarefas agendadas.
-   - Self-Healing.
-   - Pré-checagem do Google Drive.
-
-6. Clique em:
-
-```text
-EXECUTAR DEPLOY
-```
-
-7. Informe Local e Usuário na janela modal.
-
-8. Aguarde a conclusão.
-
----
+1. Coloque o projeto em disco local, por exemplo: `C:\Scripts\Setup_CPFANI`.
+2. Clique com o botão direito em `EXECUTAR.bat` e selecione **Executar como Administrador**.
+3. Aguarde a preparação do ambiente.
+4. Na GUI, selecione as opções desejadas (branding, segurança/LGPD, firewall, bloatware, softwares, office, drivers, tarefas agendadas, self-healing e pré-checagem do Google Drive).
+5. Clique em **EXECUTAR DEPLOY**.
+6. Informe Local e Usuário na janela modal.
+7. Aguarde a conclusão.
 
 ### 2. Gerar apenas snapshot pela GUI
 
-Na GUI, clique em:
-
-```text
-GERAR APENAS SNAPSHOT
-```
-
-Esse fluxo:
-
-- Coleta Local e Usuário.
-- Gera o snapshot.
-- Tenta enviar ao Drive se configurado.
-- Cria/atualiza a tarefa `CPFANI_SnapshotDiario`.
-- Atualiza planilhas de inventário quando houver snapshots no Drive.
-
----
+Na GUI, clique em **GERAR APENAS SNAPSHOT**. Esse fluxo coleta Local e Usuário, gera o snapshot, tenta enviar ao Drive se configurado, cria/atualiza a tarefa `CPFANI_SnapshotDiario` e atualiza planilhas de inventário quando houver snapshots no Drive.
 
 ### 3. Gerar snapshot manualmente via script
 
-Executar no diretório do projeto:
-
 ```powershell
 python run_snapshot_only.py
-```
-
-Com local e usuário:
-
-```powershell
 python run_snapshot_only.py --local "14120 - ARPEL SBC" --usuario "Alex"
-```
-
-Simular modo agendado, sem navegador:
-
-```powershell
-python run_snapshot_only.py --scheduled
-```
-
-Não criar/atualizar a tarefa:
-
-```powershell
-python run_snapshot_only.py --no-scheduler
-```
-
-Permitir login interativo do Drive em execução manual:
-
-```powershell
-python run_snapshot_only.py --interactive
+python run_snapshot_only.py --scheduled        # modo agendado, sem navegador
+python run_snapshot_only.py --no-scheduler     # não cria/atualiza a tarefa
+python run_snapshot_only.py --interactive      # permite login interativo do Drive
 ```
 
 Variáveis de ambiente opcionais:
@@ -423,17 +308,9 @@ $env:CPFANI_SNAPSHOT_USUARIO = "Alex"
 python run_snapshot_only.py
 ```
 
----
-
 ### 4. Verificar tarefa de snapshot
 
-Na GUI, clique em:
-
-```text
-VERIFICAR TASK AGENDADA DE SNAPSHOT
-```
-
-Ou manualmente:
+Na GUI, clique em **VERIFICAR TASK AGENDADA DE SNAPSHOT**. Ou manualmente:
 
 ```powershell
 schtasks /query /tn "CPFANI_SnapshotDiario" /fo LIST /v
@@ -444,7 +321,7 @@ schtasks /query /tn "CPFANI_SnapshotDiario" /fo LIST /v
 ## 📅 Tarefas Agendadas
 
 | Tarefa | Horário/Gatilho | Criada quando |
-|---|---:|---|
+|---|---|---|
 | `CPFANI_Watchdog` | Logon | Deploy com Self-Healing habilitado. |
 | `CPFANI_ReinicioDiario` | Diário 21:00 | Deploy com opção de reinício habilitada. |
 | `CPFANI_ManutencaoRede` | Diário 08:00 | Deploy com manutenção de rede habilitada. |
@@ -480,6 +357,14 @@ C:\Scripts\CPFANI_Hardware_Snapshot_*.txt
 C:\Scripts\credentials\token.pickle
 ```
 
+### Monitores no Dashboard
+
+Se o Dashboard-TI ainda exibir menos monitores que PCs:
+
+1. Confirme que o snapshot foi regenerado com a V6.2.0 (verifique se a seção de monitores contém as linhas `Nº de Série` e `ID_Unico`).
+2. Verifique no log do snapshot as linhas `Monitor N: serial valido/invalido/duplicado` geradas por `_gerar_ids_unicos_monitores()`.
+3. Aguarde o Dashboard reprocessar os arquivos do Drive.
+
 ### Se o snapshot não for enviado ao Drive
 
 A GUI exibirá aviso claro:
@@ -490,14 +375,7 @@ Motivo: [erro].
 Arquivo salvo em: [caminho].
 ```
 
-Causas comuns:
-
-- `oauth2_credentials.json` ausente.
-- Token expirado e execução sem sessão interativa.
-- Token corrompido.
-- Conta Google sem permissão na pasta do Drive.
-- Bibliotecas Google ausentes.
-- Firewall/proxy bloqueando Google APIs.
+Causas comuns: `oauth2_credentials.json` ausente; token expirado em execução sem sessão interativa; token corrompido; conta Google sem permissão na pasta do Drive; bibliotecas Google ausentes; firewall/proxy bloqueando Google APIs.
 
 ---
 
@@ -516,22 +394,11 @@ python -m pip install google-api-python-client google-auth-oauthlib google-auth-
 
 ### Corporativo
 
-Indicado para PDV/loja:
-
-- Firewall restrito.
-- Branding.
-- Self-Healing.
-- Snapshot diário.
-- Upload centralizado ao Drive.
+Indicado para PDV/loja: firewall restrito, branding, self-healing, snapshot diário e upload centralizado ao Drive.
 
 ### Universal
 
-Indicado para máquinas pessoais/clientes externos:
-
-- Desmarcar Self-Healing.
-- Desmarcar firewall restrito.
-- Manter otimização e instalação de softwares.
-- Snapshot pode ser usado opcionalmente.
+Indicado para máquinas pessoais/clientes externos: desmarque Self-Healing e firewall restrito, mantendo otimização e instalação de softwares. Snapshot pode ser usado opcionalmente.
 
 ---
 
