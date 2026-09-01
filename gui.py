@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""gui.py - V5.9.9 (Edicao CP Fani: Google Drive OAuth2 robusto com pre-checagem e feedback)"""
+"""gui.py - V6.1.0 (Edicao CP Fani: Snapshot agendado + Diagnostico de task + Drive robusto)"""
 
 from tkinter import messagebox
 import customtkinter as ctk
@@ -41,6 +41,7 @@ def show_windows_toast(title, message):
     """Exibe notificacao nativa do Windows"""
     title_escaped = str(title).replace('"', '`"').replace("'", "`'")
     message_escaped = str(message).replace('"', '`"').replace("'", "`'")
+
     ps_script = rf'''
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
 [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
@@ -65,6 +66,7 @@ $xml.LoadXml($template)
 $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
 '''
+
     try:
         subprocess.Popen(
             ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_script],
@@ -85,6 +87,7 @@ except ImportError as e:
         "Certifique-se de que mod_config.py e mod_instalar.py estao no mesmo diretorio."
     )
     print(msg, flush=True)
+
     try:
         import tkinter as tk
         root = tk.Tk()
@@ -93,6 +96,7 @@ except ImportError as e:
         root.destroy()
     except Exception:
         pass
+
     sys.exit(1)
 
 ctk.set_appearance_mode("Dark")
@@ -394,6 +398,7 @@ def _authenticate_google_drive_local(timeout_seconds=120):
                     creds = None
                 else:
                     creds = loaded
+
             except Exception as e:
                 _notify_google_drive_status(f"Falha ao ler token.pickle: {e}. Arquivo sera removido.")
                 _remove_file_safe(token_path)
@@ -472,6 +477,7 @@ def _authenticate_google_drive_safe(timeout_seconds=120):
                     return result[0], None, None
 
             return result, None, None
+
         except Exception as e:
             return None, f"Erro na autenticacao centralizada do mod_config: {e}", None
 
@@ -513,10 +519,6 @@ def _get_google_drive_service_and_snapshot_files(timeout_seconds=120):
         print(f"[ERRO] Bibliotecas do Google Drive nao instaladas ou falha ao importar: {e}", flush=True)
         traceback.print_exc()
         return None, []
-    except HttpError as e:
-        print(f"[ERRO] Erro na API do Google Drive: {e}", flush=True)
-        traceback.print_exc()
-        return None, []
     except Exception as e:
         print(f"[ERRO] Erro ao conectar ao Google Drive: {e}", flush=True)
         traceback.print_exc()
@@ -531,6 +533,7 @@ def get_google_drive_service_and_snapshot_files():
 def _parse_monitors_from_hardware_snapshot(content):
     """Extrai dados de monitores do conteudo do snapshot de hardware."""
     monitors = []
+
     try:
         normalized = _normalize_snapshot_text(content)
 
@@ -591,6 +594,7 @@ def _read_monitors_from_hardware_snapshots():
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
             done = False
+
             while done is False:
                 status, done = downloader.next_chunk()
 
@@ -636,6 +640,7 @@ def _create_inventory_spreadsheet_with_monitors():
         from openpyxl.styles import Font, PatternFill, Alignment
 
         monitors_data = _read_monitors_from_hardware_snapshots()
+
         if not monitors_data:
             print("[AVISO] Nenhum dado de monitores encontrado. Planilha nao sera atualizada.", flush=True)
             return False
@@ -697,6 +702,7 @@ def _create_inventory_spreadsheet_with_monitors():
 def _parse_printers_from_hardware_snapshot(content):
     """Extrai dados de impressoras do conteudo do snapshot de hardware."""
     printers = []
+
     try:
         normalized = _normalize_snapshot_text(content)
 
@@ -772,6 +778,7 @@ def _read_printers_from_hardware_snapshots():
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
             done = False
+
             while done is False:
                 status, done = downloader.next_chunk()
 
@@ -821,6 +828,7 @@ def _create_inventory_spreadsheet_with_printers():
         from openpyxl.styles import Font, PatternFill, Alignment
 
         printers_data = _read_printers_from_hardware_snapshots()
+
         if not printers_data:
             print("[AVISO] Nenhum dado de impressoras encontrado. Planilha nao sera atualizada.", flush=True)
             return False
@@ -900,7 +908,7 @@ def _create_inventory_spreadsheet_with_printers():
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Setup Automatizado CP Fani - V5.9.9")
+        self.title("Setup Automatizado CP Fani - V6.1.0")
         self.geometry("740x860")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
@@ -960,7 +968,7 @@ class CPFani_GUI(ctk.CTk):
                     self.log(f"Aviso: Falha ao carregar logo: {e}", "AVISO")
 
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
-        ctk.CTkLabel(header_frame, text="v5.9.9  |  Gestao de Endpoints (Adaptacao Dinamica)", font=("Segoe UI", 11), text_color="#666666").pack()
+        ctk.CTkLabel(header_frame, text="v6.1.0  |  Gestao de Endpoints (Snapshot Agendado)", font=("Segoe UI", 11), text_color="#666666").pack()
 
         ui_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         ui_frame.pack(padx=20, pady=5, fill="x")
@@ -1087,7 +1095,18 @@ class CPFani_GUI(ctk.CTk):
             hover_color="#1b7a2e",
             command=self.start_snapshot_only
         )
-        self.btn_snapshot.pack(pady=(0, 10), padx=20, fill="x")
+        self.btn_snapshot.pack(pady=(0, 5), padx=20, fill="x")
+
+        self.btn_check_task = ctk.CTkButton(
+            self.main_scroll,
+            text="VERIFICAR TASK AGENDADA DE SNAPSHOT",
+            font=("", 12, "bold"),
+            height=34,
+            fg_color="#555555",
+            hover_color="#444444",
+            command=self.check_snapshot_task
+        )
+        self.btn_check_task.pack(pady=(0, 10), padx=20, fill="x")
 
     def select_all_apps(self):
         for var in self.app_vars.values():
@@ -1140,6 +1159,7 @@ class CPFani_GUI(ctk.CTk):
                 self.current_app_label.configure(text=current_app_text)
 
             self.update_idletasks()
+
         except Exception as e:
             self.log(f"Erro ao atualizar status: {e}", "ERRO")
 
@@ -1200,6 +1220,7 @@ class CPFani_GUI(ctk.CTk):
                 def callback_auth(*a, **k):
                     if "callback" not in k or k.get("callback") is None:
                         k["callback"] = self._google_drive_status_background
+
                     try:
                         return original_auth(*a, **k)
                     except TypeError:
@@ -1216,6 +1237,35 @@ class CPFani_GUI(ctk.CTk):
 
         return func(*args, **kwargs)
 
+    def _call_snapshot_with_origem(self, func, origem, *args, **kwargs):
+        """Chama funcao de snapshot passando origem apenas se a funcao suportar."""
+        try:
+            params = inspect.signature(func).parameters
+        except Exception:
+            params = {}
+
+        if "origem" in params:
+            kwargs["origem"] = origem
+
+        return self._call_snapshot_function(func, *args, **kwargs)
+
+    def _setup_snapshot_scheduler_safe(self):
+        """Configura a tarefa agendada de snapshot sem quebrar o fluxo."""
+        if not hasattr(mod_config, "setup_snapshot_scheduler"):
+            self.log("setup_snapshot_scheduler() nao disponivel no mod_config.", "AVISO")
+            return False
+
+        try:
+            ok = mod_config.setup_snapshot_scheduler()
+            if ok:
+                self.log("[OK] Task CPFANI_SnapshotDiario criada/atualizada.", "OK")
+            else:
+                self.log("Falha ao criar/atualizar task CPFANI_SnapshotDiario.", "AVISO")
+            return bool(ok)
+        except Exception as e:
+            self.log(f"Erro ao configurar task de snapshot: {e}", "ERRO")
+            return False
+
     def _alert_snapshot_upload_if_needed(self):
         """Exibe messagebox claro quando o snapshot ficou somente local."""
         try:
@@ -1231,6 +1281,39 @@ class CPFani_GUI(ctk.CTk):
                 )
         except Exception as e:
             self.log(f"Erro ao exibir aviso de upload do snapshot: {e}", "ERRO")
+
+    def check_snapshot_task(self):
+        """Botao de diagnostico da tarefa agendada de snapshot."""
+        self.btn_check_task.configure(state="disabled", text="VERIFICANDO TASK...")
+        thread = threading.Thread(target=self._check_snapshot_task_worker, daemon=True)
+        thread.start()
+
+    def _check_snapshot_task_worker(self):
+        """Worker para verificar CPFANI_SnapshotDiario sem travar a GUI."""
+        try:
+            if hasattr(mod_config, "check_snapshot_scheduler"):
+                exists, msg = mod_config.check_snapshot_scheduler()
+            else:
+                exists = False
+                msg = "Funcao check_snapshot_scheduler() nao disponivel no mod_config."
+        except Exception as e:
+            exists = False
+            msg = f"Erro ao verificar task de snapshot: {e}"
+
+        self.after(0, self._show_snapshot_task_result, exists, msg)
+
+    def _show_snapshot_task_result(self, exists, msg):
+        """Exibe resultado da verificacao da task na GUI."""
+        try:
+            self.btn_check_task.configure(state="normal", text="VERIFICAR TASK AGENDADA DE SNAPSHOT")
+
+            if exists:
+                messagebox.showinfo("Task de Snapshot", msg)
+            else:
+                messagebox.showwarning("Task de Snapshot", msg)
+
+        except Exception as e:
+            self.log(f"Erro ao exibir resultado da task de snapshot: {e}", "ERRO")
 
     def _precheck_drive_then_deploy(self):
         """Pre-checagem opcional do Google Drive antes do deploy completo."""
@@ -1312,13 +1395,16 @@ class CPFani_GUI(ctk.CTk):
             "User-Agent": "Setup-CPFANI",
             "Accept": accept if accept else "application/vnd.github+json"
         }
+
         token = os.environ.get("GITHUB_TOKEN", "").strip()
         if token:
             headers["Authorization"] = f"Bearer {token}"
+
         return headers
 
     def _github_api_request(self, url, timeout=20):
         req = urllib.request.Request(url, headers=self._github_headers())
+
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode("utf-8", errors="replace"))
@@ -1326,11 +1412,13 @@ class CPFani_GUI(ctk.CTk):
             self.log(f"Falha na API do GitHub ({e.code}): {e.reason}", "AVISO")
         except Exception as e:
             self.log(f"Erro ao consultar API do GitHub: {e}", "AVISO")
+
         return None
 
     def _download_text(self, url, timeout=30):
         headers = self._github_headers(accept="text/plain, application/octet-stream")
         req = urllib.request.Request(url, headers=headers)
+
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.read().decode("utf-8", errors="replace")
@@ -1341,6 +1429,7 @@ class CPFani_GUI(ctk.CTk):
     def _download_file(self, url, dest_path, timeout=300):
         headers = self._github_headers(accept="application/octet-stream")
         req = urllib.request.Request(url, headers=headers)
+
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             with open(dest_path, "wb") as out:
@@ -1352,13 +1441,16 @@ class CPFani_GUI(ctk.CTk):
 
         for line in content.splitlines():
             line = line.strip()
+
             if not line or line.startswith("#"):
                 continue
 
             parts = line.split()
+
             if len(parts) >= 2:
                 hash_value = parts[0].strip()
                 file_name = parts[-1].strip().lstrip("*")
+
                 if file_name.lower() == str(target_file_name).lower() and re.fullmatch(r"[0-9a-fA-F]{64}", hash_value):
                     return hash_value.upper()
 
@@ -1371,6 +1463,7 @@ class CPFani_GUI(ctk.CTk):
     def _get_latest_flameshot_release(self):
         api_url = "https://api.github.com/repos/flameshot-org/flameshot/releases/latest"
         data = self._github_api_request(api_url)
+
         if not data:
             return None
 
@@ -1406,9 +1499,11 @@ class CPFani_GUI(ctk.CTk):
 
         if not sha_url and msi_name:
             expected_sha_name = f"{msi_name}.sha256sum"
+
             for asset in assets:
                 name = str(asset.get("name", "")).strip()
                 url = str(asset.get("browser_download_url", "")).strip()
+
                 if name.lower() == expected_sha_name.lower() and url:
                     sha_url = url
                     break
@@ -1426,6 +1521,7 @@ class CPFani_GUI(ctk.CTk):
         for attempt in range(1, max_retries + 1):
             try:
                 self.log(f"Tentativa {attempt}/{max_retries}: Baixando {os.path.basename(dest_path)}...")
+
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
                 start_time = time.time()
@@ -1437,6 +1533,7 @@ class CPFani_GUI(ctk.CTk):
 
                 if file_size < min_size_bytes:
                     self.log(f"Arquivo muito pequeno ({file_size} bytes < {min_size_bytes} bytes). Removendo...", "AVISO")
+
                     try:
                         os.remove(dest_path)
                     except Exception as e:
@@ -1468,6 +1565,7 @@ class CPFani_GUI(ctk.CTk):
 
             except Exception as e:
                 self.log(f"Falha na tentativa {attempt}: {e}", "ERRO")
+
                 if os.path.exists(dest_path):
                     try:
                         os.remove(dest_path)
@@ -1484,6 +1582,7 @@ class CPFani_GUI(ctk.CTk):
         self.log("Analisando repositorios do Flameshot (Chocolatey vs GitHub latest)...")
 
         choco_version = "0.0.0"
+
         try:
             res = subprocess.run(
                 ["choco", "info", "flameshot", "--limit-output"],
@@ -1494,17 +1593,21 @@ class CPFani_GUI(ctk.CTk):
                 encoding="utf-8",
                 errors="replace"
             )
+
             if res.returncode == 0 and res.stdout:
                 parts = res.stdout.strip().split("|")
+
                 if len(parts) >= 2:
                     choco_version = parts[1]
                     self.log(f"Versao Chocolatey detectada: {choco_version}")
+
         except subprocess.TimeoutExpired:
             self.log("Timeout ao consultar Chocolatey. Continuando...", "AVISO")
         except Exception as e:
             self.log(f"Erro ao consultar Chocolatey: {e}", "AVISO")
 
         release = self._get_latest_flameshot_release()
+
         if not release:
             self.log("Nao foi possivel obter a release mais recente do GitHub. Fallback para Chocolatey.", "AVISO")
             return mod_instalar._choco_install("flameshot")
@@ -1523,6 +1626,7 @@ class CPFani_GUI(ctk.CTk):
             if release.get("sha_url"):
                 sum_text = self._download_text(release["sha_url"])
                 expected_hash = self._extract_sha256_from_sum(sum_text, release["msi_name"])
+
                 if expected_hash:
                     self.log(f"[OK] Hash SHA256 oficial obtido do arquivo .sha256sum: {expected_hash}", "OK")
                 else:
@@ -1541,6 +1645,7 @@ class CPFani_GUI(ctk.CTk):
                 if self._download_with_validation(release["msi_url"], temp_msi, min_size_mb=5, max_retries=3, expected_sha256=expected_hash):
                     try:
                         self.log("Executando instalacao silenciosa do MSI corporativo...")
+
                         install_res = subprocess.run(
                             ["msiexec", "/i", temp_msi, "/qn", "/norestart"],
                             capture_output=True,
@@ -1552,10 +1657,12 @@ class CPFani_GUI(ctk.CTk):
 
                         if install_res.returncode in [0, 3010]:
                             self.log(f"[OK] Flameshot {github_tag} instalado via GitHub MSI com sucesso.", "OK")
+
                             try:
                                 os.remove(temp_msi)
                             except Exception as e:
                                 self.log(f"Falha ao remover {temp_msi}: {e}", "AVISO")
+
                             return True
                         else:
                             self.log(f"MSI retornou codigo {install_res.returncode}", "AVISO")
@@ -1649,8 +1756,9 @@ class CPFani_GUI(ctk.CTk):
             try:
                 self.log("Gerando snapshot de hardware (incluindo monitores, impressoras e adaptadores de rede)...")
 
-                raw_snapshot = self._call_snapshot_function(
+                raw_snapshot = self._call_snapshot_with_origem(
                     mod_config.run_snapshot_only,
+                    "Deploy Manual",
                     local=self.local_snapshot,
                     usuario=self.usuario_snapshot
                 )
@@ -1663,10 +1771,15 @@ class CPFani_GUI(ctk.CTk):
 
                 if snapshot_path:
                     self.log(f"[OK] Snapshot gerado: {snapshot_path}", "OK")
+
                     if upload_success:
                         self.log("[OK] Snapshot enviado/atualizado no Google Drive.", "OK")
                     else:
                         self.log(f"[AVISO] Snapshot salvo localmente sem envio ao Drive. Motivo: {upload_error}", "AVISO")
+
+                    if not self._setup_snapshot_scheduler_safe():
+                        erros.append("Task Snapshot")
+
                 else:
                     self.log("Falha ao gerar snapshot", "ERRO")
                     erros.append("Snapshot")
@@ -1681,11 +1794,13 @@ class CPFani_GUI(ctk.CTk):
 
             try:
                 self.log("Atualizando planilha de inventario GB com dados de monitores...")
+
                 if _create_inventory_spreadsheet_with_monitors():
                     self.log("[OK] Planilha atualizada com aba de monitores", "OK")
                 else:
                     self.log("Falha ao atualizar planilha (monitores)", "AVISO")
                     erros.append("Planilha Monitores")
+
             except Exception as e:
                 self.log(f"Falha ao atualizar planilha (monitores): {e}", "ERRO")
                 erros.append("Planilha Monitores")
@@ -1696,11 +1811,13 @@ class CPFani_GUI(ctk.CTk):
 
             try:
                 self.log("Atualizando planilha de inventario GB com dados de impressoras...")
+
                 if _create_inventory_spreadsheet_with_printers():
                     self.log("[OK] Planilha atualizada com aba de impressoras", "OK")
                 else:
                     self.log("Falha ao atualizar planilha (impressoras)", "AVISO")
                     erros.append("Planilha Impressoras")
+
             except Exception as e:
                 self.log(f"Falha ao atualizar planilha (impressoras): {e}", "ERRO")
                 erros.append("Planilha Impressoras")
@@ -1873,6 +1990,7 @@ class CPFani_GUI(ctk.CTk):
                     mod_config.remove_agressive_bloatware(SETTINGS.get("bloatware_remove", []))
 
                 self.log("[OK] Seguranca aplicada com sucesso", "OK")
+
             except Exception as e:
                 self.log(f"Falha ao aplicar seguranca: {e}", "ERRO")
                 erros.append("Seguranca")
@@ -1914,7 +2032,12 @@ class CPFani_GUI(ctk.CTk):
                     self.log("Agendando atualizador...")
                     mod_config.schedule_instalar_tudo()
 
+                self.log("Agendando snapshot diario...")
+                if not self._setup_snapshot_scheduler_safe():
+                    erros.append("Task Snapshot")
+
                 self.log("[OK] Agendamentos configurados", "OK")
+
             except Exception as e:
                 self.log(f"Falha ao configurar agendamentos: {e}", "ERRO")
                 erros.append("Agendamentos")
@@ -1923,6 +2046,7 @@ class CPFani_GUI(ctk.CTk):
 
             if self.task_watchdog.get():
                 self.update_status("Instalando Motor de Auto-Cura...", (completed / total_tasks) * 100, "Injetando Watchdog...")
+
                 try:
                     self.log("Configurando self-healing...")
                     mod_config.setup_self_healing()
@@ -1930,6 +2054,7 @@ class CPFani_GUI(ctk.CTk):
                 except Exception as e:
                     self.log(f"Falha ao configurar self-healing: {e}", "ERRO")
                     erros.append("Self-Healing")
+
                 completed += 1
 
             for idx, app in enumerate(selected_apps, 1):
@@ -1972,11 +2097,13 @@ class CPFani_GUI(ctk.CTk):
 
                 try:
                     self.log(f"Instalando {self.office_var.get()}...")
+
                     if not mod_instalar.install_office_suite(self.office_var.get()):
                         self.log(f"Falha ao instalar {self.office_var.get()}", "ERRO")
                         erros.append("Office")
                     else:
                         self.log("[OK] Office instalado", "OK")
+
                 except Exception as e:
                     self.log(f"Erro ao instalar Office: {e}", "ERRO")
                     erros.append("Office")
@@ -1989,18 +2116,22 @@ class CPFani_GUI(ctk.CTk):
                 try:
                     if self.driver_var.get() == "fabricante":
                         self.log("Instalando drivers do fabricante...")
+
                         if not mod_instalar.install_manufacturer_drivers(SETTINGS):
                             self.log("Falha ao instalar drivers do fabricante", "ERRO")
                             erros.append("Drivers Fabricante")
                         else:
                             self.log("[OK] Drivers do fabricante instalados", "OK")
+
                     elif self.driver_var.get() == "wu":
                         self.log("Forcando Windows Update para drivers...")
+
                         if not mod_instalar.force_windows_update_drivers():
                             self.log("Falha ao forcar Windows Update", "ERRO")
                             erros.append("Windows Update")
                         else:
                             self.log("[OK] Windows Update executado", "OK")
+
                 except Exception as e:
                     self.log(f"Erro ao instalar drivers: {e}", "ERRO")
                     erros.append("Drivers")
@@ -2012,8 +2143,9 @@ class CPFani_GUI(ctk.CTk):
             try:
                 self.log("Gerando snapshot de hardware (incluindo monitores, impressoras e adaptadores de rede)...")
 
-                raw_snapshot = self._call_snapshot_function(
+                raw_snapshot = self._call_snapshot_with_origem(
                     mod_config.generate_full_snapshot,
+                    "Deploy Manual",
                     local=self.local_snapshot,
                     usuario=self.usuario_snapshot
                 )
@@ -2026,6 +2158,7 @@ class CPFani_GUI(ctk.CTk):
 
                 if snapshot_path:
                     self.log(f"[OK] Snapshot local gerado: {snapshot_path}", "OK")
+
                     if upload_success:
                         self.log("[OK] Snapshot enviado ao Google Drive.", "OK")
                     else:
@@ -2044,11 +2177,13 @@ class CPFani_GUI(ctk.CTk):
 
             try:
                 self.log("Atualizando planilha de inventario GB com dados de monitores...")
+
                 if _create_inventory_spreadsheet_with_monitors():
                     self.log("[OK] Planilha de inventario atualizada com aba de monitores", "OK")
                 else:
                     self.log("Falha ao atualizar planilha de inventario (monitores)", "AVISO")
                     erros.append("Planilha Monitores")
+
             except Exception as e:
                 self.log(f"Falha ao atualizar planilha de inventario (monitores): {e}", "ERRO")
                 erros.append("Planilha Monitores")
@@ -2059,11 +2194,13 @@ class CPFani_GUI(ctk.CTk):
 
             try:
                 self.log("Atualizando planilha de inventario GB com dados de impressoras...")
+
                 if _create_inventory_spreadsheet_with_printers():
                     self.log("[OK] Planilha de inventario atualizada com aba de impressoras", "OK")
                 else:
                     self.log("Falha ao atualizar planilha de inventario (impressoras)", "AVISO")
                     erros.append("Planilha Impressoras")
+
             except Exception as e:
                 self.log(f"Falha ao atualizar planilha de inventario (impressoras): {e}", "ERRO")
                 erros.append("Planilha Impressoras")
