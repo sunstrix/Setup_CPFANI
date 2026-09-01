@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""gui.py - V6.1.0 (Edicao CP Fani: Snapshot agendado + Diagnostico de task + Drive robusto)"""
+"""gui.py - V6.2.0 (Edicao CP Fani: Parsing de ID_Unico de monitores + coluna extra na planilha)"""
 
 from tkinter import messagebox
 import customtkinter as ctk
@@ -531,7 +531,20 @@ def get_google_drive_service_and_snapshot_files():
 
 
 def _parse_monitors_from_hardware_snapshot(content):
-    """Extrai dados de monitores do conteudo do snapshot de hardware."""
+    """
+    Extrai dados de monitores do conteudo do snapshot de hardware.
+
+    V6.2.0: Compativel com snapshot V6.2.0 (com ID_Unico) e snapshots antigos (apenas Numero_de_Serie).
+
+    Prioridade de parsing (apos normalizacao ASCII):
+    1. Campo "ID_Unico : <valor>" (snapshot V6.2.0 - ID unico garantido)
+    2. Fallback para "Numero de Serie : <valor>" (snapshot antigo - serial bruto WMI)
+    3. Fallback para "Numero_de_Serie : <valor>" (snapshot antigo - underscores)
+
+    Isso garante que:
+    - Snapshots novos sempre exibam o ID unico real (incluindo SEM-SN-... gerados).
+    - Snapshots antigos continuem funcionando sem perda de dados.
+    """
     monitors = []
 
     try:
@@ -543,26 +556,40 @@ def _parse_monitors_from_hardware_snapshot(content):
         start_idx = normalized.find("PERIFERICOS - MONITORES")
         monitor_section = normalized[start_idx:]
 
-        monitor_pattern = re.compile(
-            r"Monitor\s+(\d+)\s*:\s*\n"
-            r"\s*Modelo\s*:\s*(.*?)\s*\n"
-            r"\s*Numero[_\s]+de[_\s]+Serie\s*:\s*(.*?)\s*"
-            r"(?=\n\s*Monitor\s+\d+\s*:|\n={10,}|$)",
+        block_pattern = re.compile(
+            r"Monitor\s+(\d+)\s*:\s*\n(.*?)(?=\n\s*Monitor\s+\d+\s*:|\n={10,}|$)",
             re.DOTALL | re.IGNORECASE
         )
 
-        matches = monitor_pattern.findall(monitor_section)
+        blocks = block_pattern.findall(monitor_section)
 
-        for match in matches:
+        for match in blocks:
             monitor_num = match[0]
-            modelo = match[1].strip()
-            serial = match[2].strip()
+            bloco = match[1]
+
+            # Modelo (igual em todas as versoes)
+            modelo_match = re.search(r"Modelo\s*:\s*(.*?)\s*(?:\n|$)", bloco, re.IGNORECASE)
+            modelo = modelo_match.group(1).strip() if modelo_match else ""
+
+            # Prioridade 1: ID_Unico (V6.2.0+)
+            id_unico_match = re.search(r"ID_Unico\s*:\s*(.*?)\s*(?:\n|$)", bloco, re.IGNORECASE)
+            if id_unico_match:
+                serial = id_unico_match.group(1).strip()
+            else:
+                # Prioridade 2/3: fallback para Numero de Serie / Numero_de_Serie (snapshots antigos)
+                serial_match = re.search(
+                    r"Numero[_\s]+de[_\s]+Serie\s*:\s*(.*?)\s*(?:\n|$)",
+                    bloco,
+                    re.IGNORECASE
+                )
+                serial = serial_match.group(1).strip() if serial_match else ""
 
             if modelo or serial:
                 monitors.append({
                     "Numero_Monitor": int(monitor_num),
                     "Modelo": modelo if modelo else "N/A",
-                    "Serial": serial if serial else "N/A"
+                    "Serial": serial if serial else "N/A",
+                    "ID_Unico": serial if serial else "N/A"
                 })
 
         if not monitors:
@@ -617,7 +644,8 @@ def _read_monitors_from_hardware_snapshots():
                     "Data_Snapshot": snapshot_date,
                     "Numero_Monitor": monitor["Numero_Monitor"],
                     "Modelo": monitor["Modelo"],
-                    "Serial": monitor["Serial"]
+                    "Serial": monitor["Serial"],
+                    "ID_Unico": monitor.get("ID_Unico", monitor["Serial"])
                 })
 
         except Exception as e:
@@ -634,7 +662,16 @@ def _read_monitors_from_hardware_snapshots():
 
 
 def _create_inventory_spreadsheet_with_monitors():
-    """Cria/atualiza a planilha de inventario GB com a aba 'Perifericos - Monitores'"""
+    """
+    Cria/atualiza a planilha de inventario GB com a aba 'Perifericos - Monitores'.
+
+    V6.2.0: Adicionada coluna "ID_Unico" na planilha local para auditoria.
+    O ID_Unico e o identificador real usado pelo Dashboard-TI para deduplicacao
+    global, e pode ser:
+    - O serial real do monitor (quando valido e unico na maquina)
+    - Um ID gerado SEM-SN-<PC_ID>-M<n> (quando o WMI nao retornou serial valido)
+    - O serial com sufixo -D2, -D3 (quando houve duplicata dentro da maquina)
+    """
     try:
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -661,7 +698,7 @@ def _create_inventory_spreadsheet_with_monitors():
 
         ws = wb.create_sheet("Perifericos - Monitores")
 
-        headers = ["Nome do PC", "Data do Snapshot", "Numero do Monitor", "Modelo", "Numero de Serie"]
+        headers = ["Nome do PC", "Data do Snapshot", "Numero do Monitor", "Modelo", "Numero de Serie", "ID_Unico"]
         ws.append(headers)
 
         header_fill = PatternFill(start_color="3a86ff", end_color="3a86ff", fill_type="solid")
@@ -678,7 +715,8 @@ def _create_inventory_spreadsheet_with_monitors():
                 item["Data_Snapshot"],
                 item["Numero_Monitor"],
                 item["Modelo"],
-                item["Serial"]
+                item["Serial"],
+                item["ID_Unico"]
             ])
 
         ws.column_dimensions["A"].width = 20
@@ -686,6 +724,7 @@ def _create_inventory_spreadsheet_with_monitors():
         ws.column_dimensions["C"].width = 18
         ws.column_dimensions["D"].width = 30
         ws.column_dimensions["E"].width = 25
+        ws.column_dimensions["F"].width = 30
 
         wb.save(spreadsheet_path)
         print(f"[OK] Planilha de inventario atualizada com {len(monitors_data)} monitores: {spreadsheet_path}", flush=True)
@@ -908,7 +947,7 @@ def _create_inventory_spreadsheet_with_printers():
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Setup Automatizado CP Fani - V6.1.0")
+        self.title("Setup Automatizado CP Fani - V6.2.0")
         self.geometry("740x860")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
@@ -968,7 +1007,7 @@ class CPFani_GUI(ctk.CTk):
                     self.log(f"Aviso: Falha ao carregar logo: {e}", "AVISO")
 
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
-        ctk.CTkLabel(header_frame, text="v6.1.0  |  Gestao de Endpoints (Snapshot Agendado)", font=("Segoe UI", 11), text_color="#666666").pack()
+        ctk.CTkLabel(header_frame, text="v6.2.0  |  Gestao de Endpoints (ID Unico por Monitor)", font=("Segoe UI", 11), text_color="#666666").pack()
 
         ui_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         ui_frame.pack(padx=20, pady=5, fill="x")
