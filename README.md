@@ -1,105 +1,557 @@
 # 🚀 Setup Automatizado de Endpoints (CP Fani / Universal)
 
-![Windows](https://img.shields.io/badge/OS-Windows_10_%7C_11-blue?style=flat&logo=windows)
+![OS](https://img.shields.io/badge/OS-Windows_10_%7C_11-blue?style=flat&logo=windows)
 ![Python](https://img.shields.io/badge/Python-3.12+-yellow?style=flat&logo=python)
 ![PowerShell](https://img.shields.io/badge/PowerShell-Automated-5391FE?style=flat&logo=powershell)
 ![Status](https://img.shields.io/badge/Status-Produção-success)
 
-Uma ferramenta de provisionamento *zero-touch* e otimização extrema projetada para transformar instalações limpas do Windows em estações de trabalho corporativas blindadas (PDVs/Balcões) ou otimizar computadores pessoais em minutos.
+Ferramenta de provisionamento zero-touch e otimização extrema para transformar instalações limpas do Windows em estações corporativas blindadas (PDVs/Balcões) ou otimizar computadores pessoais em minutos.
 
-O script automatiza a instalação de softwares essenciais, aplica políticas rígidas de segurança (LGPD), extermina *bloatwares* e implementa um motor de Auto-Cura (*Self-Healing*) para garantir que a máquina nunca perca a sua configuração padrão. Além disso, gera um **Snapshot de Hardware** com identificador único (`ProcessorId`), local e usuário, e envia automaticamente para o Google Drive (com autenticação OAuth2) para rastreamento centralizado dos endpoints.
+O projeto automatiza instalação de softwares, aplica políticas de segurança, remove bloatware, configura tarefas de resiliência e gera inventário de hardware com envio opcional ao Google Drive.
+
+A partir da versão **6.1.0**, o sistema também possui:
+
+- Snapshot de hardware **agendado diariamente às 11:00**.
+- Script independente `run_snapshot_only.py`.
+- Campo **Origem** no snapshot:
+  - `Deploy Manual`
+  - `Agendamento Automatico`
+- Coleta ampliada de impressoras:
+  - Impressoras instaladas no Windows.
+  - Dispositivos POS/térmicos brutos detectados via PnP/USB/Serial.
+- Autenticação Google Drive OAuth2 mais robusta:
+  - Token salvo por máquina.
+  - Validação de token corrompido.
+  - Timeout no login interativo.
+  - Modo não interativo para tarefa agendada.
+  - Pré-checagem opcional antes do deploy.
+  - Aviso claro quando o snapshot ficar somente local.
 
 ---
 
 ## ✨ Recursos Principais
 
-### 🛡️ Segurança e Privacidade Avançadas
-- **Conformidade LGPD:** Desativa completamente a telemetria da Microsoft, Cortana e coleta de dados em segundo plano.
-- **Blindagem de Logon:** Bloqueia o Windows Hello (Biometria/PIN) e obriga o uso de credenciais seguras, eliminando telas de *First Run* (SCOOBE).
-- **Firewall Inteligente (Whitelist):** Fecha portas vulneráveis (SMB/RPC) para o exterior, permitindo comunicação de arquivos e impressoras **apenas** na rede local segura.
-- **Tela de Bloqueio Corporativa:** Aplica a imagem de wallpaper como lockscreen via políticas GPO + PersonalizationCSP (funciona em Windows Pro, não apenas Enterprise/Education).
+### 🛡️ Segurança e Privacidade
 
-### ⚡ Otimização e Desempenho
-- **Purga de Bloatware:** Remove agressivamente aplicativos pré-instalados de fábrica (Candy Crush, Xbox, TikTok, etc.) de todos os perfis de usuário.
-- **Instalação Silenciosa de Softwares:** Utiliza o *Chocolatey* com fallback para *WinGet*, garantindo alta taxa de sucesso mesmo em ambientes com restrições de rede.
-- **Gestão de Drivers:** Integra-se com assistentes oficiais (Dell Command Update, Lenovo System Update) ou força a instalação via Microsoft Update.
-- **Limpeza Avançada (Kudu nativo):** Módulo embutido que remove arquivos temporários, caches de navegadores, entradas de registro órfãs, drivers obsoletos e otimiza serviços do Windows – tudo sem dependências externas.
+- Conformidade com LGPD:
+  - Desativa telemetria.
+  - Reduz coleta de dados em segundo plano.
+- Blindagem de logon:
+  - Bloqueia Windows Hello/Biometria quando habilitado.
+- Firewall inteligente:
+  - Restringe SMB/RPC conforme política selecionada.
+- Tela de bloqueio corporativa:
+  - Aplica wallpaper/lockscreen via GPO + PersonalizationCSP.
+- Remoção agressiva de bloatware:
+  - Remove aplicativos pré-instalados indesejados.
+
+---
+
+### ⚡ Otimização e Instalação
+
+- Instalação silenciosa via Chocolatey.
+- Fallback para WinGet quando necessário.
+- Gestão de drivers:
+  - Fabricante (Dell/HP/Lenovo).
+  - Windows Update.
+- Smart install do Flameshot:
+  - Compara versão do Chocolatey com release mais recente do GitHub.
+  - Valida hash SHA256 antes de instalar.
+
+---
 
 ### 🤖 Automação e Resiliência
-- **Motor "Self-Healing" (Cão de Guarda):** Um script invisível de fundo (Watchdog) que monitora o sistema a cada 10 segundos, garantindo que o papel de parede corporativo e softwares de suporte (AnyDesk) nunca sejam alterados ou fechados pelos utilizadores.
-- **Manutenção Automática:** Cria tarefas agendadas nativas para reiniciar o computador fora do horário comercial e atualizar softwares de forma invisível no logon.
-- **Snapshot de Hardware com ID Único:** Gera um relatório completo contendo:
-  - **ProcessorId** (identificador único da CPU, mais confiável que UUID para máquinas chinesas).
-  - Local e usuário (coletados via janela modal na GUI).
-  - Modelo, processador, RAM, versão do Windows, serial da BIOS e IDs do AnyDesk/TeamViewer.
-  - Nome do arquivo: `CPFANI_Hardware_Snapshot_{ProcessorId}.txt`.
-  - Upload automático para o Google Drive (com autenticação OAuth2), substituindo arquivos existentes.
 
-### 🔧 Correções e Melhorias Recentes
-- **Erro SSL no PIP:** Resolvido com opções `--trusted-host` durante a instalação das dependências.
-- **Tela de Bloqueio:** Agora funciona corretamente no Windows Pro via PersonalizationCSP.
-- **Fallback WinGet:** Pacotes que falham no Chocolatey são automaticamente tentados via WinGet.
-- **UUID substituído por ProcessorId:** Evita conflitos de identificação em placas‑mãe chinesas que compartilham o mesmo UUID.
-- **Autenticação OAuth2:** Upload para o Google Drive usando credenciais de aplicativo desktop (não requer conta de serviço, evitando bloqueios organizacionais).
+- Self-Healing/Watchdog:
+  - Mantém wallpaper corporativo e serviços de suporte ativos.
+- Tarefas agendadas opcionais:
+  - Manutenção de rede.
+  - Atualizador de software.
+  - Reinício diário.
+- Snapshot diário automático:
+  - Tarefa `CPFANI_SnapshotDiario`.
+  - Execução às **11:00**.
+  - Executa como `SYSTEM`.
+  - Gera snapshot independente do deploy completo.
+
+---
+
+## 📸 Snapshot de Hardware
+
+O snapshot gera um arquivo com identificador único baseado preferencialmente no MAC ativo, com fallback para `ProcessorId`.
+
+Nome do arquivo:
+
+```text
+CPFANI_Hardware_Snapshot_{ID}.txt
+```
+
+Local padrão de geração:
+
+```text
+C:\Scripts\
+```
+
+Conteúdo coletado:
+
+- Local.
+- Usuário.
+- Origem da geração.
+- Nome do computador.
+- Modelo do sistema.
+- Processador.
+- Memória RAM.
+- Versão do Windows.
+- Serial da BIOS.
+- ID único por MAC/ProcessorId.
+- AnyDesk ID.
+- TeamViewer ID.
+- Monitores.
+- Impressoras instaladas.
+- Adaptadores de rede.
+- Nova seção `IMPRESSORAS DETECTADAS`:
+  - Impressoras instaladas via `Win32_Printer`.
+  - Dispositivos POS/térmicos brutos via `Get-PnpDevice`.
+
+Exemplo de origem no snapshot:
+
+```text
+Origem  : Deploy Manual
+```
+
+ou:
+
+```text
+Origem  : Agendamento Automatico
+```
+
+---
+
+## 🗓️ Snapshot Agendado Diário
+
+A tarefa criada é:
+
+```text
+CPFANI_SnapshotDiario
+```
+
+Configuração:
+
+```text
+Horário: 11:00
+Usuário: SYSTEM
+Privilégio: highest
+Tipo: daily
+```
+
+Ela executa indiretamente:
+
+```text
+run_snapshot_only.py --scheduled
+```
+
+Comportamento importante:
+
+- Em modo agendado, o script **não abre navegador**.
+- Se o token do Google Drive estiver válido, tenta renovar/enviar silenciosamente.
+- Se o token estiver ausente/expirado/corrompido:
+  - O snapshot é salvo localmente.
+  - O upload é ignorado.
+  - A tarefa não fica travada aguardando login.
+
+Logs do snapshot agendado:
+
+```text
+C:\Scripts\Logs\cpfani_snapshot_diario.log
+```
+
+---
+
+## 🖨️ Coleta Completa de Impressoras
+
+A nova coleta foi pensada para PDVs e balcões, cobrindo impressoras comuns e impressoras térmicas/POS.
+
+### Impressoras instaladas
+
+Coleta via:
+
+```powershell
+Get-CimInstance Win32_Printer
+```
+
+Informações capturadas:
+
+- Nome.
+- Driver.
+- Porta.
+- Padrão.
+- Status.
+- Compartilhamento.
+- Tipo de conexão:
+  - `REDE`
+  - `USB`
+  - `SERIAL`
+  - `PARALELA`
+  - `LOCAL`
+
+### Dispositivos POS brutos
+
+Coleta adicional via:
+
+```powershell
+Get-PnpDevice -Class Ports
+Get-PnpDevice -Class USB
+```
+
+Filtro por palavras-chave típicas de impressoras térmicas/POS:
+
+```text
+Printer
+POS
+Thermal
+ESC
+Elgin
+Bematech
+Epson
+Zebra
+Diebold
+Sweda
+```
+
+Isso ajuda a detectar impressoras térmicas usadas diretamente pelo PDV via ESC/POS, mesmo quando não há driver Windows instalado.
+
+---
+
+## ☁️ Google Drive OAuth2 Robusto
+
+O envio do snapshot para o Google Drive usa OAuth2 com aplicativo desktop.
+
+Não depende de Google Drive Desktop.
+
+### Credenciais
+
+Arquivo de credenciais OAuth2:
+
+```text
+credentials/oauth2_credentials.json
+```
+
+Esse arquivo pode ser o mesmo para todas as máquinas.
+
+### Token por máquina
+
+O token autenticado é salvo em:
+
+```text
+C:\Scripts\credentials\token.pickle
+```
+
+Importante:
+
+- O token **não deve ser salvo dentro do repositório**.
+- O token **não deve ser commitado**.
+- Cada máquina deve ter seu próprio token.
+
+### Validações implementadas
+
+- Verificação se o `token.pickle` é uma instância válida de `Credentials`.
+- Remoção automática de token corrompido.
+- Renovação de token expirado com try/except amplo.
+- Timeout no login interativo.
+- Logs claros quando a reautenticação for necessária.
+- Modo não interativo para execução agendada como SYSTEM.
+- Aviso visual na GUI quando o snapshot não for enviado ao Drive.
+
+### Pré-checagem opcional
+
+Na GUI existe a opção:
+
+```text
+Verificar Google Drive antes de iniciar
+```
+
+Se marcada, o deploy tenta validar o Drive antes de aplicar branding, segurança, firewall, bloatware etc.
+
+Se falhar, o técnico pode:
+
+- Cancelar o deploy.
+- Continuar sem upload.
+- Gerar snapshot apenas localmente.
 
 ---
 
 ## 🏗️ Arquitetura do Projeto
 
-O ecossistema é modular e divide-se nos seguintes componentes:
-
-| Ficheiro | Descrição |
-|----------|-----------|
-| `EXECUTAR.bat` | O *Launcher* principal. Verifica privilégios de Admin, testa a internet e instala automaticamente o Python, o Chocolatey e as dependências (PIP, incluindo `google-api-python-client`) antes de chamar a interface. |
-| `gui.py` | Interface gráfica moderna desenvolvida em `customtkinter`, permitindo a seleção granular das políticas a aplicar. Inclui janela modal para capturar local e usuário antes da geração do snapshot. |
-| `mod_config.py` | O "Cérebro" de configuração. Injeta chaves de registo, gere o Firewall, limpa widgets, implementa o Watchdog, aplica redundância de wallpaper/lockscreen e gera o snapshot com ProcessorId. |
-| `mod_instalar.py` | Motor de *deploy*. Comunica com o Chocolatey, WinGet e PowerShell para baixar softwares e drivers. |
-| `mod_kudu.py` | Módulo de limpeza nativa (substitui a integração com o Kudu externo, que não possui CLI). Remove lixo do sistema, caches, registros órfãos, drivers obsoletos e otimiza serviços. |
-| `settings.json` | Ficheiro de dicionário. Define quais softwares serão instalados e a lista de bloatware a remover. |
-| `manutencao_rede.bat` | Script auxiliar injetado nas máquinas para corrigir falhas de IP dinâmico/estático (DHCP) e limpar cache DNS. |
-| `instalar_tudo.ps1` | Script *PowerShell* agendado no sistema para manter as aplicações sempre atualizadas em segundo plano. |
-| `update_checker.ps1` | Script que verifica e aplica atualizações automáticas no logon do usuário. |
-| `credentials/oauth2_credentials.json` | Arquivo de credenciais OAuth2 para upload automático ao Google Drive (deve ser criado pelo usuário conforme instruções). |
+| Arquivo | Descrição |
+|---|---|
+| `EXECUTAR.bat` | Launcher principal. Valida privilégios, prepara ambiente, instala dependências e inicia a GUI. |
+| `gui.py` | Interface gráfica em CustomTkinter. Permite selecionar políticas, executar deploy, gerar snapshot isolado e verificar a tarefa de snapshot. |
+| `mod_config.py` | Núcleo de configuração. Aplica políticas, firewall, branding, watchdog, snapshot, scheduler de snapshot e coleta ampliada de impressoras. |
+| `mod_instalar.py` | Motor de instalação. Usa Chocolatey, WinGet e PowerShell para softwares e drivers. |
+| `run_snapshot_only.py` | Script independente para gerar somente o snapshot, sem deploy. Usado manualmente ou pela tarefa diária. |
+| `settings.json` | Dicionário de aplicativos e bloatware. |
+| `manutencao_rede.bat` | Script auxiliar para correção de DHCP/IP e cache DNS. |
+| `instalar_tudo.ps1` | Script agendável para atualização de aplicativos. |
+| `update_checker.ps1` | Script opcional/legado para atualizações automáticas. |
+| `mod_kudu.py` | Módulo opcional de limpeza nativa. Manter somente se ainda for utilizado em fluxos externos. |
+| `patch_drive.py` | Script legado de patch do Drive. Nas versões atuais a autenticação é nativa em `mod_config.py`/`gui.py`. |
+| `credentials/oauth2_credentials.json` | Credenciais OAuth2 do aplicativo desktop Google. |
+| `resources/logo_cpfani.png` | Logo opcional exibida na GUI. |
+| `resources/wallpaper_cpfani.jpg` | Wallpaper corporativo usado por branding/lockscreen. |
+| `.gitignore` | Impede commit de token, logs e artefatos locais. |
 
 ---
 
 ## ⚙️ Pré-requisitos
 
-- **Sistema Operativo:** Windows 10 ou Windows 11 (versão Pro ou superior para algumas políticas).
-- **Permissões:** O utilizador **DEVE** executar o script com privilégios de Administrador.
-- **Conectividade:** Ligação à Internet ativa (necessária para baixar dependências, softwares e sincronizar o relógio via NTP.br).
-- **(Opcional) Upload Google Drive:** Para ativar o envio automático do snapshot, crie um projeto no Google Cloud, habilite a Drive API, gere um ID de cliente OAuth para aplicativo desktop e coloque o arquivo JSON em `credentials/oauth2_credentials.json`. A primeira execução pedirá autorização no navegador.
+- Windows 10 ou Windows 11.
+- Execução como Administrador.
+- Internet para:
+  - Instalar dependências.
+  - Baixar pacotes.
+  - Sincronizar NTP.
+  - Renovar token Google Drive quando necessário.
+- Para upload automático:
+  - Google Cloud projeto.
+  - Drive API habilitada.
+  - OAuth Client ID para Desktop.
+  - Arquivo `credentials/oauth2_credentials.json`.
 
-*(Nota: Não é necessário ter o Python pré-instalado. O `EXECUTAR.bat` faz o download e a configuração do ambiente automaticamente de forma portátil).*
+O `EXECUTAR.bat` tenta preparar Python e dependências automaticamente.
 
 ---
 
 ## 🚀 Como Usar
 
-1. Faça o download ou clone este repositório para o disco local (Ex: `C:\Scripts\Setup_CPFANI`).
-2. (Opcional) Adicione a sua logo (`logo_cpfani.png`) e papel de parede (`wallpaper_cpfani.jpg`) dentro da pasta `resources\`.
-3. Clique com o botão direito no ficheiro **`EXECUTAR.bat`** e selecione **"Executar como Administrador"**.
-4. Uma janela de consola (CMD) será aberta para preparar o ambiente. Aguarde.
-5. A Interface Gráfica (GUI) será iniciada.
-6. Selecione as opções de Branding, Segurança, Softwares e Limpeza que deseja aplicar.
-7. Ao clicar em **"EXECUTAR DEPLOY"**, será exibida uma janela modal para selecionar o **Local** e digitar o **nome do Usuário** – esses dados serão incluídos no snapshot.
-8. Aguarde a finalização da barra de progresso.
-9. No final, será gerado um relatório de *Hardware Snapshot* na pasta `C:\Scripts\` com o nome `CPFANI_Hardware_Snapshot_{ProcessorId}.txt` e enviado para o Google Drive (se configurado).
+### 1. Deploy completo
+
+1. Coloque o projeto em disco local, por exemplo:
+
+```text
+C:\Scripts\Setup_CPFANI
+```
+
+2. Clique com o botão direito em:
+
+```text
+EXECUTAR.bat
+```
+
+3. Selecione **Executar como Administrador**.
+
+4. Aguarde a preparação do ambiente.
+
+5. Na GUI, selecione as opções desejadas:
+   - Interface/branding.
+   - Segurança/LGPD.
+   - Firewall.
+   - Bloatware.
+   - Softwares.
+   - Office.
+   - Drivers.
+   - Tarefas agendadas.
+   - Self-Healing.
+   - Pré-checagem do Google Drive.
+
+6. Clique em:
+
+```text
+EXECUTAR DEPLOY
+```
+
+7. Informe Local e Usuário na janela modal.
+
+8. Aguarde a conclusão.
 
 ---
 
-## 🌍 Versão Corporativa vs. Universal
+### 2. Gerar apenas snapshot pela GUI
 
-Este projeto foi desenhado para escalabilidade:
-- **Modo Corporativo:** Ativa o Firewall restrito, o Branding (Logos) e o Cão de Guarda (Self-Healing). Ideal para Ponto de Venda (PDV) e máquinas de loja.
-- **Modo Universal (Vanilla):** Através da interface, desmarque a caixa "Ativar Self-Healing" e mantenha a opção de Firewall desmarcada para usar este motor como um poderoso otimizador para computadores pessoais e clientes externos, sem prender a máquina a regras de rede específicas.
+Na GUI, clique em:
+
+```text
+GERAR APENAS SNAPSHOT
+```
+
+Esse fluxo:
+
+- Coleta Local e Usuário.
+- Gera o snapshot.
+- Tenta enviar ao Drive se configurado.
+- Cria/atualiza a tarefa `CPFANI_SnapshotDiario`.
+- Atualiza planilhas de inventário quando houver snapshots no Drive.
+
+---
+
+### 3. Gerar snapshot manualmente via script
+
+Executar no diretório do projeto:
+
+```powershell
+python run_snapshot_only.py
+```
+
+Com local e usuário:
+
+```powershell
+python run_snapshot_only.py --local "14120 - ARPEL SBC" --usuario "Alex"
+```
+
+Simular modo agendado, sem navegador:
+
+```powershell
+python run_snapshot_only.py --scheduled
+```
+
+Não criar/atualizar a tarefa:
+
+```powershell
+python run_snapshot_only.py --no-scheduler
+```
+
+Permitir login interativo do Drive em execução manual:
+
+```powershell
+python run_snapshot_only.py --interactive
+```
+
+Variáveis de ambiente opcionais:
+
+```powershell
+$env:CPFANI_SNAPSHOT_LOCAL = "14120 - ARPEL SBC"
+$env:CPFANI_SNAPSHOT_USUARIO = "Alex"
+python run_snapshot_only.py
+```
+
+---
+
+### 4. Verificar tarefa de snapshot
+
+Na GUI, clique em:
+
+```text
+VERIFICAR TASK AGENDADA DE SNAPSHOT
+```
+
+Ou manualmente:
+
+```powershell
+schtasks /query /tn "CPFANI_SnapshotDiario" /fo LIST /v
+```
+
+---
+
+## 📅 Tarefas Agendadas
+
+| Tarefa | Horário/Gatilho | Criada quando |
+|---|---:|---|
+| `CPFANI_Watchdog` | Logon | Deploy com Self-Healing habilitado. |
+| `CPFANI_ReinicioDiario` | Diário 21:00 | Deploy com opção de reinício habilitada. |
+| `CPFANI_ManutencaoRede` | Diário 08:00 | Deploy com manutenção de rede habilitada. |
+| `CPFANI_InstalarTudo` | Logon | Deploy com atualizador habilitado. |
+| `CPFANI_SnapshotDiario` | Diário 11:00 | Deploy completo, snapshot manual ou execução manual do `run_snapshot_only.py`. |
+
+---
+
+## 🔎 Diagnóstico e Logs
+
+### Logs principais
+
+```text
+C:\Scripts\Logs\
+```
+
+Arquivos relevantes:
+
+```text
+cpfani_snapshot_diario.log
+cleanup_nativo.log
+```
+
+### Snapshot local
+
+```text
+C:\Scripts\CPFANI_Hardware_Snapshot_*.txt
+```
+
+### Token Drive
+
+```text
+C:\Scripts\credentials\token.pickle
+```
+
+### Se o snapshot não for enviado ao Drive
+
+A GUI exibirá aviso claro:
+
+```text
+Snapshot gerado localmente mas NÃO enviado ao Drive.
+Motivo: [erro].
+Arquivo salvo em: [caminho].
+```
+
+Causas comuns:
+
+- `oauth2_credentials.json` ausente.
+- Token expirado e execução sem sessão interativa.
+- Token corrompido.
+- Conta Google sem permissão na pasta do Drive.
+- Bibliotecas Google ausentes.
+- Firewall/proxy bloqueando Google APIs.
 
 ---
 
 ## 📦 Dependências
 
-O instalador gerencia automaticamente todas as dependências, mas, caso queira instalá-las manualmente:
+O instalador gerencia automaticamente, mas manualmente:
 
-```bash
-pip install customtkinter psutil pillow
-pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+```powershell
+python -m pip install customtkinter psutil pillow
+python -m pip install google-api-python-client google-auth-oauthlib google-auth-httplib2 openpyxl
+```
+
+---
+
+## 🌍 Modo Corporativo vs. Universal
+
+### Corporativo
+
+Indicado para PDV/loja:
+
+- Firewall restrito.
+- Branding.
+- Self-Healing.
+- Snapshot diário.
+- Upload centralizado ao Drive.
+
+### Universal
+
+Indicado para máquinas pessoais/clientes externos:
+
+- Desmarcar Self-Healing.
+- Desmarcar firewall restrito.
+- Manter otimização e instalação de softwares.
+- Snapshot pode ser usado opcionalmente.
+
+---
+
+## 🔐 Boas Práticas de Repositório
+
+Não commitar:
+
+```text
+credentials/token.pickle
+*.log
+__pycache__/
+*.bak_drive
+C:\Scripts\*
+```
+
+O arquivo `credentials/oauth2_credentials.json` pode ser distribuído conforme política interna, mas o token autenticado deve permanecer apenas na máquina.
+
+Se um `token.pickle` já foi commitado anteriormente:
+
+1. Remover do repositório.
+2. Revisar histórico se o repositório for público.
+3. Considerar revogar/renovar o OAuth Client.
+4. Garantir que `.gitignore` ignore `credentials/token.pickle`.
