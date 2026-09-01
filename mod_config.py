@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""mod_config.py - V6.1.0 (Edicao CP Fani: Snapshot agendado + Impressoras completas + Drive robusto)"""
+"""mod_config.py - V6.2.0 (Edicao CP Fani: ID Unico por monitor + Compatibilidade Dashboard)"""
 
 import winreg
 import subprocess
@@ -31,6 +31,20 @@ CREATION_FLAGS_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 _LAST_DRIVE_UPLOAD_SUCCESS = True
 _LAST_DRIVE_UPLOAD_ERROR = None
+
+# ============================================================================
+# CONSTANTES DE VALIDACAO DE SERIAIS DE MONITORES
+# ============================================================================
+# Seriais considerados invalidos para identificacao unica.
+# Monitores com serial nesta lista recebem ID gerado (SEM-SN-<PC_ID>-M<n>).
+# Case-insensitive: a comparacao sempre usa .lower().
+SERIAIS_INVALIDOS_MONITOR = {
+    "", "0", "n/a", "na", "-", "--", "null", "none",
+    "sem série", "sem serie", "sem sn", "s/n", "sn",
+    "desconhecido", "unknown", "to be filled by o.e.m.",
+    "to be filled", "default string", "not available",
+    "00000000", "0000000000"
+}
 
 
 def _log(msg, level="INFO"):
@@ -1760,19 +1774,37 @@ def _get_bios_serial():
 def _get_monitor_info():
     """
     Obtem informacoes de todos os monitores conectados via WMI (WmiMonitorID).
-    Retorna uma lista de dicionarios com 'Modelo' e 'Numero_de_Serie' de cada monitor.
+    Retorna uma lista de dicionarios com 'Modelo', 'Numero_de_Serie' e 'InstanceName'.
     Suporta multiplos monitores por PC.
+
+    V6.2.0: Adicionado InstanceName para rastreabilidade. O campo ID_Unico
+    e gerado posteriormente por _gerar_ids_unicos_monitores() dentro de
+    generate_full_snapshot(), onde o unique_id do PC esta disponivel.
     """
     monitors = []
 
     try:
         ps_script = r'''
-Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID | ForEach-Object {
-    [PSCustomObject]@{
-        Modelo = [System.Text.Encoding]::ASCII.GetString([byte[]]($_.UserFriendlyName | Where-Object { $_ -ne 0 }))
-        Numero_de_Serie = [System.Text.Encoding]::ASCII.GetString([byte[]]($_.SerialNumberID | Where-Object { $_ -ne 0 }))
+try {
+    $monitors = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction Stop
+    $results = @()
+    foreach ($mon in $monitors) {
+        $model = ''
+        $serial = ''
+        $instance = ''
+        try { $model = [System.Text.Encoding]::ASCII.GetString([byte[]]($mon.UserFriendlyName | Where-Object { $_ -ne 0 })) } catch {}
+        try { $serial = [System.Text.Encoding]::ASCII.GetString([byte[]]($mon.SerialNumberID | Where-Object { $_ -ne 0 })) } catch {}
+        try { $instance = $mon.InstanceName } catch {}
+        $results += [PSCustomObject]@{
+            Modelo = $model
+            Numero_de_Serie = $serial
+            InstanceName = $instance
+        }
     }
-} | ConvertTo-Json
+    $results | ConvertTo-Json
+} catch {
+    Write-Output "[]"
+}
 '''
 
         result = _safe_subprocess_run(
@@ -1781,7 +1813,12 @@ Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID | ForEach-Object {
         )
 
         if result and result.stdout and result.stdout.strip():
-            data = json.loads(result.stdout)
+            raw = result.stdout.strip()
+
+            if raw == "[]" or not raw:
+                return monitors
+
+            data = json.loads(raw)
 
             if data is None:
                 data = []
@@ -1792,20 +1829,66 @@ Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID | ForEach-Object {
             for item in data:
                 modelo = str(item.get('Modelo', '')).strip()
                 serial = str(item.get('Numero_de_Serie', '')).strip()
+                instance = str(item.get('InstanceName', '')).strip()
 
-                if modelo or serial:
-                    monitors.append({
-                        'Modelo': modelo if modelo else 'Desconhecido',
-                        'Numero_de_Serie': serial if serial else 'N/A'
-                    })
+                monitors.append({
+                    'Modelo': modelo if modelo else 'Desconhecido',
+                    'Numero_de_Serie': serial if serial else '',
+                    'InstanceName': instance if instance else ''
+                })
 
     except Exception as e:
         _log(f"Erro ao obter informacoes dos monitores: {e}", "AVISO")
 
     if not monitors:
         _log("Nenhum monitor detectado ou erro na consulta WMI.", "AVISO")
+    else:
+        _log(f"[OK] {len(monitors)} monitor(es) detectado(s) via WMI.", "OK")
 
     return monitors
+
+
+def _gerar_ids_unicos_monitores(monitores, pc_unique_id):
+    """
+    Gera ID_Unico para cada monitor com base no serial real ou ID gerado.
+
+    Regras:
+    - Serial valido e unico dentro da maquina → usa o serial real.
+    - Serial invalido/vazio (esta em SERIAIS_INVALIDOS_MONITOR) → gera SEM-SN-<PC_ID>-M<n>.
+    - Serial duplicado dentro da mesma maquina → sufixo -D2, -D3 para os repetidos.
+
+    O ID_Unico e escrito no campo 'Nº de Série' do snapshot, que e o campo
+    lido pelo parser.py do Dashboard-TI para deduplicacao global.
+
+    Parametros:
+        monitores (list): lista de dicts retornada por _get_monitor_info()
+        pc_unique_id (str): identificador unico do PC (MAC ou ProcessorId)
+
+    Retorna:
+        A mesma lista com campo 'ID_Unico' adicionado a cada monitor.
+    """
+    seriais_vistos = {}
+
+    for idx, monitor in enumerate(monitores, 1):
+        serial_raw = str(monitor.get('Numero_de_Serie', '')).strip()
+        serial_lower = serial_raw.lower()
+
+        if serial_lower in SERIAIS_INVALIDOS_MONITOR:
+            # Serial invalido: gerar ID baseado no PC + posicao do monitor
+            monitor['ID_Unico'] = f"SEM-SN-{pc_unique_id}-M{idx}"
+            _log(f"Monitor {idx}: serial invalido ('{serial_raw}'). ID gerado: {monitor['ID_Unico']}", "INFO")
+        else:
+            # Serial valido: verificar duplicata dentro da mesma maquina
+            if serial_raw in seriais_vistos:
+                seriais_vistos[serial_raw] += 1
+                monitor['ID_Unico'] = f"{serial_raw}-D{seriais_vistos[serial_raw]}"
+                _log(f"Monitor {idx}: serial duplicado na maquina ('{serial_raw}'). ID: {monitor['ID_Unico']}", "AVISO")
+            else:
+                seriais_vistos[serial_raw] = 1
+                monitor['ID_Unico'] = serial_raw
+                _log(f"Monitor {idx}: serial valido. ID: {monitor['ID_Unico']}", "OK")
+
+    return monitores
 
 
 def _get_printer_info():
@@ -2374,6 +2457,9 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
     """
     Gera snapshot completo de hardware com ID unico baseado no MAC Address (com fallback para ProcessorId).
 
+    V6.2.0: Monitores agora incluem rotulo duplo (Numero_de_Serie + Nº de Série)
+    e campo ID_Unico para compatibilidade com o Dashboard-TI e deduplicacao correta.
+
     Parametros:
     local (str): codigo e nome do local (ex: "14120 - ARPEL SBC")
     usuario (str): nome do usuario
@@ -2402,28 +2488,44 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
     impressoras = _get_printer_info()
     adaptadores = _get_network_adapters()
 
+    # V6.2.0: Gerar IDs unicos para monitores usando o ID do PC
+    monitores = _gerar_ids_unicos_monitores(monitores, unique_id)
+
     local_str = local if local else "Nao informado"
     usuario_str = usuario if usuario else "Nao informado"
     origem_str = origem if origem else "Deploy Manual"
 
     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
+    # ================================================================
+    # SECAO DE MONITORES - ROTULO DUPLO PARA COMPATIBILIDADE
+    # ================================================================
+    # Numero_de_Serie : serial bruto do WMI (compatibilidade com GUI/xlsx legado)
+    # Nº de Série     : ID_Unico (lido pelo parser.py do Dashboard-TI)
+    # ID_Unico        : campo explicito de auditoria
+    # ================================================================
+
     monitores_section = ""
     if monitores:
-        monitores_section = "\n============================================================\n PERIFERICOS - MONITORES\n============================================================\n"
+        monitores_section = "\n============================================================\n PERIFÉRICOS — MONITORES\n============================================================\n"
 
         for idx, monitor in enumerate(monitores, 1):
+            serial_raw = monitor.get('Numero_de_Serie', '')
+            id_unico = monitor.get('ID_Unico', serial_raw if serial_raw else 'N/A')
+
             monitores_section += f" Monitor {idx}:\n"
             monitores_section += f"   Modelo          : {monitor['Modelo']}\n"
-            monitores_section += f"   Numero_de_Serie : {monitor['Numero_de_Serie']}\n\n"
+            monitores_section += f"   Numero_de_Serie : {serial_raw if serial_raw else 'N/A'}\n"
+            monitores_section += f"   Nº de Série     : {id_unico}\n"
+            monitores_section += f"   ID_Unico        : {id_unico}\n\n"
 
         monitores_section += "============================================================\n"
     else:
-        monitores_section = "\n============================================================\n PERIFERICOS - MONITORES\n============================================================\n Nenhum monitor detectado.\n============================================================\n"
+        monitores_section = "\n============================================================\n PERIFÉRICOS — MONITORES\n============================================================\n Nenhum monitor detectado.\n============================================================\n"
 
     impressoras_section = ""
     if impressoras:
-        impressoras_section = "\n============================================================\n PERIFERICOS - IMPRESSORAS\n============================================================\n"
+        impressoras_section = "\n============================================================\n PERIFÉRICOS — IMPRESSORAS\n============================================================\n"
 
         for idx, printer in enumerate(impressoras, 1):
             impressoras_section += f" Impressora {idx}:\n"
@@ -2446,7 +2548,7 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
 
         impressoras_section += "============================================================\n"
     else:
-        impressoras_section = "\n============================================================\n PERIFERICOS - IMPRESSORAS\n============================================================\n Nenhuma impressora detectada.\n============================================================\n"
+        impressoras_section = "\n============================================================\n PERIFÉRICOS — IMPRESSORAS\n============================================================\n Nenhuma impressora detectada.\n============================================================\n"
 
     adaptadores_section = ""
     if adaptadores:
@@ -2472,29 +2574,28 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
     impressoras_detectadas_section += raw_printer_ports_text
     impressoras_detectadas_section += "\n============================================================\n"
 
-    content = f"""
+    content = f"""============================================================
+   SNAPSHOT CP FANI V6.2.0 (Edicao Infiltrado + Self-Healing)
+   Gerado em: {now}
 ============================================================
-SNAPSHOT CP FANI V5.9.3 (Edicao Infiltrado + Self-Healing)
-Gerado em: {now}
 
 [ID]
-Local  : {local_str}
-Usuario : {usuario_str}
-Origem  : {origem_str}
+  Local   : {local_str}
+  Usuario : {usuario_str}
+  Origem  : {origem_str}
 
 [HARDWARE]
-Nome_Computador     : {pc_name}
-Modelo_Sistema      : {modelo}
-Processador         : {processador}
-Memoria_RAM         : {memoria}
-Windows             : {windows}
-BIOS_Serial         : {bios_serial}
-ID (MAC/Proc)       : {unique_id}
+  Nome_Computador     : {pc_name}
+  Modelo_Sistema      : {modelo}
+  Processador         : {processador}
+  Memoria_RAM         : {memoria}
+  Windows             : {windows}
+  BIOS_Serial         : {bios_serial}
+  ID (MAC/Proc)       : {unique_id}
 
 [SUPORTE]
-AnyDesk    : {anydesk_id}
-TeamViewer : {teamviewer_id}
-
+  AnyDesk    : {anydesk_id}
+  TeamViewer : {teamviewer_id}
 {monitores_section}{impressoras_section}{adaptadores_section}{impressoras_detectadas_section}
 """
 
