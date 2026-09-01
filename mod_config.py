@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""mod_config.py - V6.2.0 (Edicao CP Fani: ID Unico por monitor + Compatibilidade Dashboard)"""
-
+"""mod_config.py - V6.3.0 (Edicao CP Fani: RustDesk no snapshot + seriais placeholder de monitor + TeamViewer sem Win32_Product)"""
 import winreg
 import subprocess
 import os
@@ -38,12 +37,23 @@ _LAST_DRIVE_UPLOAD_ERROR = None
 # Seriais considerados invalidos para identificacao unica.
 # Monitores com serial nesta lista recebem ID gerado (SEM-SN-<PC_ID>-M<n>).
 # Case-insensitive: a comparacao sempre usa .lower().
+# V6.3.0: adicionados placeholders conhecidos de EDID/fabricante
+# (16843009 = 0x01010101, 01010101, ffffffff, 123456789, etc.) para evitar
+# que o Dashboard-TI colapse monitores genericos de PCs diferentes em 1 so.
 SERIAIS_INVALIDOS_MONITOR = {
     "", "0", "n/a", "na", "-", "--", "null", "none",
     "sem série", "sem serie", "sem sn", "s/n", "sn",
     "desconhecido", "unknown", "to be filled by o.e.m.",
     "to be filled", "default string", "not available",
-    "00000000", "0000000000"
+    "00000000", "0000000000",
+    # V6.3.0 - placeholders de EDID / seriais clonados:
+    "16843009", "01010101", "10101010", "ffffffff", "ffff",
+    "123456789", "1234567890", "0123456789", "987654321", "123456",
+    "11111111", "99999999", "000000000000",
+    "serial", "serialnumber", "serial number",
+    "system serial number", "chassis serial number",
+    "not specified", "no serial", "invalid", "empty", "placeholder",
+    "oem", "test"
 }
 
 
@@ -2313,7 +2323,13 @@ return $null
 
 
 def _get_teamviewer_id():
-    """Obtem o ID do TeamViewer do registro (suporte a multiplas versoes)"""
+    """
+    Obtem o ID do TeamViewer do registro / arquivos .ini (suporte a multiplas versoes).
+
+    V6.3.0: Removido o fallback via Get-CimInstance Win32_Product, que varre o
+    inventario MSI inteiro e causava timeout de 10s em todo snapshot.
+    Registry + TeamViewer.ini cobrem os cenarios reais de instalacao.
+    """
     versions = ["15", "14", "13", "12", "11", "10"]
 
     registry_paths = [
@@ -2396,16 +2412,6 @@ if (-not $id) {
     }
 }
 
-if (-not $id) {
-    try {
-        $id = (Get-CimInstance -Class Win32_Product | Where-Object { $_.Name -match 'TeamViewer' }).IdentifyingNumber
-
-        if ($id) {
-            $id = $id -replace '.*(\d+)$', '$1'
-        }
-    } catch {}
-}
-
 if ($id) {
     return $id
 } else {
@@ -2423,6 +2429,72 @@ if ($id) {
 
     except Exception:
         pass
+
+    return "N/A"
+
+
+def _get_rustdesk_id():
+    """
+    Obtem o ID do RustDesk.
+
+    Estrategia 1 (V6.3.0): CLI 'rustdesk.exe --get-id' nos caminhos de instalacao comuns.
+    Estrategia 2 (fallback): parsing do arquivo RustDesk.toml (id em texto plano)
+    nos perfis: usuario corrente, ProgramData e perfil do servico (LocalService).
+
+    Retorna o ID numerico como string ou "N/A" se nao encontrado.
+    """
+    # --------------------------------------------------------------
+    # Estrategia 1: CLI --get-id
+    # --------------------------------------------------------------
+    rustdesk_paths = [
+        r"C:\Program Files\RustDesk\rustdesk.exe",
+        r"C:\Program Files (x86)\RustDesk\rustdesk.exe",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "RustDesk", "rustdesk.exe"),
+    ]
+
+    for exe in rustdesk_paths:
+        try:
+            if exe and os.path.exists(exe):
+                result = _safe_subprocess_run([exe, "--get-id"], timeout=5)
+
+                if result and result.returncode == 0 and result.stdout:
+                    candidate = result.stdout.strip()
+
+                    if candidate.isdigit() and len(candidate) >= 3:
+                        _log(f"[OK] RustDesk ID obtido via CLI: {candidate}", "OK")
+                        return candidate
+        except Exception:
+            continue
+
+    # --------------------------------------------------------------
+    # Estrategia 2: parsing do RustDesk.toml (multi-perfil)
+    # --------------------------------------------------------------
+    config_candidates = []
+
+    appdata = os.environ.get("APPDATA", "")
+    programdata = os.environ.get("PROGRAMDATA", "")
+
+    if appdata:
+        config_candidates.append(os.path.join(appdata, "RustDesk", "config", "RustDesk.toml"))
+
+    if programdata:
+        config_candidates.append(os.path.join(programdata, "RustDesk", "config", "RustDesk.toml"))
+
+    config_candidates.append(r"C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml")
+
+    for cfg in config_candidates:
+        try:
+            if cfg and os.path.exists(cfg):
+                with open(cfg, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+
+                m = re.search(r"(?im)^\s*id\s*=\s*['\"]?(\d{3,12})['\"]?\s*$", content)
+
+                if m:
+                    _log(f"[OK] RustDesk ID obtido via config: {cfg}", "OK")
+                    return m.group(1)
+        except Exception:
+            continue
 
     return "N/A"
 
@@ -2457,8 +2529,9 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
     """
     Gera snapshot completo de hardware com ID unico baseado no MAC Address (com fallback para ProcessorId).
 
-    V6.2.0: Monitores agora incluem rotulo duplo (Numero_de_Serie + Nº de Série)
+    V6.2.0: Monitores incluem rotulo duplo (Numero_de_Serie + Nº de Série)
     e campo ID_Unico para compatibilidade com o Dashboard-TI e deduplicacao correta.
+    V6.3.0: ID do RustDesk capturado na secao [SUPORTE].
 
     Parametros:
     local (str): codigo e nome do local (ex: "14120 - ARPEL SBC")
@@ -2483,6 +2556,7 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
     bios_serial = _get_bios_serial()
     anydesk_id = _get_anydesk_id()
     teamviewer_id = _get_teamviewer_id()
+    rustdesk_id = _get_rustdesk_id()
 
     monitores = _get_monitor_info()
     impressoras = _get_printer_info()
@@ -2575,27 +2649,27 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
     impressoras_detectadas_section += "\n============================================================\n"
 
     content = f"""============================================================
-   SNAPSHOT CP FANI V6.2.0 (Edicao Infiltrado + Self-Healing)
-   Gerado em: {now}
-============================================================
+SNAPSHOT CP FANI V6.3.0 (Edicao Infiltrado + Self-Healing)
+Gerado em: {now}
 
 [ID]
-  Local   : {local_str}
-  Usuario : {usuario_str}
-  Origem  : {origem_str}
+Local   : {local_str}
+Usuario : {usuario_str}
+Origem  : {origem_str}
 
 [HARDWARE]
-  Nome_Computador     : {pc_name}
-  Modelo_Sistema      : {modelo}
-  Processador         : {processador}
-  Memoria_RAM         : {memoria}
-  Windows             : {windows}
-  BIOS_Serial         : {bios_serial}
-  ID (MAC/Proc)       : {unique_id}
+Nome_Computador     : {pc_name}
+Modelo_Sistema      : {modelo}
+Processador         : {processador}
+Memoria_RAM         : {memoria}
+Windows             : {windows}
+BIOS_Serial         : {bios_serial}
+ID (MAC/Proc)       : {unique_id}
 
 [SUPORTE]
-  AnyDesk    : {anydesk_id}
-  TeamViewer : {teamviewer_id}
+AnyDesk    : {anydesk_id}
+TeamViewer : {teamviewer_id}
+RustDesk   : {rustdesk_id}
 {monitores_section}{impressoras_section}{adaptadores_section}{impressoras_detectadas_section}
 """
 
