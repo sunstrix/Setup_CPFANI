@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""gui.py - V6.2.0 (Edicao CP Fani: Parsing de ID_Unico de monitores + coluna extra na planilha)"""
+"""gui.py - V6.3.0 (Edicao CP Fani: RustDesk no snapshot + openpyxl opcional como AVISO)"""
 
 from tkinter import messagebox
 import customtkinter as ctk
@@ -534,16 +534,13 @@ def _parse_monitors_from_hardware_snapshot(content):
     """
     Extrai dados de monitores do conteudo do snapshot de hardware.
 
-    V6.2.0: Compativel com snapshot V6.2.0 (com ID_Unico) e snapshots antigos (apenas Numero_de_Serie).
+    V6.2.0+: Compativel com snapshot V6.2.0/V6.3.0 (com ID_Unico) e snapshots
+    antigos (apenas Numero_de_Serie).
 
     Prioridade de parsing (apos normalizacao ASCII):
-    1. Campo "ID_Unico : <valor>" (snapshot V6.2.0 - ID unico garantido)
+    1. Campo "ID_Unico : <valor>" (snapshot V6.2.0/V6.3.0 - ID unico garantido)
     2. Fallback para "Numero de Serie : <valor>" (snapshot antigo - serial bruto WMI)
     3. Fallback para "Numero_de_Serie : <valor>" (snapshot antigo - underscores)
-
-    Isso garante que:
-    - Snapshots novos sempre exibam o ID unico real (incluindo SEM-SN-... gerados).
-    - Snapshots antigos continuem funcionando sem perda de dados.
     """
     monitors = []
 
@@ -567,16 +564,13 @@ def _parse_monitors_from_hardware_snapshot(content):
             monitor_num = match[0]
             bloco = match[1]
 
-            # Modelo (igual em todas as versoes)
             modelo_match = re.search(r"Modelo\s*:\s*(.*?)\s*(?:\n|$)", bloco, re.IGNORECASE)
             modelo = modelo_match.group(1).strip() if modelo_match else ""
 
-            # Prioridade 1: ID_Unico (V6.2.0+)
             id_unico_match = re.search(r"ID_Unico\s*:\s*(.*?)\s*(?:\n|$)", bloco, re.IGNORECASE)
             if id_unico_match:
                 serial = id_unico_match.group(1).strip()
             else:
-                # Prioridade 2/3: fallback para Numero de Serie / Numero_de_Serie (snapshots antigos)
                 serial_match = re.search(
                     r"Numero[_\s]+de[_\s]+Serie\s*:\s*(.*?)\s*(?:\n|$)",
                     bloco,
@@ -665,12 +659,8 @@ def _create_inventory_spreadsheet_with_monitors():
     """
     Cria/atualiza a planilha de inventario GB com a aba 'Perifericos - Monitores'.
 
-    V6.2.0: Adicionada coluna "ID_Unico" na planilha local para auditoria.
-    O ID_Unico e o identificador real usado pelo Dashboard-TI para deduplicacao
-    global, e pode ser:
-    - O serial real do monitor (quando valido e unico na maquina)
-    - Um ID gerado SEM-SN-<PC_ID>-M<n> (quando o WMI nao retornou serial valido)
-    - O serial com sufixo -D2, -D3 (quando houve duplicata dentro da maquina)
+    V6.3.0: Se openpyxl nao estiver instalado, esta funcao agora trata como AVISO
+    (nao ERRO) e retorna True, pois a planilha e opcional para o deploy funcionar.
     """
     try:
         import openpyxl
@@ -731,10 +721,11 @@ def _create_inventory_spreadsheet_with_monitors():
         return True
 
     except ImportError:
-        print("[ERRO] openpyxl nao instalado. Instale com: pip install openpyxl", flush=True)
-        return False
+        # V6.3.0: AVISO (planilha opcional, nao erro) - nao conta como falha no deploy
+        print("[AVISO] openpyxl nao instalado. Planilha de monitores nao sera gerada (snapshot .txt continua normal).", flush=True)
+        return True
     except Exception as e:
-        print(f"[ERRO] Falha ao criar planilha de inventario: {e}", flush=True)
+        print(f"[ERRO] Falha ao criar planilha de inventario (monitores): {e}", flush=True)
         return False
 
 
@@ -861,7 +852,12 @@ def _read_printers_from_hardware_snapshots():
 
 
 def _create_inventory_spreadsheet_with_printers():
-    """Cria/atualiza a planilha de inventario GB com a aba 'Perifericos - Impressoras'"""
+    """
+    Cria/atualiza a planilha de inventario GB com a aba 'Perifericos - Impressoras'.
+
+    V6.3.0: Se openpyxl nao estiver instalado, esta funcao agora trata como AVISO
+    (nao ERRO) e retorna True, pois a planilha e opcional para o deploy funcionar.
+    """
     try:
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -937,17 +933,18 @@ def _create_inventory_spreadsheet_with_printers():
         return True
 
     except ImportError:
-        print("[ERRO] openpyxl nao instalado. Instale com: pip install openpyxl", flush=True)
-        return False
+        # V6.3.0: AVISO (planilha opcional, nao erro) - nao conta como falha no deploy
+        print("[AVISO] openpyxl nao instalado. Planilha de impressoras nao sera gerada (snapshot .txt continua normal).", flush=True)
+        return True
     except Exception as e:
-        print(f"[ERRO] Falha ao criar planilha de inventario: {e}", flush=True)
+        print(f"[ERRO] Falha ao criar planilha de inventario (impressoras): {e}", flush=True)
         return False
 
 
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Setup Automatizado CP Fani - V6.2.0")
+        self.title("Setup Automatizado CP Fani - V6.3.0")
         self.geometry("740x860")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
@@ -1007,7 +1004,7 @@ class CPFani_GUI(ctk.CTk):
                     self.log(f"Aviso: Falha ao carregar logo: {e}", "AVISO")
 
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
-        ctk.CTkLabel(header_frame, text="v6.2.0  |  Gestao de Endpoints (ID Unico por Monitor)", font=("Segoe UI", 11), text_color="#666666").pack()
+        ctk.CTkLabel(header_frame, text="v6.3.0  |  Gestao de Endpoints (RustDesk + ID Unico por Monitor)", font=("Segoe UI", 11), text_color="#666666").pack()
 
         ui_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         ui_frame.pack(padx=20, pady=5, fill="x")
@@ -1071,7 +1068,6 @@ class CPFani_GUI(ctk.CTk):
 
         self.apps_to_install = SETTINGS.get("apps", {}).get("choco", [])
         self.app_vars = {}
-
         for i, app in enumerate(self.apps_to_install):
             v = ctk.BooleanVar(value=True)
             self.app_vars[app] = v
@@ -1188,17 +1184,13 @@ class CPFani_GUI(ctk.CTk):
         """Atualiza status, progresso e aplicativo atual na interface"""
         try:
             self.status_label.configure(text=text)
-
             if progress_value is not None:
                 progress_normalized = max(0, min(100, progress_value)) / 100
                 self.progress.set(progress_normalized)
                 self.progress_text.configure(text=f"{int(progress_value)}%")
-
             if current_app_text is not None:
                 self.current_app_label.configure(text=current_app_text)
-
             self.update_idletasks()
-
         except Exception as e:
             self.log(f"Erro ao atualizar status: {e}", "ERRO")
 
