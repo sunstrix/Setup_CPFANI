@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 chcp 1252 >nul
-title SETUP CPFANI V6.3.0
+title SETUP CPFANI V5.9.3
 
 if not defined SCRIPT_DIR set "SCRIPT_DIR=C:\Scripts"
 set "LOG_DIR=%SCRIPT_DIR%\Logs"
@@ -27,6 +27,7 @@ if not exist "%LOG_DIR%" (
 
 set "LOG_FILE=%LOG_DIR%\DEPLOY_%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log"
 set "LOG_FILE=!LOG_FILE: =0!"
+
 type nul > "!LOG_FILE!" 2>nul
 if not exist "!LOG_FILE!" (
     echo [ERROR] Nao foi possivel criar o arquivo de log.
@@ -35,7 +36,7 @@ if not exist "!LOG_FILE!" (
 )
 
 call :log "========================================"
-call :log "SETUP CPFANI V6.3.0 - DEBUG MODE"
+call :log "SETUP CPFANI V5.9.3 - DEBUG MODE"
 call :log "Data: %date% %time%"
 call :log "SCRIPT_DIR: %SCRIPT_DIR%"
 call :log "LOG_DIR: !LOG_DIR!"
@@ -109,6 +110,7 @@ if "!PYTHON_OK!"=="0" (
         if /i not "!NO_PAUSE!"=="1" pause >nul
         exit /b 1
     )
+
     call :log "[DEBUG] Linha 7.5 - Verificando hash SHA256 do Python..."
     set "PYTHON_HASH="
     for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash -LiteralPath $env:PYTHON_INSTALLER -Algorithm SHA256).Hash" 2^>nul') do set "PYTHON_HASH=%%H"
@@ -130,6 +132,7 @@ if "!PYTHON_OK!"=="0" (
         exit /b 1
     )
     call :log "[OK] Hash SHA256 do Python validado com sucesso."
+
     call :log "[DEBUG] Linha 8 - Instalando Python..."
     "!PYTHON_INSTALLER!" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 >> "!LOG_FILE!" 2>&1
     set "RC=!ERRORLEVEL!"
@@ -186,6 +189,7 @@ if !RC! NEQ 0 (
         if /i not "!NO_PAUSE!"=="1" pause >nul
         exit /b 1
     )
+
     call :log "[DEBUG] Verificando hash SHA256 do script do Chocolatey..."
     set "CHOCO_HASH="
     for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash -LiteralPath $env:CHOCO_INSTALLER -Algorithm SHA256).Hash" 2^>nul') do set "CHOCO_HASH=%%H"
@@ -203,6 +207,7 @@ if !RC! NEQ 0 (
         exit /b 1
     )
     call :log "[OK] Hash SHA256 do Chocolatey validado. Executando instalacao..."
+
     powershell -NoProfile -ExecutionPolicy Bypass -File "!CHOCO_INSTALLER!" >> "!LOG_FILE!" 2>&1
     set "RC=!ERRORLEVEL!"
     call :log "[DEBUG] powershell Chocolatey RC: !RC!"
@@ -234,63 +239,32 @@ call :log "[STEP 4] Instalando dependencias..."
 "!PYTHON_CMD!" -m pip install --upgrade pip --trusted-host pypi.org --trusted-host files.pythonhosted.org >> "!LOG_FILE!" 2>&1
 set "RC=!ERRORLEVEL!"
 if !RC! NEQ 0 call :log "[WARN] Falha ao atualizar pip. RC: !RC!"
-
 :: Instala os pacotes com trusted-host
 "!PYTHON_CMD!" -m pip install customtkinter psutil pillow --trusted-host pypi.org --trusted-host files.pythonhosted.org >> "!LOG_FILE!" 2>&1
 set "RC=!ERRORLEVEL!"
 if !RC! NEQ 0 call :log "[WARN] Falha ao instalar customtkinter psutil pillow. RC: !RC!"
-
 "!PYTHON_CMD!" -m pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib --trusted-host pypi.org --trusted-host files.pythonhosted.org >> "!LOG_FILE!" 2>&1
 set "RC=!ERRORLEVEL!"
 if !RC! NEQ 0 call :log "[WARN] Falha ao instalar dependencias Google. RC: !RC!"
-
-:: V6.3.0: openpyxl para a planilha de inventario xlsx (opcional - GUI trata ausencia como AVISO)
-"!PYTHON_CMD!" -m pip install openpyxl --trusted-host pypi.org --trusted-host files.pythonhosted.org >> "!LOG_FILE!" 2>&1
-set "RC=!ERRORLEVEL!"
-if !RC! NEQ 0 call :log "[WARN] Falha ao instalar openpyxl (planilha xlsx ficara desabilitada). RC: !RC!"
-
 call :log "[OK] Dependencias PIP validadas!"
 
 call :log "[DEBUG] Linha 15 - Antes da GUI"
 call :log "[STEP 5] Iniciando GUI Python..."
 cd /d "%~dp0"
-
 if not exist "%~dp0gui.py" (
     call :log "[ERROR] gui.py NAO ENCONTRADO!"
     if /i not "!NO_PAUSE!"=="1" pause >nul
     exit /b 1
 )
-
-:: V6.3.0: valida modulos obrigatorios antes de subir a GUI
-if not exist "%~dp0mod_config.py" (
-    call :log "[ERROR] mod_config.py NAO ENCONTRADO!"
-    if /i not "!NO_PAUSE!"=="1" pause >nul
-    exit /b 1
-)
-if not exist "%~dp0mod_instalar.py" (
-    call :log "[ERROR] mod_instalar.py NAO ENCONTRADO!"
-    if /i not "!NO_PAUSE!"=="1" pause >nul
-    exit /b 1
-)
-
-:: V6.3.0: aviso nao fatal sobre credenciais OAuth2 (upload do Drive)
-if not exist "%~dp0credentials\oauth2_credentials.json" (
-    call :log "[WARN] credentials\oauth2_credentials.json nao encontrado - upload ao Drive desabilitado."
-) else (
-    call :log "[OK] Credenciais OAuth2 encontradas."
-)
-
 call :log "[INFO] Executando: !PYTHON_CMD! -u gui.py"
 "!PYTHON_CMD!" -u "%~dp0gui.py" >> "!LOG_FILE!" 2>&1
 set "GUI_CODE=!ERRORLEVEL!"
 call :log "[INFO] Python encerrou com codigo: !GUI_CODE!"
-
 if !GUI_CODE! NEQ 0 (
     call :log "[ERROR] A GUI falhou."
 ) else (
     call :log "[OK] Deploy concluido!"
 )
-
 call :log "[INFO] Log completo: !LOG_FILE!"
 if /i not "!NO_PAUSE!"=="1" (
     echo.
