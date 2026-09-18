@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""mod_config.py - V6.3.0 (Edicao CP Fani: RustDesk no snapshot + seriais placeholder de monitor + TeamViewer sem Win32_Product)"""
+"""mod_config.py - V6.3.1 (Edicao CP Fani: RustDesk no snapshot + seriais placeholder de monitor + TeamViewer sem Win32_Product + persistencia Local/Usuario)"""
 import winreg
 import subprocess
 import os
@@ -18,6 +18,7 @@ from pathlib import Path
 from datetime import datetime
 
 SCRIPT_DIR = os.environ.get("SCRIPT_DIR", r"C:\Scripts")
+SNAPSHOT_INFO_PATH = os.path.join(SCRIPT_DIR, "cpfani_snapshot_info.json")
 
 if sys.platform == "win32":
     try:
@@ -30,6 +31,88 @@ CREATION_FLAGS_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 _LAST_DRIVE_UPLOAD_SUCCESS = True
 _LAST_DRIVE_UPLOAD_ERROR = None
+
+# ============================================================================
+# PERSISTENCIA DE LOCAL E USUARIO DO SNAPSHOT
+# ============================================================================
+# Armazena Local e Usuario em JSON simples para que a tarefa agendada
+# CPFANI_SnapshotDiario (executada como SYSTEM, sem GUI) possa reutilizar
+# os valores preenchidos anteriormente pelo tecnico no modal da GUI.
+# ============================================================================
+
+def save_snapshot_info(local, usuario):
+    """
+    Persiste Local e Usuario do snapshot em C:\\Scripts\\cpfani_snapshot_info.json.
+    Usa escrita atomica (temp file + os.replace) para evitar corrupcao.
+    Retorna True em caso de sucesso, False caso contrario (nunca levanta excecao).
+    """
+    try:
+        os.makedirs(SCRIPT_DIR, exist_ok=True)
+
+        data = {
+            "local": str(local).strip() if local else "",
+            "usuario": str(usuario).strip() if usuario else "",
+            "atualizado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        }
+
+        temp_path = SNAPSHOT_INFO_PATH + ".tmp"
+
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+            os.replace(temp_path, SNAPSHOT_INFO_PATH)
+            _log(f"[OK] Dados do snapshot persistidos: {SNAPSHOT_INFO_PATH}", "OK")
+            return True
+        except Exception as e:
+            _log(f"Erro na escrita atomica de {SNAPSHOT_INFO_PATH}: {e}", "AVISO")
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+            return False
+
+    except Exception as e:
+        _log(f"Erro inesperado em save_snapshot_info: {e}", "AVISO")
+        return False
+
+
+def load_snapshot_info():
+    """
+    Carrega Local e Usuario do snapshot a partir de C:\\Scripts\\cpfani_snapshot_info.json.
+    Retorna (local, usuario). Se o arquivo nao existir ou estiver corrompido,
+    retorna ("", "") sem levantar excecao.
+    """
+    try:
+        if not os.path.exists(SNAPSHOT_INFO_PATH):
+            _log(f"[INFO] {SNAPSHOT_INFO_PATH} nao encontrado. Usando fallback.", "INFO")
+            return "", ""
+
+        with open(SNAPSHOT_INFO_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            _log(f"[AVISO] {SNAPSHOT_INFO_PATH} corrompido (formato invalido).", "AVISO")
+            return "", ""
+
+        local = str(data.get("local", "")).strip()
+        usuario = str(data.get("usuario", "")).strip()
+
+        if local or usuario:
+            _log(f"[OK] Dados do snapshot carregados do disco: Local='{local}', Usuario='{usuario}'", "OK")
+        else:
+            _log(f"[INFO] {SNAPSHOT_INFO_PATH} existe mas esta vazio.", "INFO")
+
+        return local, usuario
+
+    except json.JSONDecodeError as e:
+        _log(f"[AVISO] {SNAPSHOT_INFO_PATH} corrompido (JSON invalido): {e}", "AVISO")
+        return "", ""
+    except Exception as e:
+        _log(f"[AVISO] Erro ao ler {SNAPSHOT_INFO_PATH}: {e}", "AVISO")
+        return "", ""
+
 
 # ============================================================================
 # CONSTANTES DE VALIDACAO DE SERIAIS DE MONITORES
@@ -56,13 +139,11 @@ SERIAIS_INVALIDOS_MONITOR = {
     "oem", "test"
 }
 
-
 def _log(msg, level="INFO"):
     """Sistema de log com timestamp e nivel"""
     ts = datetime.now().strftime("%H:%M:%S")
     log_msg = f"[{ts}] [{level}] {msg}"
     print(log_msg, flush=True)
-
 
 def _safe_subprocess_run(cmd, timeout=30, shell=False, capture_output=True, **kwargs):
     """Execucao segura de subprocessos com timeout e tratamento de erros"""
@@ -86,7 +167,6 @@ def _safe_subprocess_run(cmd, timeout=30, shell=False, capture_output=True, **kw
         _log(f"Erro ao executar subprocesso: {e}", "ERRO")
         return None
 
-
 def _get_file_sha256(file_path, chunk_size=65536):
     try:
         h = hashlib.sha256()
@@ -100,7 +180,6 @@ def _get_file_sha256(file_path, chunk_size=65536):
     except Exception as e:
         _log(f"Erro ao calcular SHA256 de {file_path}: {e}", "ERRO")
         return None
-
 
 def _verify_sha256(file_path, expected_sha256):
     if not expected_sha256:
@@ -118,7 +197,6 @@ def _verify_sha256(file_path, expected_sha256):
     _log(f"[OK] Hash SHA256 validado: {file_path}", "OK")
     return True
 
-
 def _write_hash_sidecar(file_path, expected_hash=None):
     file_hash = expected_hash if expected_hash else _get_file_sha256(file_path)
     if not file_hash:
@@ -132,7 +210,6 @@ def _write_hash_sidecar(file_path, expected_hash=None):
     except Exception as e:
         _log(f"Erro ao escrever sidecar de hash {sidecar}: {e}", "ERRO")
         return None
-
 
 def _get_expected_wallpaper_sha256():
     env_hash = os.environ.get("CPFANI_WALLPAPER_SHA256", "").strip().upper()
@@ -152,7 +229,6 @@ def _get_expected_wallpaper_sha256():
 
     return ""
 
-
 # ============================================================================
 # AUTENTICACAO GOOGLE DRIVE ROBUSTA / UPLOAD DE SNAPSHOT
 # ============================================================================
@@ -164,19 +240,16 @@ def get_last_drive_upload_result():
     """
     return _LAST_DRIVE_UPLOAD_SUCCESS, _LAST_DRIVE_UPLOAD_ERROR
 
-
 def _set_last_drive_upload_result(success, error_message):
     global _LAST_DRIVE_UPLOAD_SUCCESS
     global _LAST_DRIVE_UPLOAD_ERROR
     _LAST_DRIVE_UPLOAD_SUCCESS = bool(success)
     _LAST_DRIVE_UPLOAD_ERROR = error_message
 
-
 def _get_drive_credentials_path():
     """Caminho do oauth2_credentials.json, compartilhado entre maquinas."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(script_dir, "credentials", "oauth2_credentials.json")
-
 
 def _get_drive_token_path():
     """Caminho do token.pickle por maquina, fora do repositorio."""
@@ -187,7 +260,6 @@ def _get_drive_token_path():
         pass
     return os.path.join(token_dir, "token.pickle")
 
-
 def _remove_file_safe(file_path):
     """Remove arquivo com seguranca, sem interromper o fluxo."""
     try:
@@ -197,7 +269,6 @@ def _remove_file_safe(file_path):
     except Exception as e:
         _log(f"Erro ao remover arquivo {file_path}: {e}", "AVISO")
     return False
-
 
 def _run_drive_login_with_timeout(flow, timeout_seconds=120):
     """Executa flow.run_local_server com timeout via threading."""
@@ -222,7 +293,6 @@ def _run_drive_login_with_timeout(flow, timeout_seconds=120):
 
     return result[0]
 
-
 def _get_drive_user_email(service):
     """Tenta obter o email da conta Google autenticada."""
     try:
@@ -230,7 +300,6 @@ def _get_drive_user_email(service):
         return about.get("user", {}).get("emailAddress", None)
     except Exception:
         return None
-
 
 def _authenticate_drive(interactive=True, timeout_seconds=120):
     """
@@ -326,7 +395,6 @@ def _authenticate_drive(interactive=True, timeout_seconds=120):
         _log(traceback.format_exc(), "ERRO")
         return None, error_msg
 
-
 def authenticate_google_drive(timeout_seconds=120, callback=None, interactive=True):
     """
     Funcao publica de autenticacao Google Drive.
@@ -357,7 +425,6 @@ def authenticate_google_drive(timeout_seconds=120, callback=None, interactive=Tr
         _log(error_message, "ERRO")
         return None, error_message, None
 
-
 def pre_check_google_drive_auth(timeout_seconds=120, callback=None):
     """
     Pre-checagem de autenticacao Google Drive antes do deploy.
@@ -385,7 +452,6 @@ def pre_check_google_drive_auth(timeout_seconds=120, callback=None):
         error_message = f"Erro ao acessar pasta do Drive: {e}"
         _log(error_message, "ERRO")
         return False, error_message, email
-
 
 def _upload_snapshot_to_drive(local_path, file_name, interactive=True, timeout_seconds=120):
     """
@@ -444,7 +510,6 @@ def _upload_snapshot_to_drive(local_path, file_name, interactive=True, timeout_s
         _log(traceback.format_exc(), "ERRO")
         return False, error_msg
 
-
 # ============================================================================
 # FUNCOES DE SISTEMA / USUARIOS
 # ============================================================================
@@ -467,7 +532,6 @@ def _get_all_user_sids():
     except Exception as e:
         _log(f"Erro ao obter SIDs: {e}", "AVISO")
     return sids
-
 
 def _get_active_user_sid():
     """Obtem o SID do usuario ativo via PowerShell"""
@@ -494,7 +558,6 @@ if ($explorer) {
         _log(f"Erro ao obter SID do usuario ativo: {e}", "AVISO")
         return None
 
-
 def _get_target_sids(prefer_active=True):
     sids = []
 
@@ -516,7 +579,6 @@ def _get_target_sids(prefer_active=True):
             unique.append(sid)
 
     return unique
-
 
 def _apply_to_all_real_users():
     """Varre todos os perfis de usuarios para desativar o atalho nativo do PrtSc"""
@@ -629,7 +691,6 @@ def _apply_to_all_real_users():
 
     except Exception as e:
         _log(f"Falha na varredura global de SIDs: {e}", "AVISO")
-
 
 # ============================================================================
 # SELF-HEALING / AGENDAMENTOS
@@ -762,7 +823,6 @@ while ($true) {
     _log("[OK] Self-Healing (Watchdog) ativo e agendado.", "OK")
     return True
 
-
 def set_reg(root, path, name, value, rtype=winreg.REG_SZ):
     """Define valor de registro com tratamento de erros"""
     try:
@@ -773,7 +833,6 @@ def set_reg(root, path, name, value, rtype=winreg.REG_SZ):
     except Exception as e:
         _log(f"Erro ao definir registro {path}\\{name}: {e}", "AVISO")
         return False
-
 
 def sync_time_ntp():
     """Sincroniza horario com servidores NTP.br"""
@@ -797,7 +856,6 @@ def sync_time_ntp():
         _log("[OK] Horario sincronizado com ntp.br.", "OK")
     except Exception as e:
         _log(f"Erro ao sincronizar horario: {e}", "ERRO")
-
 
 def schedule_daily_reboot():
     """Agenda reinicio diario automatico as 21:00"""
@@ -826,7 +884,6 @@ def schedule_daily_reboot():
 
     except Exception as e:
         _log(f"Erro ao agendar reinicio: {e}", "ERRO")
-
 
 def setup_snapshot_scheduler():
     """
@@ -967,7 +1024,6 @@ try {
     _log("Aviso ao criar/atualizar tarefa CPFANI_SnapshotDiario.", "AVISO")
     return False
 
-
 def check_snapshot_scheduler():
     """
     Verifica se a tarefa CPFANI_SnapshotDiario existe.
@@ -988,7 +1044,6 @@ def check_snapshot_scheduler():
         return False, "Tarefa CPFANI_SnapshotDiario nao encontrada."
 
     output = result.stdout or ""
-
     status = ""
     next_run = ""
 
@@ -1001,16 +1056,13 @@ def check_snapshot_scheduler():
         next_run = next_match.group(1).strip()
 
     msg = "Tarefa CPFANI_SnapshotDiario encontrada."
-
     if status:
         msg += f" Status: {status}."
-
     if next_run:
         msg += f" Proxima execucao: {next_run}."
 
     _log(msg, "OK")
     return True, msg
-
 
 def set_apps_to_startup_all_users():
     """Configura aplicativos para iniciar no login de todos os usuarios"""
@@ -1051,9 +1103,8 @@ def set_apps_to_startup_all_users():
             _log("Nenhum SID disponivel para desativar Xbox Game Bar.", "AVISO")
 
         ifeo = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
-
-        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\SnippingTool.exe", "Debugger", "rundll32.exe")
-        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\ScreenClippingHost.exe", "Debugger", "rundll32.exe")
+        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\SnippingTool.exe", "Debugger", "rundll32.exe", winreg.REG_SZ)
+        set_reg(winreg.HKEY_LOCAL_MACHINE, f"{ifeo}\\ScreenClippingHost.exe", "Debugger", "rundll32.exe", winreg.REG_SZ)
         _log("[OK] Debugger redirect aplicado", "OK")
 
         _apply_to_all_real_users()
@@ -1076,7 +1127,6 @@ def set_apps_to_startup_all_users():
 
     for link, paths in apps.items():
         exe_found = None
-
         for p in paths:
             if os.path.exists(p):
                 exe_found = p
@@ -1095,7 +1145,6 @@ def set_apps_to_startup_all_users():
                 _log(f"[OK] Atalho criado: {link}", "OK")
             else:
                 _log(f"Aviso ao criar atalho: {link}", "AVISO")
-
 
 def apply_default_user_profile(bar_alignment):
     """Aplica configuracoes ao perfil padrao de usuario"""
@@ -1142,7 +1191,6 @@ def apply_default_user_profile(bar_alignment):
                     ["reg", "add", r"HKU\TempDefaultUser\Control Panel\Keyboard", "/v", value_name, "/t", "REG_DWORD", "/d", "0", "/f"],
                     timeout=10
                 )
-
         finally:
             _safe_subprocess_run(["reg", "unload", hive_path], timeout=30)
 
@@ -1151,7 +1199,6 @@ def apply_default_user_profile(bar_alignment):
     except Exception as e:
         _log(f"Erro ao aplicar perfil padrao: {e}", "ERRO")
         _safe_subprocess_run(["reg", "unload", hive_path], timeout=30)
-
 
 def remove_agressive_bloatware(bloatware_list):
     """Remove bloatware do sistema"""
@@ -1177,7 +1224,6 @@ def remove_agressive_bloatware(bloatware_list):
 
     return True
 
-
 def apply_cpfani_branding(bar_alignment):
     """Aplica branding corporativo CP Fani com redundancia para todos os usuarios"""
     _log("INICIANDO BRANDING CORPORATIVO...", "INFO")
@@ -1188,7 +1234,6 @@ def apply_cpfani_branding(bar_alignment):
 
     try:
         target_sids = _get_target_sids()
-
         if target_sids:
             for sid in target_sids:
                 _safe_subprocess_run(
@@ -1202,7 +1247,6 @@ def apply_cpfani_branding(bar_alignment):
             _log("[OK] Tema escuro aplicado para usuario(s) alvo", "OK")
         else:
             _log("Nenhum SID disponivel para aplicar tema.", "AVISO")
-
     except Exception as e:
         _log(f"Erro ao aplicar tema: {e}", "AVISO")
 
@@ -1211,10 +1255,8 @@ def apply_cpfani_branding(bar_alignment):
 
     if bar_alignment != "nenhum":
         val = 0 if bar_alignment == "left" else 1
-
         try:
             target_sids = _get_target_sids()
-
             if target_sids:
                 for sid in target_sids:
                     reg_path = f"HKU\\{sid}\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced"
@@ -1223,18 +1265,15 @@ def apply_cpfani_branding(bar_alignment):
                         timeout=10
                     )
                 _log(f"[OK] Barra de tarefas alinhada: {bar_alignment}", "OK")
-
         except Exception as e:
             _log(f"Erro ao alinhar barra: {e}", "AVISO")
 
     apply_default_user_profile(bar_alignment)
 
     _log("Aplicando configuracoes de tema escuro, wallpaper e lockscreen para TODOS os usuarios (redundancia)...", "INFO")
-
     _apply_dark_theme_to_all_users()
     _apply_wallpaper_to_all_users()
     _apply_lockscreen_to_all_users()
-
 
 def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
     """Aplica politicas de Seguranca e LGPD"""
@@ -1259,7 +1298,6 @@ def apply_security_lgpd(apply_lgpd=True, disable_hello=True):
     if disable_hello:
         disable_windows_hello_redundant()
         remove_widgets_taskbar()
-
 
 def _get_image_path(local_path, urls, temp_name, expected_sha256=None):
     """Obtem caminho de imagem com validacao de tamanho e hash"""
@@ -1293,10 +1331,12 @@ def _get_image_path(local_path, urls, temp_name, expected_sha256=None):
                     return temp_path
 
                 _log("Hash SHA256 invalido apos download.", "ERRO")
+
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
             else:
                 _log("Arquivo muito pequeno, tentando proximo URL...", "AVISO")
+
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
 
@@ -1306,7 +1346,6 @@ def _get_image_path(local_path, urls, temp_name, expected_sha256=None):
     _log("Falha ao obter imagem de todos os URLs", "ERRO")
     return None
 
-
 def apply_cpfani_wallpaper_redundant():
     """Aplica wallpaper CP Fani e copia para diretorio de wallpapers do Windows"""
     _log("Aplicando wallpaper CP Fani...", "INFO")
@@ -1315,7 +1354,7 @@ def apply_cpfani_wallpaper_redundant():
     local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
 
     urls = [
-        "https://drive.google.com/uc?export=download&id=1K5SWWC1dJL0qETRKAVdJtc8-Wi39G83G",
+        "https://drive.google.com/uc?export=download&id=1K5SWWH1dJL0qETRKAVdJtc8-Wi39G83G",
         "https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/wallpaper_cpfani.jpg"
     ]
 
@@ -1345,11 +1384,9 @@ def apply_cpfani_wallpaper_redundant():
 
         _log("Falha ao aplicar wallpaper via API", "ERRO")
         return False
-
     except Exception as e:
         _log(f"Erro ao aplicar wallpaper: {e}", "ERRO")
         return False
-
 
 def apply_cpfani_lockscreen_redundant():
     """Aplica lockscreen CP Fani e forca a imagem via GPO + PersonalizationCSP"""
@@ -1359,7 +1396,7 @@ def apply_cpfani_lockscreen_redundant():
     local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
 
     urls = [
-        "https://drive.google.com/uc?export=download&id=1K5SWWC1dJL0qETRKAVdJtc8-Wi39G83G",
+        "https://drive.google.com/uc?export=download&id=1K5SWWH1dJL0qETRKAVdJtc8-Wi39G83G",
         "https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/wallpaper_cpfani.jpg"
     ]
 
@@ -1379,7 +1416,6 @@ def apply_cpfani_lockscreen_redundant():
         if not os.path.exists(windows_wp_path):
             shutil.copy2(target_path, windows_wp_path)
             _log(f"[OK] Wallpaper copiado para {windows_wp_path} (lockscreen)", "OK")
-
     except Exception as e:
         _log(f"Erro ao copiar wallpaper para Windows (lockscreen): {e}", "AVISO")
 
@@ -1416,7 +1452,6 @@ def apply_cpfani_lockscreen_redundant():
 
     return True
 
-
 def disable_windows_hello_redundant():
     """Desativa Windows Hello e biometria"""
     _log("Desativando Windows Hello e biometria...", "INFO")
@@ -1425,10 +1460,10 @@ def disable_windows_hello_redundant():
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\PassportForWork", "Enabled", 0, winreg.REG_DWORD)
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows\Windows Hello for Business", "Biometric", 0, winreg.REG_DWORD)
         set_reg(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\WbioSrvc", "Start", 4, winreg.REG_DWORD)
+
         _log("[OK] Windows Hello desativado", "OK")
     except Exception as e:
         _log(f"Erro ao desativar Windows Hello: {e}", "ERRO")
-
 
 def remove_widgets_taskbar():
     """Remove widgets da barra de tarefas"""
@@ -1452,7 +1487,6 @@ def remove_widgets_taskbar():
     except Exception as e:
         _log(f"Erro ao remover widgets: {e}", "ERRO")
 
-
 def apply_firewall_rules():
     """Aplica regras de firewall para compartilhamento"""
     _log("Aplicando regras de firewall...", "INFO")
@@ -1471,7 +1505,6 @@ def apply_firewall_rules():
 
     except Exception as e:
         _log(f"Erro ao aplicar firewall: {e}", "ERRO")
-
 
 def configurar_compartilhamento_rede():
     """
@@ -1505,7 +1538,6 @@ def configurar_compartilhamento_rede():
     for svc_name, svc_desc in servicos:
         try:
             _safe_subprocess_run(["sc", "config", svc_name, "start=", "auto"], timeout=15)
-
             result = _safe_subprocess_run(["sc", "start", svc_name], timeout=15)
 
             if result and result.returncode == 0:
@@ -1544,7 +1576,6 @@ def configurar_compartilhamento_rede():
     except Exception as e:
         _log(f"Aviso ao liberar Firewall: {e}", "AVISO")
 
-
 def schedule_manutencao_rede():
     """Agenda a execucao diaria do manutencao_rede.bat de forma oculta."""
     _log("Agendando manutencao de rede (execucao oculta)...", "INFO")
@@ -1582,7 +1613,6 @@ def schedule_manutencao_rede():
     _log("Aviso ao criar tarefa de manutencao de rede", "AVISO")
     return False
 
-
 def schedule_instalar_tudo():
     """Agenda a execucao do instalar_tudo.ps1 de forma oculta."""
     _log("Agendando atualizador de software (execucao oculta)...", "INFO")
@@ -1618,7 +1648,6 @@ def schedule_instalar_tudo():
 
     _log("Aviso ao criar tarefa do instalador universal", "AVISO")
     return False
-
 
 def check_and_remove_legacy_apps(app_names):
     """
@@ -1694,7 +1723,6 @@ def check_and_remove_legacy_apps(app_names):
 
     return resultado
 
-
 def _get_hardware_info():
     """Obtem informacoes basicas de hardware (legado)"""
     return {
@@ -1704,7 +1732,6 @@ def _get_hardware_info():
         "Arquitetura": platform.machine(),
         "Processador": platform.processor()
     }
-
 
 def _get_system_model():
     """Obtem o modelo do sistema via WMI"""
@@ -1720,7 +1747,6 @@ def _get_system_model():
 
     return "Desconhecido"
 
-
 def _get_processor_name():
     """Obtem o nome do processador via WMI"""
     try:
@@ -1734,7 +1760,6 @@ def _get_processor_name():
         pass
 
     return "Desconhecido"
-
 
 def _get_total_ram():
     """Obtem a memoria RAM total em GB"""
@@ -1750,7 +1775,6 @@ def _get_total_ram():
 
     return "Desconhecido"
 
-
 def _get_windows_version():
     """Obtem a versao e edicao do Windows"""
     try:
@@ -1764,7 +1788,6 @@ def _get_windows_version():
         pass
 
     return platform.system() + " " + platform.release()
-
 
 def _get_bios_serial():
     """Obtem o numero de serie da BIOS"""
@@ -1780,13 +1803,11 @@ def _get_bios_serial():
 
     return "Desconhecido"
 
-
 def _get_monitor_info():
     """
     Obtem informacoes de todos os monitores conectados via WMI (WmiMonitorID).
     Retorna uma lista de dicionarios com 'Modelo', 'Numero_de_Serie' e 'InstanceName'.
     Suporta multiplos monitores por PC.
-
     V6.2.0: Adicionado InstanceName para rastreabilidade. O campo ID_Unico
     e gerado posteriormente por _gerar_ids_unicos_monitores() dentro de
     generate_full_snapshot(), onde o unique_id do PC esta disponivel.
@@ -1798,19 +1819,23 @@ def _get_monitor_info():
 try {
     $monitors = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction Stop
     $results = @()
+
     foreach ($mon in $monitors) {
         $model = ''
         $serial = ''
         $instance = ''
+
         try { $model = [System.Text.Encoding]::ASCII.GetString([byte[]]($mon.UserFriendlyName | Where-Object { $_ -ne 0 })) } catch {}
         try { $serial = [System.Text.Encoding]::ASCII.GetString([byte[]]($mon.SerialNumberID | Where-Object { $_ -ne 0 })) } catch {}
         try { $instance = $mon.InstanceName } catch {}
+
         $results += [PSCustomObject]@{
             Modelo = $model
             Numero_de_Serie = $serial
             InstanceName = $instance
         }
     }
+
     $results | ConvertTo-Json
 } catch {
     Write-Output "[]"
@@ -1857,15 +1882,13 @@ try {
 
     return monitors
 
-
 def _gerar_ids_unicos_monitores(monitores, pc_unique_id):
     """
     Gera ID_Unico para cada monitor com base no serial real ou ID gerado.
-
     Regras:
-    - Serial valido e unico dentro da maquina → usa o serial real.
-    - Serial invalido/vazio (esta em SERIAIS_INVALIDOS_MONITOR) → gera SEM-SN-<PC_ID>-M<n>.
-    - Serial duplicado dentro da mesma maquina → sufixo -D2, -D3 para os repetidos.
+    - Serial valido e unico dentro da maquina -> usa o serial real.
+    - Serial invalido/vazio (esta em SERIAIS_INVALIDOS_MONITOR) -> gera SEM-SN-<PC_ID>-M<n>.
+    - Serial duplicado dentro da mesma maquina -> sufixo -D2, -D3 para os repetidos.
 
     O ID_Unico e escrito no campo 'Nº de Série' do snapshot, que e o campo
     lido pelo parser.py do Dashboard-TI para deduplicacao global.
@@ -1899,7 +1922,6 @@ def _gerar_ids_unicos_monitores(monitores, pc_unique_id):
                 _log(f"Monitor {idx}: serial valido. ID: {monitor['ID_Unico']}", "OK")
 
     return monitores
-
 
 def _get_printer_info():
     """
@@ -1962,7 +1984,6 @@ def _get_printer_info():
 
     return printers
 
-
 def _query_printer_snmp(ip):
     """
     Consulta impressora via SNMP para obter modelo e numero de serie reais.
@@ -2007,7 +2028,6 @@ try {{
         _log(f"Erro ao consultar SNMP para IP {ip}: {e}", "AVISO")
 
     return None
-
 
 def _get_installed_printers():
     """
@@ -2069,7 +2089,6 @@ Get-CimInstance Win32_Printer | Select-Object Name, DriverName, PortName, Shared
     except Exception as e:
         _log(f"Erro ao obter impressoras instaladas: {e}", "AVISO")
         return "Nenhuma impressora detectada."
-
 
 def _get_raw_printer_ports():
     """
@@ -2144,7 +2163,6 @@ $filtered | Select-Object Class, FriendlyName, InstanceId, Status | ConvertTo-Js
         _log(f"Erro ao obter dispositivos POS brutos: {e}", "AVISO")
         return "Nenhum dispositivo POS bruto detectado."
 
-
 def _get_network_adapters():
     """
     Obtem informacoes de todos os adaptadores de rede via Get-NetAdapter.
@@ -2187,7 +2205,6 @@ def _get_network_adapters():
 
     return adapters
 
-
 def _get_unique_id():
     """
     Obtem um identificador unico para o PC.
@@ -2212,7 +2229,6 @@ def _get_unique_id():
 
     _log("Nenhum adaptador ativo encontrado. Usando ProcessorId como fallback.", "AVISO")
     return _get_processor_id()
-
 
 def _get_processor_id():
     """
@@ -2239,7 +2255,6 @@ def _get_processor_id():
 
     _log("Nao foi possivel obter o ProcessorId. Usando 'ID_NAO_DISPONIVEL'.", "ERRO")
     return "ID_NAO_DISPONIVEL"
-
 
 def _get_anydesk_id():
     """Obtem o ID do AnyDesk do registro (suporte a multiplas versoes e arquiteturas)"""
@@ -2320,7 +2335,6 @@ return $null
         pass
 
     return "N/A"
-
 
 def _get_teamviewer_id():
     """
@@ -2432,7 +2446,6 @@ if ($id) {
 
     return "N/A"
 
-
 def _get_rustdesk_id():
     """
     Obtem o ID do RustDesk.
@@ -2498,7 +2511,6 @@ def _get_rustdesk_id():
 
     return "N/A"
 
-
 def run_snapshot_only(local=None, usuario=None, origem="Deploy Manual"):
     """
     Funcao publica para gerar apenas o snapshot de hardware (sem deploy).
@@ -2524,7 +2536,6 @@ def run_snapshot_only(local=None, usuario=None, origem="Deploy Manual"):
 
     return result
 
-
 def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", allow_interactive_drive=True):
     """
     Gera snapshot completo de hardware com ID unico baseado no MAC Address (com fallback para ProcessorId).
@@ -2532,6 +2543,9 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
     V6.2.0: Monitores incluem rotulo duplo (Numero_de_Serie + Nº de Série)
     e campo ID_Unico para compatibilidade com o Dashboard-TI e deduplicacao correta.
     V6.3.0: ID do RustDesk capturado na secao [SUPORTE].
+    V6.3.1: Local e Usuario persistidos em JSON; quando None, tenta carregar do disco
+            antes do fallback "Nao informado", permitindo que a tarefa agendada
+            (SYSTEM, sem GUI) reutilize os valores do modal.
 
     Parametros:
     local (str): codigo e nome do local (ex: "14120 - ARPEL SBC")
@@ -2564,6 +2578,18 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
 
     # V6.2.0: Gerar IDs unicos para monitores usando o ID do PC
     monitores = _gerar_ids_unicos_monitores(monitores, unique_id)
+
+    # V6.3.1: Se local ou usuario nao foram passados, tenta carregar do disco.
+    # Isso permite que a tarefa agendada (SYSTEM, sem GUI) reutilize os valores
+    # preenchidos anteriormente pelo tecnico no modal da GUI.
+    if not local or not usuario:
+        saved_local, saved_usuario = load_snapshot_info()
+        if not local and saved_local:
+            local = saved_local
+            _log(f"[OK] Local restaurado do disco: '{local}'", "OK")
+        if not usuario and saved_usuario:
+            usuario = saved_usuario
+            _log(f"[OK] Usuario restaurado do disco: '{usuario}'", "OK")
 
     local_str = local if local else "Nao informado"
     usuario_str = usuario if usuario else "Nao informado"
@@ -2649,7 +2675,7 @@ def generate_full_snapshot(local=None, usuario=None, origem="Deploy Manual", all
     impressoras_detectadas_section += "\n============================================================\n"
 
     content = f"""============================================================
-SNAPSHOT CP FANI V6.3.0 (Edicao Infiltrado + Self-Healing)
+SNAPSHOT CP FANI V6.3.1 (Edicao Infiltrado + Self-Healing)
 Gerado em: {now}
 
 [ID]
@@ -2706,7 +2732,6 @@ RustDesk   : {rustdesk_id}
 
     return str(local_path)
 
-
 def _apply_dark_theme_to_all_users():
     """Aplica tema escuro para todos os usuarios via GPO e HKCU"""
     _log("Aplicando tema escuro para todos os usuarios...", "INFO")
@@ -2738,7 +2763,6 @@ def _apply_dark_theme_to_all_users():
         except Exception as e:
             _log(f"Erro ao aplicar tema escuro para SID {sid}: {e}", "AVISO")
 
-
 def _ensure_wallpaper_image():
     r"""Garante que a imagem do wallpaper/lockscreen exista em C:\Windows\Web\Wallpaper\Windows"""
     target_path = r"C:\Windows\Web\Wallpaper\Windows\cpfani_wallpaper.jpg"
@@ -2755,7 +2779,7 @@ def _ensure_wallpaper_image():
     local_wp = os.path.join(script_dir, "resources", "wallpaper_cpfani.jpg")
 
     urls = [
-        "https://drive.google.com/uc?export=download&id=1K5SWWC1dJL0qETRKAVdJtc8-Wi39G83G",
+        "https://drive.google.com/uc?export=download&id=1K5SWWH1dJL0qETRKAVdJtc8-Wi39G83G",
         "https://github.com/sunstrix/Setup_CPFANI/raw/main/resources/wallpaper_cpfani.jpg"
     ]
 
@@ -2773,7 +2797,6 @@ def _ensure_wallpaper_image():
         _log("Falha ao obter a imagem do wallpaper.", "ERRO")
 
     return None
-
 
 def _apply_wallpaper_to_all_users():
     """Aplica wallpaper para todos os usuarios via GPO e HKCU"""
@@ -2811,7 +2834,6 @@ def _apply_wallpaper_to_all_users():
             _log(f"[OK] Wallpaper aplicado para SID {sid}", "OK")
         except Exception as e:
             _log(f"Erro ao aplicar wallpaper para SID {sid}: {e}", "AVISO")
-
 
 def _apply_lockscreen_to_all_users():
     """Aplica lockscreen para todos os usuarios via GPO + PersonalizationCSP (com bloqueio)"""
