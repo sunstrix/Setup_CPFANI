@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-run_snapshot_only.py - V6.1.0
+run_snapshot_only.py - V6.3.1
 Script independente para gerar apenas o snapshot de hardware do CP Fani.
 
 Objetivo:
@@ -9,6 +9,11 @@ Objetivo:
 - Poder ser executado manualmente ou pela tarefa agendada CPFANI_SnapshotDiario.
 - Em modo agendado (--scheduled), nunca abrir navegador para login OAuth2.
 - Chamar/atualizar a tarefa agendada quando executado manualmente.
+
+V6.3.1: Adicionado fallback intermediario que tenta carregar Local/Usuario
+do arquivo cpfani_snapshot_info.json persistido pela GUI. Isso permite que a
+tarefa agendada (SYSTEM, sem GUI) reutilize os valores preenchidos
+anteriormente pelo tecnico no modal.
 
 Exemplos:
     python run_snapshot_only.py
@@ -37,12 +42,10 @@ except Exception as e:
     print(traceback.format_exc(), flush=True)
     sys.exit(1)
 
-
 def _log_console(msg, level="INFO"):
     """Log simples no console com timestamp."""
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] [{level}] {msg}", flush=True)
-
 
 def _supports_parameter(func, param_name):
     """Verifica se uma funcao suporta um parametro especifico."""
@@ -50,7 +53,6 @@ def _supports_parameter(func, param_name):
         return param_name in inspect.signature(func).parameters
     except Exception:
         return False
-
 
 def _interpret_snapshot_result(raw_result):
     """
@@ -91,7 +93,6 @@ def _interpret_snapshot_result(raw_result):
 
     return path, bool(success), error
 
-
 def _ensure_snapshot_scheduler(force=False):
     """
     Garante que a tarefa CPFANI_SnapshotDiario exista.
@@ -130,7 +131,6 @@ def _ensure_snapshot_scheduler(force=False):
         _log_console(f"Erro ao garantir scheduler de snapshot: {e}", "ERRO")
         return False
 
-
 def main():
     parser = argparse.ArgumentParser(
         description="Gera apenas o snapshot de hardware do CP Fani, sem executar o deploy completo."
@@ -145,13 +145,13 @@ def main():
     parser.add_argument(
         "--local",
         default="",
-        help="Codigo/nome do local. Se omitido, usa CPFANI_SNAPSHOT_LOCAL ou 'Nao informado'."
+        help="Codigo/nome do local. Se omitido, usa CPFANI_SNAPSHOT_LOCAL, JSON persistido ou 'Nao informado'."
     )
 
     parser.add_argument(
         "--usuario",
         default="",
-        help="Nome do usuario. Se omitido, usa CPFANI_SNAPSHOT_USUARIO, USERNAME ou SYSTEM."
+        help="Nome do usuario. Se omitido, usa CPFANI_SNAPSHOT_USUARIO, USERNAME, JSON persistido ou SYSTEM."
     )
 
     parser.add_argument(
@@ -179,6 +179,27 @@ def main():
         or ("SYSTEM" if args.scheduled else None)
     )
 
+    # V6.3.1: Fallback intermediario - tenta carregar dados persistidos no JSON.
+    # Isso permite que a tarefa agendada (SYSTEM, sem GUI) reutilize os valores
+    # preenchidos anteriormente pelo tecnico no modal da GUI.
+    # Guarda com hasattr para nao quebrar em versoes anteriores do mod_config.
+    if hasattr(mod_config, "load_snapshot_info"):
+        try:
+            if not local or not usuario:
+                saved_local, saved_usuario = mod_config.load_snapshot_info()
+
+                if not local and saved_local:
+                    local = saved_local
+                    _log_console(f"[OK] Local restaurado do disco: '{local}'", "OK")
+
+                if not usuario and saved_usuario:
+                    usuario = saved_usuario
+                    _log_console(f"[OK] Usuario restaurado do disco: '{usuario}'", "OK")
+        except Exception as e:
+            _log_console(f"[AVISO] Falha ao carregar dados persistidos do snapshot: {e}", "AVISO")
+    else:
+        _log_console("[INFO] load_snapshot_info() nao disponivel no mod_config. Pulando fallback de disco.", "INFO")
+
     allow_interactive_drive = False
 
     if args.scheduled:
@@ -193,7 +214,7 @@ def main():
             os.environ["CPFANI_SNAPSHOT_NON_INTERACTIVE"] = "1"
 
     _log_console("=" * 60)
-    _log_console("SNAPSHOT INDEPENDENTE - RUN_SNAPSHOT_ONLY.PY")
+    _log_console("SNAPSHOT INDEPENDENTE - RUN_SNAPSHOT_ONLY.PY (V6.3.1)")
     _log_console("=" * 60)
     _log_console(f"Origem: {origem}")
     _log_console(f"Local: {local if local else 'Nao informado'}")
@@ -262,7 +283,6 @@ def main():
 
     _log_console("Execucao finalizada.", "OK")
     return 0
-
 
 if __name__ == "__main__":
     try:
