@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""gui.py - V6.3.0 (Edicao CP Fani: RustDesk no snapshot + openpyxl opcional como AVISO)"""
+"""gui.py - V6.3.1 (Edicao CP Fani: RustDesk no snapshot + openpyxl opcional como AVISO + persistencia Local/Usuario)"""
 
 from tkinter import messagebox
 import customtkinter as ctk
@@ -35,7 +35,6 @@ try:
 except ImportError:
     HAS_PIL = False
     print("[AVISO] PIL nao encontrado. Logo nao sera exibido.", flush=True)
-
 
 def show_windows_toast(title, message):
     """Exibe notificacao nativa do Windows"""
@@ -77,7 +76,6 @@ $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
     except Exception as e:
         print(f"[AVISO] Falha ao exibir notificacao: {e}", flush=True)
 
-
 try:
     import mod_config
     import mod_instalar
@@ -103,7 +101,6 @@ ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "settings.json")
-
 
 def load_settings():
     """Carrega configuracoes do settings.json com fallback seguro"""
@@ -142,9 +139,7 @@ def load_settings():
         print(f"[ERRO] Falha ao ler settings.json: {e}. Usando padrao.", flush=True)
         return default_settings
 
-
 SETTINGS = load_settings()
-
 
 def _get_file_sha256(file_path, chunk_size=65536):
     try:
@@ -159,7 +154,6 @@ def _get_file_sha256(file_path, chunk_size=65536):
     except Exception as e:
         print(f"[ERRO] Falha ao calcular SHA256 de {file_path}: {e}", flush=True)
         return None
-
 
 def _verify_sha256(file_path, expected_sha256):
     if not expected_sha256:
@@ -176,7 +170,6 @@ def _verify_sha256(file_path, expected_sha256):
 
     print(f"[OK] Hash SHA256 validado: {file_path}", flush=True)
     return True
-
 
 def _get_expected_flameshot_sha256(version_tag=""):
     env_hash = os.environ.get("CPFANI_FLAMESHOT_MSI_SHA256", "").strip().upper()
@@ -209,13 +202,11 @@ def _get_expected_flameshot_sha256(version_tag=""):
 
     return ""
 
-
 def _version_to_list(v_str):
     nums = [int(x) for x in re.findall(r"\d+", str(v_str))]
     while len(nums) < 3:
         nums.append(0)
     return nums[:3]
-
 
 def _normalize_snapshot_text(content):
     """Normaliza texto de snapshot para facilitar parsing robusto"""
@@ -262,19 +253,16 @@ def _normalize_snapshot_text(content):
     content = content.encode("ascii", "ignore").decode("ascii")
     return content
 
-
 # ============================================================================
 # AUTENTICACAO GOOGLE DRIVE ROBUSTA COMPARTILHADA COM A GUI
 # ============================================================================
 
 _GOOGLE_DRIVE_STATUS_CALLBACK = None
 
-
 def set_google_drive_status_callback(callback):
     """Define um callback opcional para status de autenticacao do Drive na GUI."""
     global _GOOGLE_DRIVE_STATUS_CALLBACK
     _GOOGLE_DRIVE_STATUS_CALLBACK = callback
-
 
 def _notify_google_drive_status(message):
     """Envia status do Drive para log/console e callback da GUI, se existir."""
@@ -290,11 +278,9 @@ def _notify_google_drive_status(message):
         except Exception as e:
             print(f"[AVISO] Falha no callback de status do Drive: {e}", flush=True)
 
-
 def _get_drive_credentials_path():
     """Caminho do oauth2_credentials.json, compartilhado entre maquinas."""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "credentials", "oauth2_credentials.json")
-
 
 def _get_drive_token_path():
     """Caminho do token.pickle por maquina, fora do repositorio."""
@@ -306,7 +292,6 @@ def _get_drive_token_path():
         pass
     return os.path.join(token_dir, "token.pickle")
 
-
 def _remove_file_safe(path):
     """Remove arquivo com seguranca, sem quebrar o fluxo."""
     try:
@@ -316,7 +301,6 @@ def _remove_file_safe(path):
     except Exception as e:
         print(f"[AVISO] Falha ao remover arquivo {path}: {e}", flush=True)
     return False
-
 
 def _run_oauth_flow_with_timeout(flow, timeout_seconds=120):
     """Executa flow.run_local_server com timeout nativo se existir, senao via threading."""
@@ -353,7 +337,6 @@ def _run_oauth_flow_with_timeout(flow, timeout_seconds=120):
 
     return result[0]
 
-
 def _get_drive_user_email(service):
     """Tenta obter o email da conta autenticada usando Drive.about().get()."""
     try:
@@ -361,7 +344,6 @@ def _get_drive_user_email(service):
         return about.get("user", {}).get("emailAddress", None)
     except Exception:
         return None
-
 
 def _authenticate_google_drive_local(timeout_seconds=120):
     """Fallback local robusto de autenticacao Google Drive."""
@@ -455,7 +437,6 @@ def _authenticate_google_drive_local(timeout_seconds=120):
         traceback.print_exc()
         return None, msg, None
 
-
 def _authenticate_google_drive_safe(timeout_seconds=120):
     """Usa autenticacao central do mod_config se existir; caso contrario, fallback local."""
     if hasattr(mod_config, "authenticate_google_drive"):
@@ -482,7 +463,6 @@ def _authenticate_google_drive_safe(timeout_seconds=120):
             return None, f"Erro na autenticacao centralizada do mod_config: {e}", None
 
     return _authenticate_google_drive_local(timeout_seconds)
-
 
 def _get_google_drive_service_and_snapshot_files(timeout_seconds=120):
     """
@@ -524,11 +504,9 @@ def _get_google_drive_service_and_snapshot_files(timeout_seconds=120):
         traceback.print_exc()
         return None, []
 
-
 def get_google_drive_service_and_snapshot_files():
     """Compatibilidade com nome antigo da funcao"""
     return _get_google_drive_service_and_snapshot_files()
-
 
 def _parse_monitors_from_hardware_snapshot(content):
     """
@@ -594,7 +572,6 @@ def _parse_monitors_from_hardware_snapshot(content):
 
     return monitors
 
-
 def _read_monitors_from_hardware_snapshots():
     """Le arquivos CPFANI_Hardware_Snapshot*.txt do Google Drive e extrai dados de monitores."""
     monitors_data = []
@@ -653,7 +630,6 @@ def _read_monitors_from_hardware_snapshots():
         print(f"[OK] {len(monitors_data)} registros de monitores lidos dos snapshots de hardware", flush=True)
 
     return monitors_data
-
 
 def _create_inventory_spreadsheet_with_monitors():
     """
@@ -728,7 +704,6 @@ def _create_inventory_spreadsheet_with_monitors():
         print(f"[ERRO] Falha ao criar planilha de inventario (monitores): {e}", flush=True)
         return False
 
-
 def _parse_printers_from_hardware_snapshot(content):
     """Extrai dados de impressoras do conteudo do snapshot de hardware."""
     printers = []
@@ -786,7 +761,6 @@ def _parse_printers_from_hardware_snapshot(content):
         print(f"[AVISO] Erro ao parsear impressoras do snapshot: {e}", flush=True)
 
     return printers
-
 
 def _read_printers_from_hardware_snapshots():
     """Le arquivos CPFANI_Hardware_Snapshot*.txt do Google Drive e extrai dados de impressoras."""
@@ -849,7 +823,6 @@ def _read_printers_from_hardware_snapshots():
         print(f"[OK] {len(printers_data)} registros de impressoras lidos dos snapshots de hardware", flush=True)
 
     return printers_data
-
 
 def _create_inventory_spreadsheet_with_printers():
     """
@@ -940,11 +913,10 @@ def _create_inventory_spreadsheet_with_printers():
         print(f"[ERRO] Falha ao criar planilha de inventario (impressoras): {e}", flush=True)
         return False
 
-
 class CPFani_GUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Setup Automatizado CP Fani - V6.3.0")
+        self.title("Setup Automatizado CP Fani - V6.3.1")
         self.geometry("740x860")
         self.resizable(True, True)
         self.configure(fg_color="#121212")
@@ -1004,10 +976,11 @@ class CPFani_GUI(ctk.CTk):
                     self.log(f"Aviso: Falha ao carregar logo: {e}", "AVISO")
 
         ctk.CTkLabel(header_frame, text="SETUP AUTOMATIZADO CP FANI", font=("Segoe UI", 20, "bold"), text_color="#3a86ff").pack()
-        ctk.CTkLabel(header_frame, text="v6.3.0  |  Gestao de Endpoints (RustDesk + ID Unico por Monitor)", font=("Segoe UI", 11), text_color="#666666").pack()
+        ctk.CTkLabel(header_frame, text="v6.3.1  |  Gestao de Endpoints (RustDesk + ID Unico por Monitor)", font=("Segoe UI", 11), text_color="#666666").pack()
 
         ui_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         ui_frame.pack(padx=20, pady=5, fill="x")
+
         ctk.CTkLabel(ui_frame, text="1. Interface e Estetica", font=("", 12, "bold")).grid(row=0, column=0, sticky="w", padx=10, pady=5)
 
         self.bar_var = ctk.StringVar(value="nenhum")
@@ -1017,6 +990,7 @@ class CPFani_GUI(ctk.CTk):
 
         sec_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         sec_frame.pack(padx=20, pady=5, fill="x")
+
         ctk.CTkLabel(sec_frame, text="2. Seguranca e Privacidade", font=("", 12, "bold")).pack(anchor="w", padx=10)
 
         self.sec_lgpd = ctk.BooleanVar(value=True)
@@ -1033,6 +1007,7 @@ class CPFani_GUI(ctk.CTk):
 
         tasks_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         tasks_frame.pack(padx=20, pady=5, fill="x")
+
         ctk.CTkLabel(tasks_frame, text="3. Automacao no Logon e Resiliencia", font=("", 12, "bold")).pack(anchor="w", padx=10)
 
         self.task_manutencao = ctk.BooleanVar(value=False)
@@ -1055,6 +1030,7 @@ class CPFani_GUI(ctk.CTk):
 
         sw_header = ctk.CTkFrame(sw_frame, fg_color="transparent")
         sw_header.pack(fill="x", padx=10, pady=5)
+
         ctk.CTkLabel(sw_header, text="4. Softwares e Office", font=("", 12, "bold")).pack(side="left")
 
         btn_none = ctk.CTkButton(sw_header, text="Limpar Todos", font=("", 10), width=80, height=22, fg_color="#2b2b2b", hover_color="#3a3a3a", command=self.select_none_apps)
@@ -1068,6 +1044,7 @@ class CPFani_GUI(ctk.CTk):
 
         self.apps_to_install = SETTINGS.get("apps", {}).get("choco", [])
         self.app_vars = {}
+
         for i, app in enumerate(self.apps_to_install):
             v = ctk.BooleanVar(value=True)
             self.app_vars[app] = v
@@ -1083,6 +1060,7 @@ class CPFani_GUI(ctk.CTk):
 
         driver_frame = ctk.CTkFrame(self.main_scroll, fg_color="#1e1e1e", corner_radius=8)
         driver_frame.pack(padx=20, pady=5, fill="x")
+
         ctk.CTkLabel(driver_frame, text="5. Gestao de Drivers", font=("", 12, "bold")).pack(anchor="w", padx=10)
 
         self.driver_var = ctk.StringVar(value="nenhum")
@@ -1219,10 +1197,10 @@ class CPFani_GUI(ctk.CTk):
                     except Exception:
                         pass
 
-                if self.drive_upload_disabled:
-                    success = False
-                    if not error:
-                        error = self.snapshot_upload_error or "Upload para o Drive desabilitado apos pre-checagem."
+            if self.drive_upload_disabled:
+                success = False
+                if not error:
+                    error = self.snapshot_upload_error or "Upload para o Drive desabilitado apos pre-checagem."
 
             if path is None:
                 success = False
@@ -1242,22 +1220,18 @@ class CPFani_GUI(ctk.CTk):
 
             if self.drive_upload_disabled:
                 reason = self.snapshot_upload_error or "Upload desabilitado apos pre-checagem."
-
                 def disabled_auth(*a, **k):
                     return (None, reason, None)
-
                 replacement = disabled_auth
             else:
                 def callback_auth(*a, **k):
                     if "callback" not in k or k.get("callback") is None:
                         k["callback"] = self._google_drive_status_background
-
                     try:
                         return original_auth(*a, **k)
                     except TypeError:
                         k.pop("callback", None)
                         return original_auth(*a, **k)
-
                 replacement = callback_auth
 
             try:
@@ -1303,7 +1277,6 @@ class CPFani_GUI(ctk.CTk):
             if getattr(self, "snapshot_upload_success", True) is False:
                 path = getattr(self, "snapshot_local_path", None) or "Caminho nao informado"
                 reason = getattr(self, "snapshot_upload_error", None) or "Erro desconhecido"
-
                 messagebox.showwarning(
                     "Snapshot nao enviado ao Drive",
                     "Snapshot gerado localmente mas NAO enviado ao Drive.\n\n"
@@ -1337,12 +1310,10 @@ class CPFani_GUI(ctk.CTk):
         """Exibe resultado da verificacao da task na GUI."""
         try:
             self.btn_check_task.configure(state="normal", text="VERIFICAR TASK AGENDADA DE SNAPSHOT")
-
             if exists:
                 messagebox.showinfo("Task de Snapshot", msg)
             else:
                 messagebox.showwarning("Task de Snapshot", msg)
-
         except Exception as e:
             self.log(f"Erro ao exibir resultado da task de snapshot: {e}", "ERRO")
 
@@ -1954,6 +1925,15 @@ class CPFani_GUI(ctk.CTk):
         def confirmar():
             self.local_snapshot = var_local.get()
             self.usuario_snapshot = entry_usuario.get().strip() or "Nao informado"
+
+            # V6.3.1: Persistir Local/Usuario no disco para que a tarefa agendada
+            # CPFANI_SnapshotDiario (executada como SYSTEM, sem GUI) possa reutilizar
+            # esses valores ao gerar o snapshot diario.
+            try:
+                mod_config.save_snapshot_info(self.local_snapshot, self.usuario_snapshot)
+            except Exception as e:
+                self.log(f"[AVISO] Falha ao persistir dados do snapshot no disco: {e}", "AVISO")
+
             dialog.destroy()
 
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
@@ -2289,7 +2269,6 @@ class CPFani_GUI(ctk.CTk):
 
         except Exception as e:
             self.log(f"Erro ao finalizar: {e}", "ERRO")
-
 
 if __name__ == "__main__":
     try:
