@@ -184,6 +184,17 @@ set "RC=!ERRORLEVEL!"
 call :log "[DEBUG] where choco RC: !RC!"
 if !RC! NEQ 0 (
     call :log "[INFO] Chocolatey nao encontrado. Instalando..."
+    
+    REM --- CORREÇÃO: LIMPEZA DE INSTALAÇÃO "ZUMBI" ---
+    set "CHOCO_DIR=%ProgramData%\chocolatey"
+    if exist "!CHOCO_DIR!" (
+        if not exist "!CHOCO_DIR!\bin\choco.exe" (
+            call :log "[WARN] Pasta do Chocolatey existe mas binario ausente. Limpando instalacao corrompida..."
+            rmdir /s /q "!CHOCO_DIR!" >nul 2>&1
+        )
+    )
+    REM -----------------------------------------------
+
     set "CHOCO_INSTALLER=%TEMP%\choco_install.ps1"
     call :log "[INFO] Baixando script de instalacao do Chocolatey..."
     !CURL_CMD! -L --fail --max-time 60 --retry 3 -o "!CHOCO_INSTALLER!" "https://community.chocolatey.org/install.ps1" 2>> "!LOG_FILE!"
@@ -215,6 +226,7 @@ if !RC! NEQ 0 (
     )
     call :log "[OK] Hash SHA256 do Chocolatey validado. Executando instalacao..."
 
+    REM --- CORREÇÃO: CAMINHO ABSOLUTO DO POWERSHELL ---
     "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "!CHOCO_INSTALLER!" >> "!LOG_FILE!" 2>&1
     set "RC=!ERRORLEVEL!"
     call :log "[DEBUG] powershell Chocolatey RC: !RC!"
