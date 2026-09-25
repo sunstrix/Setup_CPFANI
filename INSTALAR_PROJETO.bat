@@ -13,7 +13,7 @@ REM ASCII - sem acentos
 REM ============================================================
 
 echo [INFO] Verificando Administrador...
-whoami /groups | findstr /i "S-1-5-32-544" >nul 2>&1
+net session >nul 2>&1
 set "RC=!ERRORLEVEL!"
 if !RC! NEQ 0 (
     echo [ERROR] NAO E ADMINISTRADOR!
@@ -264,6 +264,19 @@ REM ------------------------------------------------------------
 REM STEP 6: ABRIR O EXECUTAR.BAT
 REM ------------------------------------------------------------
 call :log "[STEP 6] Iniciando EXECUTAR.bat..."
+
+REM Safeguard: garantir que DEST nao esta vazio
+if not defined DEST (
+    call :log "[ERROR] Variavel DEST nao definida."
+    pause >nul
+    exit /b 1
+)
+if "!DEST!"=="" (
+    call :log "[ERROR] Variavel DEST esta vazia."
+    pause >nul
+    exit /b 1
+)
+
 if not exist "!DEST!\EXECUTAR.bat" (
     call :log "[ERROR] EXECUTAR.bat nao encontrado em !DEST!"
     pause >nul
