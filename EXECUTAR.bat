@@ -8,7 +8,7 @@ set "LOG_DIR=%SCRIPT_DIR%\Logs"
 set "NO_PAUSE=!SETUP_CPFANI_NO_PAUSE!"
 
 echo [INFO] Verificando Administrador...
-whoami /groups | findstr /i "S-1-5-32-544" >nul 2>&1
+net session >nul 2>&1
 set "RC=!ERRORLEVEL!"
 if !RC! NEQ 0 (
     echo [ERROR] NAO E ADMINISTRADOR!
@@ -113,7 +113,7 @@ if "!PYTHON_OK!"=="0" (
 
     call :log "[DEBUG] Linha 7.5 - Verificando hash SHA256 do Python..."
     set "PYTHON_HASH="
-    for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash -LiteralPath $env:PYTHON_INSTALLER -Algorithm SHA256).Hash" 2^>nul') do set "PYTHON_HASH=%%H"
+    for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash -LiteralPath '!PYTHON_INSTALLER!' -Algorithm SHA256).Hash" 2^>nul') do set "PYTHON_HASH=%%H"
     set "EXPECTED_PYTHON_HASH=1206721601A62C925D4E4A0DCFC371E88F2DDBE8C0C07962EBB2BE9B5BDE4570"
     set "EXPECTED_PYTHON_HASH_ALT=8CF125093341AF86F287F95B8952D24336B6A36656EE6ADCA9E9EF06143027BC"
     set "HASH_OK=0"
@@ -146,7 +146,10 @@ if "!PYTHON_OK!"=="0" (
         exit /b 1
     )
     call :log "[DEBUG] Linha 10 - Aguardando..."
-    set "PYTHON_EXE=%ProgramFiles%\Python312\python.exe"
+    set "PYTHON_EXE=%ProgramW6432%\Python312\python.exe"
+    if not exist "!PYTHON_EXE!" (
+        if exist "C:\Python312\python.exe" set "PYTHON_EXE=C:\Python312\python.exe"
+    )
     set "WAIT_COUNT=0"
     set "WAIT_RESULT=0"
     call :WAIT_PYTHON
@@ -155,7 +158,7 @@ if "!PYTHON_OK!"=="0" (
         if /i not "!NO_PAUSE!"=="1" pause >nul
         exit /b 1
     )
-    set "PATH=!PATH!;%ProgramFiles%\Python312\Scripts;%ProgramFiles%\Python312"
+    set "PATH=!PATH!;%ProgramW6432%\Python312\Scripts;%ProgramW6432%\Python312"
     set "PYTHON_CMD=!PYTHON_EXE!"
     call :log "[DEBUG] Linha 11 - Verificando Python novamente..."
     if not exist "!PYTHON_CMD!" (
@@ -192,7 +195,7 @@ if !RC! NEQ 0 (
 
     call :log "[DEBUG] Verificando hash SHA256 do script do Chocolatey..."
     set "CHOCO_HASH="
-    for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash -LiteralPath $env:CHOCO_INSTALLER -Algorithm SHA256).Hash" 2^>nul') do set "CHOCO_HASH=%%H"
+    for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash -LiteralPath '!CHOCO_INSTALLER!' -Algorithm SHA256).Hash" 2^>nul') do set "CHOCO_HASH=%%H"
     set "EXPECTED_CHOCO_HASH=44E045ED5350758616D664C5AF631E7F2CD10165F5BF2BD82CBF3A0BB8F63462"
     if not defined CHOCO_HASH (
         call :log "[ERROR] Hash SHA256 do Chocolatey nao gerado."
@@ -221,9 +224,9 @@ if !RC! NEQ 0 (
     )
     set "PATH=!PATH!;%ALLUSERSPROFILE%\chocolatey\bin"
     del "!CHOCO_INSTALLER!" 2>nul
-    where choco >nul 2>&1
-    set "RC=!ERRORLEVEL!"
-    if !RC! NEQ 0 (
+    
+    set "CHOCO_BIN=%ALLUSERSPROFILE%\chocolatey\bin\choco.exe"
+    if not exist "!CHOCO_BIN!" (
         call :log "[ERROR] Chocolatey nao esta no PATH apos instalacao."
         if /i not "!NO_PAUSE!"=="1" pause >nul
         exit /b 1
