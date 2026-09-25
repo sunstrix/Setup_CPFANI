@@ -113,7 +113,9 @@ if "!PYTHON_OK!"=="0" (
 
     call :log "[DEBUG] Linha 7.5 - Verificando hash SHA256 do Python..."
     set "PYTHON_HASH="
-    for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash -LiteralPath '!PYTHON_INSTALLER!' -Algorithm SHA256).Hash" 2^>nul') do set "PYTHON_HASH=%%H"
+    for /f "delims=" %%H in ('certutil -hashfile "!PYTHON_INSTALLER!" SHA256 ^| findstr /v /i "hash CertUtil"') do set "PYTHON_HASH=%%H"
+    set "PYTHON_HASH=!PYTHON_HASH: =!"
+    
     set "EXPECTED_PYTHON_HASH=1206721601A62C925D4E4A0DCFC371E88F2DDBE8C0C07962EBB2BE9B5BDE4570"
     set "EXPECTED_PYTHON_HASH_ALT=8CF125093341AF86F287F95B8952D24336B6A36656EE6ADCA9E9EF06143027BC"
     set "HASH_OK=0"
@@ -195,7 +197,9 @@ if !RC! NEQ 0 (
 
     call :log "[DEBUG] Verificando hash SHA256 do script do Chocolatey..."
     set "CHOCO_HASH="
-    for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash -LiteralPath '!CHOCO_INSTALLER!' -Algorithm SHA256).Hash" 2^>nul') do set "CHOCO_HASH=%%H"
+    for /f "delims=" %%H in ('certutil -hashfile "!CHOCO_INSTALLER!" SHA256 ^| findstr /v /i "hash CertUtil"') do set "CHOCO_HASH=%%H"
+    set "CHOCO_HASH=!CHOCO_HASH: =!"
+    
     set "EXPECTED_CHOCO_HASH=44E045ED5350758616D664C5AF631E7F2CD10165F5BF2BD82CBF3A0BB8F63462"
     if not defined CHOCO_HASH (
         call :log "[ERROR] Hash SHA256 do Chocolatey nao gerado."
