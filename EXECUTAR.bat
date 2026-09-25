@@ -215,7 +215,7 @@ if !RC! NEQ 0 (
     )
     call :log "[OK] Hash SHA256 do Chocolatey validado. Executando instalacao..."
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File "!CHOCO_INSTALLER!" >> "!LOG_FILE!" 2>&1
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "!CHOCO_INSTALLER!" >> "!LOG_FILE!" 2>&1
     set "RC=!ERRORLEVEL!"
     call :log "[DEBUG] powershell Chocolatey RC: !RC!"
     set "INSTALL_OK=1"
